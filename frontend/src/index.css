@@ -56,3 +56,14 @@ body {
   background-color: rgba(102, 252, 241, 0.25);
   color: #fff;
 }
+
+/* Keep inputs dark when browser autofills (saved passwords) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #1F2833 inset !important;
+  -webkit-text-fill-color: #C5C6C7 !important;
+  box-shadow: 0 0 0 1000px #1F2833 inset !important;
+  caret-color: #C5C6C7;
+}
