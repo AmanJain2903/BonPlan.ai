@@ -21,7 +21,7 @@ Before development began, the system architecture and product vision were strict
 
 ### 🚧 Current Status
 * **Phase 1: Architecture & Planning** - ✅ Complete
-* **Phase 2: MVP Development** - ⏳ Initiating
+* **Phase 2: MVP Development** - ⏳ Ongoing
 
 ---
 *Built as a passion project to explore Agentic AI and constraint-based routing.*
