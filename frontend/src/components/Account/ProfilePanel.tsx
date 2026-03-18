@@ -140,7 +140,7 @@ export default function ProfilePanel() {
         </div>
       )}
 
-      <form onSubmit={handleSave} className="rounded-2xl border border-white/[0.06] bg-carbon/30 p-6 sm:p-8 space-y-6">
+      <form onSubmit={handleSave} className="rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-sm p-6 sm:p-8 space-y-6">
         {/* Header row: badge + edit button */}
         <div className="flex items-center justify-between">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${

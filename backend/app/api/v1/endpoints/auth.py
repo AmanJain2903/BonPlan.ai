@@ -42,6 +42,9 @@ def is_valid_password(password):
         return False
     return True
 
+def makeFirstLetterCapital(string):
+    return string.capitalize()
+
 
 """
 Google authentication endpoint
@@ -79,8 +82,8 @@ def google_login(token: str, db: Session = Depends(get_db)):
         else:
             try:
                 newUser = User(
-                    first_name=first_name,
-                    last_name=last_name,
+                    first_name=makeFirstLetterCapital(first_name),
+                    last_name=makeFirstLetterCapital(last_name),
                     email=email,
                     phone={'country_code': None, 'number': None},
                     auth_provider="google",
@@ -117,8 +120,8 @@ def local_register(first_name: str, last_name: str, email: str, password: str, c
         else:
             try:
                 newUser = User(
-                    first_name=first_name,
-                    last_name=last_name,
+                    first_name=makeFirstLetterCapital(first_name),
+                    last_name=makeFirstLetterCapital(last_name),
                     email=email,
                     phone={'country_code': code, 'number': phone},
                     password_hash=bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
@@ -334,8 +337,8 @@ def update_profile(token: str, first_name: str, last_name: str, country_code: st
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found.")
-        user.first_name = first_name.strip()
-        user.last_name = last_name.strip()
+        user.first_name = makeFirstLetterCapital(first_name.strip())
+        user.last_name = makeLastLetterCapital(last_name.strip())
         user.phone = {"country_code": country_code.strip() if country_code else "", "number": phone.strip() if phone else ""}
         session.commit()
         return {

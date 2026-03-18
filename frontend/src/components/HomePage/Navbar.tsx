@@ -37,12 +37,14 @@ export default function Navbar() {
 
   return (
     <>
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-midnight/80 backdrop-blur-xl border-b border-white/5">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-midnight/70 backdrop-blur-md border-b border-white/5">
       <div className="w-full flex items-center justify-between px-6 lg:px-12 xl:px-20 py-4">
         {/* Logo */}
         <a href="#top" className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-white select-none">
-          <img src="/logo.png" alt="BonPlan.ai" className="h-9 w-9 object-contain" />
-          <span>BonPlan<span className="text-cyan">.</span>ai</span>
+        <Link to="/" className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-white select-none">
+            <img src="/logo.png" alt="BonPlan.ai" className="h-9 w-9 object-contain" />
+            <span>BonPlan<span className="text-cyan">.</span>ai</span>
+          </Link>
         </a>
 
         {/* Desktop */}

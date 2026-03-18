@@ -1,9 +1,11 @@
 import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import RoutingVisual from './RoutingVisual';
 import { useAuth } from '../../context/AuthContext';
 
 export default function Hero() {
   const { isLoggedIn, user } = useAuth();
+  const navigate = useNavigate();
   const firstName = user?.firstName;
 
   return (
@@ -31,7 +33,10 @@ export default function Hero() {
           Welcome, <span className="text-cyan font-semibold">{firstName}</span>
         </p>
       )}
-      <button className={`relative group ${isLoggedIn && firstName ? 'mt-4' : 'mt-10'} inline-flex items-center gap-2.5 bg-cyan text-midnight font-bold text-lg tracking-wide rounded-xl px-8 py-3.5 hover:shadow-[0_0_30px_rgba(102,252,241,0.4)] transition-all duration-300 cursor-pointer`}>
+      <button
+        onClick={() => navigate(isLoggedIn ? '/plan' : '/register')}
+        className={`relative group ${isLoggedIn && firstName ? 'mt-4' : 'mt-10'} inline-flex items-center gap-2.5 bg-cyan text-midnight font-bold text-lg tracking-wide rounded-xl px-8 py-3.5 hover:shadow-[0_0_30px_rgba(102,252,241,0.4)] transition-all duration-300 cursor-pointer`}
+      >
         BUILD A BON PLAN
         <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-0.5" />
       </button>

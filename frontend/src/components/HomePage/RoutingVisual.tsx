@@ -29,7 +29,7 @@ export default function RoutingVisual() {
   }, []);
 
   return (
-    <div className="relative rounded-2xl border border-white/[0.06] bg-carbon/60 backdrop-blur-sm p-6 sm:p-8 overflow-hidden">
+    <div className="relative rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-sm p-6 sm:p-8 overflow-hidden">
       {/* Scanning beam */}
       <div
         className="pointer-events-none absolute top-0 bottom-0 w-24 z-10 transition-none"

@@ -31,34 +31,7 @@ export default function AccountLayout() {
   const activeItem = sidebarItems.find((i) => i.key === active);
 
   return (
-    <div className="min-h-screen bg-midnight">
-      {/* Top navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-midnight/80 backdrop-blur-xl border-b border-white/5">
-        <div className="w-full flex items-center justify-between px-6 lg:px-12 xl:px-20 py-4">
-          <Link to="/" className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-white select-none">
-            <img src="/logo.png" alt="BonPlan.ai" className="h-9 w-9 object-contain" />
-            <span>BonPlan<span className="text-cyan">.</span>ai</span>
-          </Link>
-
-          <div className="flex items-center gap-4">
-            {/* Mobile sidebar toggle */}
-            <button
-              className="md:hidden text-white/70 hover:text-white transition-colors cursor-pointer"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
-            </button>
-
-            <button
-              onClick={handleLogout}
-              className="hidden md:flex items-center gap-2 rounded-lg border border-red-400/30 bg-red-400/5 px-4 py-2 text-sm text-red-400 hover:border-red-400/50 hover:bg-red-400/10 transition-all duration-200 cursor-pointer"
-            >
-              <LogOut size={15} />
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen">
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
@@ -131,11 +104,11 @@ export default function AccountLayout() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 min-h-[calc(100vh-65px)] px-6 md:px-10 lg:px-16 py-10">
-          <h1 className="text-2xl font-bold text-white mb-2">
+        <main className="flex-1 min-h-[calc(100vh-65px)] px-6 md:px-10 lg:px-16 py-10 z-2">
+          <h1 className="text-3xl font-extrabold text-cyan mb-2">
             {activeItem?.label ?? 'Account'}
           </h1>
-          <p className="text-sm text-white/40 mb-10">
+          <p className="text-sm text-white mb-10">
             {active === 'profile' && 'Manage your personal information.'}
             {active === 'preferences' && 'Customize your travel preferences and planning defaults.'}
             {active === 'integrations' && 'Connect third-party services and APIs.'}

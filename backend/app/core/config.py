@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # Google Cloud Platform settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY")
 
     # Secret key for JWT
     SECRET_KEY: str = os.getenv("SECRET_KEY")
