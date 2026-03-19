@@ -17,23 +17,22 @@ export type TripDate = {
   timezoneId: string | null;
 };
 
-export type SoloSingleTripData = {
-  type: 'solo-single';
+export type TripData = {
   origin: Place | null;
-  destination: Place | null;
+  destinations: Place[] | null;
   startDate: TripDate | null;
   endDate: TripDate | null;
   pace: string | null;
   budget: string | null;
   conversationalContext: string | null;
+  adults: number | null;
+  children: number | null;
 }
-
-export type AllTripData = SoloSingleTripData; // | MultiHopTripData | SquadTripData
 
 export type TripDraft = {
   planningStyle: PlanningStyle | null;
   routingStyle: RoutingStyle | null;
-  tripData: SoloSingleTripData | null; // SoloSingleTripData if planningStyle === 'solo' && routingStyle === 'single-hub';
+  tripData: TripData | null;
 };
 
 type TripContextValue = {
@@ -76,15 +75,15 @@ export function TripProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const updateTripData = useCallback((patch: Partial<AllTripData>) => {
+  const updateTripData = useCallback((patch: Partial<TripData>) => {
     setTripState((prev) => {
-      
-      const nextTripData = prev.tripData 
-        ? { ...prev.tripData, ...patch } 
-        : { ...patch }; 
 
-      const next = { ...prev, tripData: nextTripData as AllTripData };
-      
+      const nextTripData = prev.tripData
+        ? { ...prev.tripData, ...patch }
+        : { ...patch };
+
+      const next = { ...prev, tripData: nextTripData as TripData };
+
       sessionStorage.setItem(TRIP_KEY, JSON.stringify(next));
       return next;
     });

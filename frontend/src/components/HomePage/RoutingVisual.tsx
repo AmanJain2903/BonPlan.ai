@@ -79,9 +79,8 @@ export default function RoutingVisual() {
                   >
                     <node.icon
                       size={18}
-                      className={`transition-colors duration-500 ${
-                        node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/40'
-                      }`}
+                      className={`transition-colors duration-500 ${node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/40'
+                        }`}
                     />
                     {node.anchor && (
                       <span className="absolute -top-1 -right-1 flex h-3 w-3">
@@ -96,9 +95,8 @@ export default function RoutingVisual() {
                     )}
                   </div>
                   <div className="text-center w-full">
-                    <p className={`text-[10px] sm:text-xs font-medium truncate transition-colors duration-500 ${
-                      node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/60'
-                    }`}>
+                    <p className={`text-[10px] sm:text-xs font-medium truncate transition-colors duration-500 ${node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/60'
+                      }`}>
                       {node.label}
                     </p>
                     <p className="text-[9px] sm:text-[10px] text-white/30 tabular-nums">{node.time}</p>
@@ -126,10 +124,6 @@ export default function RoutingVisual() {
         <span className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-cyan/60" />
           Smart Anchor
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-white/20" />
-          AI Generated
         </span>
         <span className="ml-auto tabular-nums text-white/20 hidden sm:inline">
           Transit verified via <span className="text-cyan/40">Google Maps API</span>

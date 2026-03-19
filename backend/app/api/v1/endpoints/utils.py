@@ -1,7 +1,7 @@
-# backend/app/api/v1/endpoints/auth.py
+# backend/app/api/v1/endpoints/utils.py
 
 """
-This file contains the authentication endpoints for the v1 version of the API.
+This file contains the utility endpoints for the v1 version of the API.
 """
 
 from app.core.config import settings
@@ -18,7 +18,6 @@ tf = TimezoneFinder()
 """
 Helper functions
 """
-
 def get_timezone_id(lat: float, lng: float):
     try:
         tfId = tf.timezone_at(lat=lat, lng=lng)
@@ -30,7 +29,7 @@ def get_timezone_id(lat: float, lng: float):
 
 
 """
-Google authentication endpoint
+Get timezone endpoint
 """
 @router.post("/get-timezone", response_model=dict)
 def get_timezone(lat: float, lng: float):

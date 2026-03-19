@@ -6,6 +6,7 @@ This file contains the models for the users table.
 
 from sqlalchemy import Column, Index, String, DateTime, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
 from app.database.database import Base
 from sqlalchemy.sql import func
 import uuid
@@ -33,3 +34,6 @@ class User(Base):
             unique=True,
         ),
     )
+
+    trip_memberships = relationship("TripMember", back_populates="user", cascade="all, delete-orphan")
+    owned_trips = relationship("Trip", back_populates="owner", cascade="all, delete-orphan")

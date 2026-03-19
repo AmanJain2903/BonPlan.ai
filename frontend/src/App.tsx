@@ -9,7 +9,7 @@ import VerifyEmail from './components/Auth/VerifyEmail';
 import ForgotPassword from './components/Auth/ForgotPassword';
 import ResetPassword from './components/Auth/ResetPassword';
 import AccountLayout from './components/Account/AccountLayout';
-import PlanSetup from './components/Plan/PlanSetup';
+import PlanSetup from './components/DraftPlan/PlanSetup';
 import { AuthProvider } from './context/AuthContext';
 import WorldMapBackground from './components/shared/WorldMapBackground';
 import BlurBackground from './components/shared/blurBackground';
@@ -33,25 +33,25 @@ export default function App() {
   return (
     <BrowserRouter>
       <WorldMapBackground />
-        <BlurBackground />
-          <AuthProvider>
-            <TripProvider>
-              <TripFlushOnHome />
-              <Navbar />
-                <div className="min-h-screen bg-midnight">
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/verify-email" element={<VerifyEmail />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/reset-password" element={<ResetPassword />} />
-                    <Route path="/account/:section?" element={<AccountLayout />} />
-                    <Route path="/plan" element={<PlanSetup />} />
-                  </Routes>
-                </div>
-            </TripProvider>
-          </AuthProvider>
+      <BlurBackground />
+      <AuthProvider>
+        <TripProvider>
+          <TripFlushOnHome />
+          <Navbar />
+          <div className="min-h-screen bg-midnight">
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/account/:section?" element={<AccountLayout />} />
+              <Route path="/draft-plan" element={<PlanSetup />} />
+            </Routes>
+          </div>
+        </TripProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

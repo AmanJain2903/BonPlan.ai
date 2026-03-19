@@ -34,7 +34,7 @@ export default function Hero() {
         </p>
       )}
       <button
-        onClick={() => navigate(isLoggedIn ? '/plan' : '/register')}
+        onClick={() => navigate(isLoggedIn ? '/draft-plan' : '/register')}
         className={`relative group ${isLoggedIn && firstName ? 'mt-4' : 'mt-10'} inline-flex items-center gap-2.5 bg-cyan text-midnight font-bold text-lg tracking-wide rounded-xl px-8 py-3.5 hover:shadow-[0_0_30px_rgba(102,252,241,0.4)] transition-all duration-300 cursor-pointer`}
       >
         BUILD A BON PLAN
