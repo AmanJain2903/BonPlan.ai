@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Check, X as XIcon, Trash2, Lock } from 'lucide-react';
 import { api } from '../../api';
@@ -173,11 +173,10 @@ export default function SettingsPanel() {
                 value={pwForm.confirm}
                 onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
                 placeholder="Re-enter new password"
-                className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${
-                  passwordMismatch
+                className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${passwordMismatch
                     ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
                     : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
-                }`}
+                  }`}
               />
               <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan/80 hover:text-cyan transition-colors cursor-pointer">
                 {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}

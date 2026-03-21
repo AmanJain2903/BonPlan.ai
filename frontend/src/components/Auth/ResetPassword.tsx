@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, Check, X as XIcon, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Check, X as XIcon, ShieldCheck } from 'lucide-react';
 import { api } from '../../api';
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
@@ -154,11 +154,10 @@ export default function ResetPassword() {
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     placeholder="Re-enter new password"
-                    className={`w-full rounded-xl border bg-white/[0.03] px-4 py-3 pr-11 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${
-                      mismatch
+                    className={`w-full rounded-xl border bg-white/[0.03] px-4 py-3 pr-11 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${mismatch
                         ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
                         : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
-                    }`}
+                      }`}
                   />
                   <button
                     type="button"

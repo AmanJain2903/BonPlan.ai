@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams, Navigate } from 'react-router-dom';
-import { LogOut, Menu, X } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { sidebarItems } from './sidebarItems';
 import { useState } from 'react';
@@ -44,9 +44,8 @@ export default function AccountLayout() {
       <div className="flex pt-[65px]">
         {/* Sidebar */}
         <aside
-          className={`fixed md:sticky top-[65px] left-0 z-40 h-[calc(100vh-65px)] w-72 border-r border-white/5 bg-midnight md:bg-transparent flex flex-col overflow-y-auto transition-transform duration-300 md:translate-x-0 ${
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+          className={`fixed md:sticky top-[65px] left-0 z-40 h-[calc(100vh-65px)] w-72 border-r border-white/5 bg-midnight md:bg-transparent flex flex-col overflow-y-auto transition-transform duration-300 md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            }`}
         >
           {/* User info */}
           <div className="px-5 py-6 border-b border-white/5">
@@ -75,11 +74,10 @@ export default function AccountLayout() {
                         key={item.key}
                         to={`/account/${item.key}`}
                         onClick={() => setSidebarOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 mb-0.5 ${
-                          isActive
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 mb-0.5 ${isActive
                             ? 'bg-cyan/10 text-cyan font-medium'
                             : 'text-white/60 hover:bg-white/[0.04] hover:text-white'
-                        }`}
+                          }`}
                       >
                         <item.icon size={17} className={isActive ? 'text-cyan' : 'text-white/35'} />
                         {item.label}

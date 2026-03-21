@@ -29,7 +29,7 @@ export default function RoutingVisual() {
   }, []);
 
   return (
-    <div className="relative rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-sm p-6 sm:p-8 overflow-hidden">
+    <div className="relative rounded-2xl border border-white/[0.06] bg-carbon/40 p-6 sm:p-8 overflow-hidden">
       {/* Scanning beam */}
       <div
         className="pointer-events-none absolute top-0 bottom-0 w-24 z-10 transition-none"
@@ -55,7 +55,7 @@ export default function RoutingVisual() {
       </div>
 
       {/* Timeline nodes */}
-      <div className="relative z-20 overflow-x-auto pt-6 pb-6 px-6 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="relative z-20 overflow-x-auto pt-8 pb-2 px-6 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex items-center" style={{ minWidth: `${nodes.length * 120}px` }}>
           {nodes.map((node, i) => {
             const isActive = i === activeIndex;

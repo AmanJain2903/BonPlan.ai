@@ -32,7 +32,7 @@ function qBez(t: number, a: number, b: number, c: number) {
 }
 
 function pickPair(): [Airport, Airport] {
-  for (;;) {
+  for (; ;) {
     const a = AIRPORTS[Math.floor(Math.random() * AIRPORTS.length)];
     const b = AIRPORTS[Math.floor(Math.random() * AIRPORTS.length)];
     if (a !== b && Math.abs(a.lng - b.lng) <= 160) return [a, b];
@@ -86,7 +86,6 @@ export default function WorldMapBackground() {
 
     let W = 0;
     let H = 0;
-    const PAD = 20;
     const mapLayer = document.createElement('canvas');
 
     // Aspect-ratio-preserving viewport
@@ -175,8 +174,6 @@ export default function WorldMapBackground() {
         mc.fill();
       }
     }
-
-    const isMobile = () => window.innerWidth < 768;
 
     function resize() {
       W = el!.clientWidth;

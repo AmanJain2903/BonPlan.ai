@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Google Cloud Platform settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
-    GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY")
+    GOOGLE_MAPS_API_KEY_UNRESTRICTED: str = os.getenv("GOOGLE_MAPS_API_KEY_UNRESTRICTED")
 
     # Secret key for JWT
     SECRET_KEY: str = os.getenv("SECRET_KEY")
@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Email settings
     SENDER_EMAIL: str = os.getenv("SENDER_EMAIL")
     GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD")
+
+    # Fallbacks
+    FALLBACK_IMAGE_DRAFT: str = os.getenv("FALLBACK_IMAGE_DRAFT", "https://unsplash.com/photos/airplanes-window-view-of-sky-during-golden-hour-oCdVtGFeDC0")
 
 
     @property

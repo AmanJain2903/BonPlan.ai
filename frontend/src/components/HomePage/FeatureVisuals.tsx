@@ -24,11 +24,10 @@ export function AnchorsVisual() {
       {items.map((item, i) => (
         <div
           key={i}
-          className={`flex items-center gap-3 rounded-xl px-4 py-3 border transition-all duration-500 ${
-            item.locked
+          className={`flex items-center gap-3 rounded-xl px-4 py-3 border transition-all duration-500 ${item.locked
               ? `border-cyan/30 bg-cyan/[0.06] ${pulse === i ? 'shadow-[0_0_20px_rgba(102,252,241,0.15)]' : ''}`
               : 'border-white/[0.06] bg-white/[0.02]'
-          }`}
+            }`}
         >
           {item.locked ? (
             <Lock size={14} className="text-cyan shrink-0" />
@@ -87,11 +86,10 @@ export function SwapVisual() {
 
   return (
     <div className="flex items-center gap-3 w-full justify-center">
-      <div className={`flex-1 rounded-xl border px-4 py-5 text-center transition-all duration-700 ${
-        swapped
+      <div className={`flex-1 rounded-xl border px-4 py-5 text-center transition-all duration-700 ${swapped
           ? 'border-cyan/30 bg-cyan/[0.08] scale-105'
           : 'border-white/10 bg-white/[0.03] opacity-50 scale-95'
-      }`}>
+        }`}>
         <Utensils size={18} className={`mx-auto mb-2 transition-colors duration-500 ${swapped ? 'text-cyan' : 'text-white/30'}`} />
         <p className="text-[11px] font-medium text-white/60">Food Tour</p>
         <p className="text-[9px] text-white/25 mt-0.5">2:00 – 4:00 PM</p>
@@ -99,11 +97,10 @@ export function SwapVisual() {
 
       <ArrowRightLeft size={16} className="text-cyan/40 shrink-0 animate-pulse" />
 
-      <div className={`flex-1 rounded-xl border px-4 py-5 text-center transition-all duration-700 ${
-        !swapped
+      <div className={`flex-1 rounded-xl border px-4 py-5 text-center transition-all duration-700 ${!swapped
           ? 'border-cyan/30 bg-cyan/[0.08] scale-105'
           : 'border-white/10 bg-white/[0.03] opacity-50 scale-95'
-      }`}>
+        }`}>
         <MapPin size={18} className={`mx-auto mb-2 transition-colors duration-500 ${!swapped ? 'text-cyan' : 'text-white/30'}`} />
         <p className="text-[11px] font-medium text-white/60">Museum</p>
         <p className="text-[9px] text-white/25 mt-0.5">2:00 – 4:00 PM</p>
@@ -263,9 +260,9 @@ export function MapVisual() {
           backgroundSize: '24px 24px',
         }} />
         {/* Route line */}
-        <svg className="absolute inset-0 w-full h-full">
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           <polyline
-            points={pins.map((p) => `${p.x}%,${p.y}%`).join(' ')}
+            points={pins.map((p) => `${p.x},${p.y}`).join(' ')}
             fill="none"
             stroke="rgba(102,252,241,0.2)"
             strokeWidth="1.5"
@@ -336,9 +333,8 @@ export function ConciergeVisual() {
       {cards.map((card, i) => (
         <div
           key={i}
-          className={`flex items-start gap-3 rounded-xl border px-4 py-3 transition-all duration-500 ${
-            i === activeCard ? `${card.accent} scale-[1.02]` : 'border-white/[0.04] bg-white/[0.01] opacity-40 scale-100'
-          }`}
+          className={`flex items-start gap-3 rounded-xl border px-4 py-3 transition-all duration-500 ${i === activeCard ? `${card.accent} scale-[1.02]` : 'border-white/[0.04] bg-white/[0.01] opacity-40 scale-100'
+            }`}
         >
           <div className="mt-0.5 shrink-0">
             {i === activeCard ? (

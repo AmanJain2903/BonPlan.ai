@@ -1,12 +1,36 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import RoutingVisual from './RoutingVisual';
 import { useAuth } from '../../context/AuthContext';
+import { DraftPlan } from '../../apis/planDraft';
 
-export default function Hero() {
+interface HeroProps {
+  draftPlans?: DraftPlan[];
+}
+
+export default function Hero({ draftPlans = [] }: HeroProps) {
   const { isLoggedIn, user } = useAuth();
   const navigate = useNavigate();
   const firstName = user?.firstName;
+
+  // Setup dynamic pills based on drafted plans
+  const pills = [];
+  if (draftPlans && draftPlans.length > 0) {
+    pills.push({ label: 'Draft Plans', href: '#draft-plans' });
+  }
+  pills.push({ label: 'Explore Features', href: '#features' });
+
+  const [activePillIndex, setActivePillIndex] = useState(0);
+
+  // Auto-slide mobile pills carousel
+  useEffect(() => {
+    if (pills.length <= 1) return;
+    const interval = setInterval(() => {
+      setActivePillIndex((current) => (current + 1) % pills.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [pills.length]);
 
   return (
     <section id="top" className="relative min-h-screen flex flex-col items-center justify-center px-6 lg:px-12 xl:px-20 pt-24 pb-16 overflow-hidden">
@@ -46,16 +70,58 @@ export default function Hero() {
         <RoutingVisual />
       </div>
 
-      {/* Scroll pill */}
-      <a
-        href="#features"
-        className="mt-12 inline-flex items-center gap-2 rounded-full border border-cyan/25 bg-cyan/[0.06] px-5 py-2 text-xs text-cyan/70 shadow-[0_0_15px_rgba(102,252,241,0.12)] hover:text-cyan hover:border-cyan/40 hover:shadow-[0_0_25px_rgba(102,252,241,0.25)] transition-all duration-300 animate-[pill-pulse_2s_ease-in-out_infinite]"
-      >
-        <span>Explore Features</span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-bounce">
-          <path d="M6 2v8M3 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </a>
+      {/* Dynamic Scroll Pills */}
+      <div className="mt-12 flex flex-col items-center">
+        {/* Desktop View */}
+        <div className="hidden sm:flex items-center justify-center gap-6">
+          {pills.map((pill) => (
+            <a
+              key={pill.label}
+              href={pill.href}
+              className="inline-flex justify-center w-[180px] items-center gap-2 rounded-full border border-cyan/25 bg-cyan/[0.06] px-5 py-2 text-xs text-cyan/70 shadow-[0_0_15px_rgba(102,252,241,0.12)] hover:text-cyan hover:border-cyan/40 hover:shadow-[0_0_25px_rgba(102,252,241,0.25)] transition-all duration-300 animate-[pill-pulse_2s_ease-in-out_infinite]"
+            >
+              <span>{pill.label}</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-bounce">
+                <path d="M6 2v8M3 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </a>
+          ))}
+        </div>
+
+        {/* Mobile Carousel View */}
+        <div className="flex sm:hidden items-center justify-center gap-3 relative w-full px-4">
+          {pills.length > 1 && (
+            <button
+              onClick={() => setActivePillIndex((current) => (current - 1 + pills.length) % pills.length)}
+              className="p-2 text-cyan/50 hover:text-cyan hover:bg-cyan/[0.05] rounded-full transition-colors flex-shrink-0"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          )}
+
+          <div className="flex-1 flex justify-center overflow-hidden pr-4 pl-4 pb-2 pt-2">
+            <a
+              key={pills[activePillIndex].label}
+              href={pills[activePillIndex].href}
+              className="inline-flex items-center justify-center gap-2 w-[180px] rounded-full border border-cyan/25 bg-cyan/[0.06] px-5 py-2 text-xs text-cyan/70 shadow-[0_0_15px_rgba(102,252,241,0.12)] hover:text-cyan hover:border-cyan/40 hover:shadow-[0_0_25px_rgba(102,252,241,0.25)] transition-all duration-300 animate-[pill-pulse_2s_ease-in-out_infinite]"
+            >
+              <span className="truncate">{pills[activePillIndex].label}</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-bounce shrink-0">
+                <path d="M6 2v8M3 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </a>
+          </div>
+
+          {pills.length > 1 && (
+            <button
+              onClick={() => setActivePillIndex((current) => (current + 1) % pills.length)}
+              className="p-2 text-cyan/50 hover:text-cyan hover:bg-cyan/[0.05] rounded-full transition-colors flex-shrink-0"
+            >
+              <ChevronRight size={18} />
+            </button>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
