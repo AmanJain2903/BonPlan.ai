@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Navbar from './components/HomePage/Navbar';
+import Navbar from './components/shared/Navbar';
 import Hero from './components/HomePage/Hero';
 import Features from './components/HomePage/Features';
 import DraftPlansComponent from './components/HomePage/DraftPlansComponent';

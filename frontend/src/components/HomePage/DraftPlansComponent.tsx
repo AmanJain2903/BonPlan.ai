@@ -46,32 +46,27 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
       setCanScrollLeft(scrollLeft > 5);
       setCanScrollRight(Math.ceil(scrollLeft) + clientWidth < scrollWidth - 5);
 
-      // 2. Compute 60fps Card Scaling based on geometric distance from viewport center
-      const viewCenter = scrollLeft + clientWidth / 2;
-
-      // Desktop: 3 cards fully sized. Mobile: 1 card fully sized.
-      // This establishes a perfect geometrical radius around the center.
-      const safeZone = isMob ? 80 : 580;
-      const fadeRange = 300; // Distance to reach maximum visual shrink
+      // 2. Compute 60fps Card Scaling based heavily on genuine rendering viewport overlap intersection!
+      const containerLeft = scrollLeft;
+      const containerRight = scrollLeft + clientWidth;
 
       cardsRef.current.forEach((card) => {
         if (!card) return;
 
         const cardLeft = card.offsetLeft;
-        const cardCenter = cardLeft + card.offsetWidth / 2;
+        const cardRight = cardLeft + card.offsetWidth;
 
-        // Absolute distance from exact center of the visible rendering viewport
-        const distance = Math.abs(viewCenter - cardCenter);
+        // Calculate overlap boundaries physically intersecting exactly what the user can see
+        const overlapLeft = Math.max(cardLeft, containerLeft);
+        const overlapRight = Math.min(cardRight, containerRight);
+        const overlapWidth = Math.max(0, overlapRight - overlapLeft);
 
-        let scaleTarget = 1.0;
-        let opacityTarget = 1.0;
+        // Native 0.0 to 1.0 overlap percentage representing sheer card availability
+        const ratio = overlapWidth / card.offsetWidth;
 
-        if (distance > safeZone) {
-          const overflow = distance - safeZone;
-          const shrinkRatio = Math.min(1, overflow / fadeRange); // Clamed 0.0 to 1.0
-          scaleTarget = 1.0 - (0.15 * shrinkRatio); // Scales strictly between 1.0 and 0.85
-          opacityTarget = 1.0 - (0.6 * shrinkRatio); // Fades completely down to 40%
-        }
+        // Geometric scale from base 0.85 to strict 1.0 peak
+        const scaleTarget = 0.85 + (0.15 * ratio);
+        const opacityTarget = 0.4 + (0.6 * ratio);
 
         // Apply raw DOM styles for absolute 0-lag 60fps tracking (bypasses React render tick entirely)
         card.style.transform = `scale(${scaleTarget})`;
@@ -163,9 +158,9 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
             <ChevronLeft className={`w-12 h-12 transition-transform animate-slide-left group-hover/btn-left:!animate-none`} />
           </button>
 
-          {/* Carousel Track: Unbounded width with dynamic safe centering for 1-100 cards. Flex-1 forces it to naturally fill exact space between the two dynamically positioned arrows! */}
+          {/* Carousel Track: Hardware bounds restricted width completely geometrically forcing arbitrary 4k monitors from rendering illegitimately stretched grids (> 3 main cards). Flex remains 100% symmetrically boxed by justify-between! */}
           <div
-            className="flex-1 overflow-hidden w-full relative transition-[mask-image] duration-300"
+            className="flex-1 overflow-hidden w-full max-w-[1240px] relative transition-[mask-image] duration-300"
             style={{
               maskImage: getMaskStyle(),
               WebkitMaskImage: getMaskStyle()
