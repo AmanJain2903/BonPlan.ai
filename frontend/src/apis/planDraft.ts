@@ -31,6 +31,13 @@ export interface GetDraftPlansResponse {
     detail?: string;
 }
 
+export interface GetDraftPlanResponse {
+    message?: string;
+    status_code?: number;
+    draft_plan?: DraftPlan;
+    detail?: string;
+}
+
 export const api = {
     draftPlan: async (token: string, bodyData: any): Promise<RegisterResponse> => {
         const { data } = await axios.post<RegisterResponse>(
@@ -43,6 +50,13 @@ export const api = {
     getDraftPlans: async (token: string): Promise<GetDraftPlansResponse> => {
         const { data } = await axios.get<GetDraftPlansResponse>(
             `${API_BASE}/api/v1/plan-draft/draft-plans`,
+            { params: { token } },
+        );
+        return data;
+    },
+    getDraftPlan: async (token: string, id: string): Promise<GetDraftPlanResponse> => {
+        const { data } = await axios.get<GetDraftPlanResponse>(
+            `${API_BASE}/api/v1/plan-draft/draft-plan/${id}`,
             { params: { token } },
         );
         return data;

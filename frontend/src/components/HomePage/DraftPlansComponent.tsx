@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { ChevronRight, ChevronLeft, Calendar, Wallet, Activity, User, Users } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Calendar } from 'lucide-react';
 import { DraftPlan } from '../../apis/planDraft';
 import DestinationPolaroid from './DestinationPolaroid';
 
@@ -30,6 +30,37 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [trackPadding, setTrackPadding] = useState('24px');
+  const [isOverflowing, setIsOverflowing] = useState(true);
+
+  // Layout Engine to perfectly center sparse maps (<3 cards) without `< 0px` clipping heavy overflows
+  useEffect(() => {
+    const handleLayoutEngine = () => {
+      if (typeof window === 'undefined') return;
+      const w = window.innerWidth;
+      const isMob = w < 1240;
+
+      const cardWidth = w >= 640 ? 380 : 300;
+      const gap = 24;
+      const cardsCount = plans.length;
+
+      const innerTrackWidth = (cardsCount * cardWidth) + (Math.max(0, cardsCount - 1) * gap) + 1;
+      const capacity = isMob ? w : 1240;
+
+      setIsOverflowing(innerTrackWidth > capacity);
+
+      if (isMob) {
+        const halfCard = w >= 640 ? 190 : 150;
+        setTrackPadding(`calc(50vw - ${halfCard}px)`);
+      } else {
+        setTrackPadding('24px');
+      }
+    };
+
+    handleLayoutEngine();
+    window.addEventListener('resize', handleLayoutEngine);
+    return () => window.removeEventListener('resize', handleLayoutEngine);
+  }, [plans.length]);
 
   // Synchronously update masks, arrows, and card scaling bound 1:1 to exact scroll pixels
   useEffect(() => {
@@ -132,9 +163,12 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
       <style>{arrowAnimations}</style>
       <section id="draft-plans" className="relative py-24 sm:py-32 overflow-hidden">
 
+        {/* Top divider glow */}
+        <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-cyan/20 to-transparent" />
+
         {/* Title Container bounded to 7xl */}
         <div className="w-full max-w-7xl mx-auto px-6 lg:px-12 xl:px-20">
-          <div className="text-center mb-16">
+          <div className="text-center">
             <h2 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white mb-4">
               Your Draft Plans
             </h2>
@@ -168,12 +202,15 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
           >
             <div
               ref={scrollRef}
-              className="flex gap-6 overflow-x-auto snap-x snap-mandatory pt-4 pb-12 hide-scrollbars scroll-smooth px-4 sm:px-12 pt-12"
+              className="flex overflow-x-auto snap-x snap-mandatory pt-4 pb-12 hide-scrollbars scroll-smooth"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {/* Native flex layout flow. Dynamic JS padding strictly forces mathematical geometrical centering rather than hoping CSS flexbox gets it right on overflows! */}
               {/* The trailing pseudo-element acts as a mathematical guarantee for Webkit right-padding, forcing explicit layout bounds in the scroll viewer */}
-              <div className="flex gap-6 w-max min-w-full after:content-[''] after:w-[1px] after:flex-shrink-0">
+              <div
+                className={`flex gap-6 w-max min-w-full transition-[padding] duration-300 ${!isOverflowing ? 'justify-center' : ''} mt-16`}
+                style={isOverflowing ? { paddingLeft: trackPadding } : {}}
+              >
                 {plans.map((plan, index) => {
                   const isGroup = plan.planning_type?.toLowerCase() === 'squad';
                   const totalAdults = plan.adults || 1;
@@ -201,27 +238,20 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
 
                       <div className="relative z-10 flex flex-col h-full">
                         {/* Polaroid Area */}
-                        <DestinationPolaroid destinations={plan.destinations || []} originCity={originCity} />
+                        <DestinationPolaroid destinations={plan.destinations || []} originCity={originCity} isGroup={isGroup} />
 
                         {/* Content below Polaroid */}
                         <div className="flex flex-col flex-1">
 
                           {/* Badges and Subtitle row */}
-                          <div className="flex items-center justify-between mb-4">
-                            <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full border bg-cyan/10 text-cyan border-cyan/20">
-                              {isGroup ? <Users size={12} /> : <User size={12} />}
-                              {isGroup ? 'Squad' : 'Solo'}
+                          <div className="flex items-center justify-center mb-4">
+                            <span className="text-[10px] sm:text-xs text-cyan/90 font-medium">
+                              {guestString}
                             </span>
-
-                            <div className="flex flex-col items-end sm:flex-row sm:items-center sm:gap-1.5 text-right">
-                              <span className="text-[10px] sm:text-xs text-cyan/90 font-medium">
-                                {guestString}
-                              </span>
-                            </div>
                           </div>
 
                           {/* Details (Chip UI) */}
-                          <div className="flex flex-col gap-3 mb-8">
+                          <div className="flex flex-col gap-3 mb-8 justify-center items-center">
                             {/* Dates row */}
                             <div className="flex items-center gap-2 text-sm text-white/90 font-medium">
                               <Calendar className="w-4 h-4 text-cyan/80 shrink-0" />
@@ -244,6 +274,10 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
                     </div>
                   );
                 })}
+                {/* Geometrically secure Safari padding spacer guaranteeing perfectly identically symmetric right offsets globally avoiding padding collapse */}
+                {isOverflowing && (
+                  <div className="flex-shrink-0" style={{ width: `calc(${trackPadding} - 24px)` }} aria-hidden="true" />
+                )}
               </div>
             </div>
           </div>
@@ -257,6 +291,15 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
             <ChevronRight className={`w-12 h-12 transition-transform animate-slide-right group-hover/btn-right:!animate-none`} />
           </button>
         </div>
+
+        {/* Mobile Swipe Indicator (Fades out seamlessly when hitting scrolling limits) */}
+        {isMobile && isOverflowing && (
+          <div className={`md:hidden flex items-center justify-center gap-3 mt-8 transition-opacity duration-700 ${(canScrollLeft || canScrollRight) ? 'opacity-100' : 'opacity-0'}`}>
+            <ChevronLeft size={16} strokeWidth={2.5} className={`text-cyan transition-opacity duration-500 ${canScrollLeft ? 'opacity-100 animate-slide-left' : 'opacity-0'}`} />
+            <span className="text-[11px] uppercase tracking-[0.2em] font-bold text-cyan/70">Swipe</span>
+            <ChevronRight size={16} strokeWidth={2.5} className={`text-cyan transition-opacity duration-500 ${canScrollRight ? 'opacity-100 animate-slide-right' : 'opacity-0'}`} />
+          </div>
+        )}
 
       </section>
     </>

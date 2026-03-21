@@ -88,7 +88,7 @@ def google_login(token: str, db: Session = Depends(get_db)):
                 first_name=makeFirstLetterCapital(first_name),
                 last_name=makeFirstLetterCapital(last_name),
                 email=email,
-                phone={'country_code': None, 'number': None},
+                phone={'country_code': "", 'number': ""},
                 auth_provider="google",
                 is_verified=True,
             )

@@ -33,7 +33,7 @@ export default function Hero({ draftPlans = [] }: HeroProps) {
   }, [pills.length]);
 
   return (
-    <section id="top" className="relative min-h-screen flex flex-col items-center justify-center px-6 lg:px-12 xl:px-20 pt-24 pb-16 overflow-hidden">
+    <section id="top" className="relative min-h-screen flex flex-col items-center justify-center px-6 lg:px-12 xl:px-20 pt-24 pb-24 sm:pb-32 overflow-hidden">
       {/* Ambient glow */}
       <div className="pointer-events-none absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[600px] rounded-full bg-cyan/[0.04] blur-[140px]" />
 
@@ -101,11 +101,11 @@ export default function Hero({ draftPlans = [] }: HeroProps) {
 
           <div className="flex-1 flex justify-center overflow-hidden pr-4 pl-4 pb-2 pt-2">
             <a
-              key={pills[activePillIndex].label}
-              href={pills[activePillIndex].href}
+              key={pills[activePillIndex % pills.length].label}
+              href={pills[activePillIndex % pills.length].href}
               className="inline-flex items-center justify-center gap-2 w-[180px] rounded-full border border-cyan/25 bg-cyan/[0.06] px-5 py-2 text-xs text-cyan/70 shadow-[0_0_15px_rgba(102,252,241,0.12)] hover:text-cyan hover:border-cyan/40 hover:shadow-[0_0_25px_rgba(102,252,241,0.25)] transition-all duration-300 animate-[pill-pulse_2s_ease-in-out_infinite]"
             >
-              <span className="truncate">{pills[activePillIndex].label}</span>
+              <span className="truncate">{pills[activePillIndex % pills.length].label}</span>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-bounce shrink-0">
                 <path d="M6 2v8M3 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>

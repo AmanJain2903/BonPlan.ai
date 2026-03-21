@@ -25,6 +25,7 @@ export default function Navbar() {
     setMobileOpen(false);
     logout();
     navigate('/');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const fullName = user ? `${user.firstName} ${user.lastName}`.trim() : '';

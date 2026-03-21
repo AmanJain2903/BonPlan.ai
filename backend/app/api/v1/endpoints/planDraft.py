@@ -22,7 +22,7 @@ router = APIRouter()
 Draft a plan endpoint
 """
 @router.post("/draft-plan", response_model=dict)
-def draftPlan( token: str, data: dict, db: Session = Depends(get_db)):
+def draft_plan( token: str, data: dict, db: Session = Depends(get_db)):
     if not token or not data:
         raise HTTPException(status_code=400, detail="All fields are required.")
     try:
@@ -94,7 +94,7 @@ def draftPlan( token: str, data: dict, db: Session = Depends(get_db)):
 Get all draft plans for a user endpoint
 """
 @router.get("/draft-plans", response_model=dict)
-def getDraftPlans( token: str, db: Session = Depends(get_db)):
+def get_draft_plans( token: str, db: Session = Depends(get_db)):
     if not token:
         raise HTTPException(status_code=400, detail="Token is required.")
     try:
@@ -133,3 +133,51 @@ def getDraftPlans( token: str, db: Session = Depends(get_db)):
             "children": draftPlan.children
         })
     return {"message": "Draft plans fetched successfully.", "status_code": 200, "draft_plans": response}
+
+"""
+Get a draft plan by id endpoint
+"""
+@router.get("/draft-plan/{id}", response_model=dict)
+def get_draft_plan( token: str, id: str, db: Session = Depends(get_db)):
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required.")
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid session. Please log in again.")
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid token.")
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get draft plans: {e}")
+    try:
+        draftPlan = db.query(Trip).filter(Trip.id == id, Trip.owner_id == user_id, Trip.trip_status == "draft").first()
+        if not draftPlan:
+            raise HTTPException(status_code=404, detail="No draft plan found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get draft plan: {e}")
+    
+    response = {
+        "id": draftPlan.id,
+        "planning_type": draftPlan.planning_type,
+        "routing_style": draftPlan.routing_style,
+        "origin": draftPlan.origin,
+        "destinations": draftPlan.destinations,
+        "start_date": draftPlan.start_date,
+        "end_date": draftPlan.end_date,
+        "pace": draftPlan.pace,
+        "budget": draftPlan.budget,
+        "conversational_context": draftPlan.conversational_context,
+        "adults": draftPlan.adults,
+        "children": draftPlan.children,
+        "trip_status": draftPlan.trip_status,
+        "created_at": draftPlan.created_at,
+        "updated_at": draftPlan.updated_at,
+    }
+    return {"message": "Draft plan fetched successfully.", "status_code": 200, "draft_plan": response}

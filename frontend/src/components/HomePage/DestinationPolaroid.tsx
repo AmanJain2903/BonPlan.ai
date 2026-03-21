@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, User, Users } from 'lucide-react';
 import { api } from '../../api';
 
 interface DestinationPolaroidProps {
   destinations: any[];
   originCity?: string;
+  isGroup?: boolean;
 }
 
-export default function DestinationPolaroid({ destinations, originCity }: DestinationPolaroidProps) {
+export default function DestinationPolaroid({ destinations, originCity, isGroup }: DestinationPolaroidProps) {
   const [images, setImages] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -83,7 +84,7 @@ export default function DestinationPolaroid({ destinations, originCity }: Destin
           alt={currentName}
           onLoad={() => setImageLoaded(true)}
           onError={() => setImageLoaded(true)}
-          className={`absolute inset-0 w-full h-full object-cover brightness-[0.6] transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 w-full h-full object-cover brightness-[0.75] transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
 
@@ -100,6 +101,15 @@ export default function DestinationPolaroid({ destinations, originCity }: Destin
           <span className="text-cyan text-s font-semibold drop-shadow-md">
             {originCity}
           </span>
+        </div>
+      )}
+
+      {/* Solo/Squad Badge Overlay */}
+      {isGroup !== undefined && (
+        <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
+          <div className="flex items-center justify-center p-1.5 rounded-full border bg-black/40 backdrop-blur-md text-cyan border-white/20 shadow-lg hover:scale-105 transition-transform">
+            {isGroup ? <Users size={16} strokeWidth={2.5} /> : <User size={16} strokeWidth={2.5} />}
+          </div>
         </div>
       )}
 
