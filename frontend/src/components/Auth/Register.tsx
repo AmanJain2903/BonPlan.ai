@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Check, X as XIcon } from 'lucide-react';
+import { motion } from 'framer-motion';
 import GoogleSignInButton from './GoogleSignInButton';
 import CountryCodeSelect from '../shared/CountryCodeSelect';
 import { api } from '../../api';
@@ -88,10 +89,15 @@ export default function Register() {
     'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all duration-200';
 
   return (
-    <div className="min-h-screen bg-midnight flex items-center justify-center px-4 py-10 sm:py-16">
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 sm:py-16">
       <div className="pointer-events-none fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-cyan/[0.03] blur-[120px]" />
 
-      <div className="relative w-full max-w-lg">
+      <motion.div
+        initial={{ opacity: 0, y: 30, filter: 'blur(8px)', willChange: 'transform, opacity, filter' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-lg"
+      >
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-1.5 text-2xl font-bold text-white mb-4">
             <img src="/logo.png" alt="BonPlan.ai" className="h-15 w-15 object-contain" />
@@ -105,11 +111,10 @@ export default function Register() {
         {/* Status banner */}
         {(apiMessage || googleError) && (
           <div
-            className={`mb-4 rounded-xl py-3 text-sm text-center ${
-              status === 'success' && !googleError
-                ? 'text-cyan'
-                : 'text-red-400'
-            }`}
+            className={`mb-4 rounded-xl py-3 text-sm text-center ${status === 'success' && !googleError
+              ? 'text-cyan'
+              : 'text-red-400'
+              }`}
           >
             {googleError || apiMessage}
           </div>
@@ -204,11 +209,10 @@ export default function Register() {
                     value={form.confirmPassword}
                     onChange={(e) => update('confirmPassword', e.target.value)}
                     placeholder="Re-enter"
-                    className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${
-                      passwordMismatch
-                        ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                        : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
-                    }`}
+                    className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${passwordMismatch
+                      ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                      : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
+                      }`}
                   />
                   <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan/80 hover:text-cyan transition-colors cursor-pointer">
                     {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -251,7 +255,7 @@ export default function Register() {
           Already have an account?{' '}
           <Link to="/login" className="text-cyan hover:text-cyan/80 transition-colors font-medium">Log in</Link>
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }

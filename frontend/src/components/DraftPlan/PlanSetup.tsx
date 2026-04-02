@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useTrip } from '../../context/TripContext';
 
@@ -13,7 +14,7 @@ import { Step2RoutingStyle } from './StepComponents/Step2.tsx';
 import { Step3Places } from './StepComponents/Step3.tsx';
 import { Step4Dates } from './StepComponents/Step4.tsx';
 import { Step5BudgetPacing } from './StepComponents/Step5.tsx';
-import { Step6Conversation } from './StepComponents/Step6.tsx';
+import { Step6TripPreferences } from './StepComponents/Step6.tsx';
 import { PlanSummary } from './PlanSummary.tsx';
 
 // API
@@ -22,6 +23,7 @@ import { api } from '../../api';
 export default function PlanSetup() {
   const { isLoggedIn, user, token } = useAuth();
   const { trip, setTrip, updateTripData } = useTrip();
+  const navigate = useNavigate();
 
   const [hoveredTip, setHoveredTip] = useState<string | null>(null);
 
@@ -40,21 +42,26 @@ export default function PlanSetup() {
     sessionStorage.setItem('bonplan.planStepIndex', String(currentStepIndex));
   }, [currentStepIndex]);
 
-
-  if (!isLoggedIn) return <Navigate to="/login" replace />;
-
-  const name = user?.firstName?.trim() || '';
-
-  // Get the Metadata for the current step!
-  const isSummary = currentStepIndex >= activeSteps.length;
-  const currentStepMeta = isSummary ? null : activeSteps[currentStepIndex];
-
   const commitCurrentStepRef = useRef<null | (() => void)>(null);
 
   // Clear any previously registered commit when step changes.
   useEffect(() => {
     commitCurrentStepRef.current = null;
   }, [currentStepIndex]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      navigate('/login', { replace: true });
+    }
+  }, [isLoggedIn, navigate]);
+
+  if (!isLoggedIn) return null;
+
+  const name = user?.firstName?.trim() || '';
+
+  // Get the Metadata for the current step!
+  const isSummary = currentStepIndex >= activeSteps.length;
+  const currentStepMeta = isSummary ? null : activeSteps[currentStepIndex];
 
   // --- Core Engine Functions ---
   const handleNext = () => {
@@ -83,16 +90,20 @@ export default function PlanSetup() {
             }
             if (token) {
               try {
-                await api.planDraft.draftPlan(token, {
+                const response = await api.plan.draftPlan(token, {
                   planningStyle: trip.planningStyle,
                   routingStyle: trip.routingStyle,
                   tripData: { ...trip.tripData, adults, children },
                 });
+                const tripId = response.trip_id;
+                navigate(`/plan/${trip.planningStyle}/${tripId}`, { replace: true });
               } catch (e) {
                 console.error('Failed to draft plan API call', e);
+                navigate('/', { replace: true });
               }
             } else {
               console.error('No JWT token found for drafting');
+              navigate('/login', { replace: true });
             }
           }}
         />
@@ -157,9 +168,9 @@ export default function PlanSetup() {
             }}
           />
         );
-      case 'conversation':
+      case 'preferences':
         return (
-          <Step6Conversation
+          <Step6TripPreferences
             tripData={trip.tripData}
             updateTripData={updateTripData}
             onNext={handleNext}
@@ -174,7 +185,12 @@ export default function PlanSetup() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden pt-[24px] pb-[24px]">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, filter: 'blur(8px)', transition: { duration: 0.3 } }}
+      className="min-h-screen relative overflow-hidden pt-[24px] pb-[24px]"
+    >
 
       {/* Back button */}
       {currentStepIndex > 0 && (
@@ -253,6 +269,6 @@ export default function PlanSetup() {
         {renderStepContent()}
 
       </div>
-    </div>
+    </motion.div>
   );
 }

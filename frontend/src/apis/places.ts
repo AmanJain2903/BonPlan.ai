@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_BASE } from './config';
+import { API_BASE, FALLBACK_IMAGE } from './config';
 
 export const api = {
     getDestinationImage: async (destination: string): Promise<string> => {
@@ -12,7 +12,21 @@ export const api = {
         } catch (error) {
             console.error('Failed to fetch destination image:', error);
             // Fallback image in case of error (a nice default placeholder)
-            return 'https://images.unsplash.com/photo-1488646953014-c8cb19dc014a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+            return FALLBACK_IMAGE;
+        }
+    },
+
+    getDestinationImages: async (destination: string, count: number = 10, min_ratio: number = 1.4): Promise<string[]> => {
+        try {
+            const { data } = await axios.get<{ image_urls: string[] }>(
+                `${API_BASE}/api/v1/places/destination-images`,
+                { params: { destination, count, min_ratio } }
+            );
+            return data.image_urls;
+        } catch (error) {
+            console.error('Failed to fetch destination image:', error);
+            // Fallback image in case of error (a nice default placeholder)
+            return [FALLBACK_IMAGE];
         }
     }
 };

@@ -1,10 +1,13 @@
 import { useRef, useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Calendar } from 'lucide-react';
-import { DraftPlan } from '../../apis/planDraft';
+import { Plan } from '../../apis/plan';
 import DestinationPolaroid from './DestinationPolaroid';
+import { useDraftPlans } from '../../hooks/useTripFilters';
+import { useNavigate } from 'react-router-dom';
 
 interface DraftPlansComponentProps {
-  plans: DraftPlan[];
+  plans: Plan[];
 }
 
 const formatDate = (dateObj?: any) => {
@@ -33,6 +36,10 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
   const [trackPadding, setTrackPadding] = useState('24px');
   const [isOverflowing, setIsOverflowing] = useState(true);
 
+  const draftPlans = useDraftPlans(plans);
+
+  const navigate = useNavigate();
+
   // Layout Engine to perfectly center sparse maps (<3 cards) without `< 0px` clipping heavy overflows
   useEffect(() => {
     const handleLayoutEngine = () => {
@@ -42,7 +49,7 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
 
       const cardWidth = w >= 640 ? 380 : 300;
       const gap = 24;
-      const cardsCount = plans.length;
+      const cardsCount = draftPlans.length;
 
       const innerTrackWidth = (cardsCount * cardWidth) + (Math.max(0, cardsCount - 1) * gap) + 1;
       const capacity = isMob ? w : 1240;
@@ -60,7 +67,7 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
     handleLayoutEngine();
     window.addEventListener('resize', handleLayoutEngine);
     return () => window.removeEventListener('resize', handleLayoutEngine);
-  }, [plans.length]);
+  }, [draftPlans.length]);
 
   // Synchronously update masks, arrows, and card scaling bound 1:1 to exact scroll pixels
   useEffect(() => {
@@ -120,9 +127,9 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
       if (container) container.removeEventListener('scroll', updateCarouselUI);
       window.removeEventListener('resize', updateCarouselUI);
     };
-  }, [plans]);
+  }, [draftPlans.length]);
 
-  if (!plans || plans.length === 0) return null;
+  if (!draftPlans || draftPlans.length === 0) return null;
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -173,7 +180,7 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
               Your Draft Plans
             </h2>
             <p className="text-sm font-bold text-cyan uppercase tracking-widest">
-              {plans.length === 1 ? '1 DRAFT SAVED' : `${plans.length} DRAFTS SAVED`}
+              {draftPlans.length === 1 ? '1 DRAFT SAVED' : `${draftPlans.length} DRAFTS SAVED`}
             </p>
           </div>
         </div>
@@ -193,7 +200,11 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
           </button>
 
           {/* Carousel Track: Hardware bounds restricted width completely geometrically forcing arbitrary 4k monitors from rendering illegitimately stretched grids (> 3 main cards). Flex remains 100% symmetrically boxed by justify-between! */}
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: 40, filter: 'blur(4px)', willChange: 'transform, opacity, filter' }}
+            whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
             className="flex-1 overflow-hidden w-full max-w-[1240px] relative transition-[mask-image] duration-300"
             style={{
               maskImage: getMaskStyle(),
@@ -211,8 +222,7 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
                 className={`flex gap-6 w-max min-w-full transition-[padding] duration-300 ${!isOverflowing ? 'justify-center' : ''} mt-16`}
                 style={isOverflowing ? { paddingLeft: trackPadding } : {}}
               >
-                {plans.map((plan, index) => {
-                  const isGroup = plan.planning_type?.toLowerCase() === 'squad';
+                {draftPlans.map((plan, index) => {
                   const totalAdults = plan.adults || 1;
                   const totalChildren = plan.children || 0;
                   const guestString = totalAdults === 1 && totalChildren === 0 ? '1 Adult' : totalAdults === 1 ? `1 Adult • ${totalChildren} Children` : totalChildren === 0 ? `${totalAdults} Adults` : `${totalAdults} Adults • ${totalChildren} Children`;
@@ -231,14 +241,18 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
                       data-id={plan.id}
                       // We remove transform/opacity from Tailwind transitions to lock the CSS exactly 1:1 with the scroll tracker. They only apply safely on standard DOM boundaries.
                       className="flex-shrink-0 w-[300px] sm:w-[380px] snap-center group/card relative rounded-2xl border border-white/[0.06] bg-carbon/40 p-6 sm:p-8 hover:bg-carbon/80 transition-[background-color,border-color,box-shadow] duration-[400ms] flex flex-col cursor-pointer overflow-hidden hover:border-cyan/40 hover:shadow-[0_0_40px_rgba(102,252,241,0.2)]"
-                      onClick={() => window.location.href = `/plan/${plan.id}`}
+                      // onClick={() => window.location.href = `/plan/${plan.planning_type}/${plan.id}`}
+                      onClick={() => navigate(`/plan/${plan.planning_type}/${plan.id}`)}
                     >
                       {/* Background gradient on hover */}
                       <div className="absolute inset-0 bg-gradient-to-br from-cyan/[0.03] to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-500" />
 
                       <div className="relative z-10 flex flex-col h-full">
-                        {/* Polaroid Area */}
-                        <DestinationPolaroid destinations={plan.destinations || []} originCity={originCity} isGroup={isGroup} />
+                        {/* Polaroid Area (auto-rotates when multiple destinations exist) */}
+                        <DestinationPolaroid
+                          destinations={plan.destinations || []}
+                          originCity={originCity}
+                        />
 
                         {/* Content below Polaroid */}
                         <div className="flex flex-col flex-1">
@@ -280,7 +294,7 @@ export default function DraftPlansComponent({ plans }: DraftPlansComponentProps)
                 )}
               </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Right Navigation Arrow */}
           <button

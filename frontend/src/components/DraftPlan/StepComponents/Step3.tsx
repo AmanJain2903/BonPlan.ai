@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { MapPin, PlaneTakeoff, Navigation, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useTrip, type Place } from '../../../context/TripContext';
 import { GOOGLE_MAPS_API_KEY } from '../../../apis/config';
 import { APILoader, PlacePicker } from '@googlemaps/extended-component-library/react';
@@ -16,12 +17,12 @@ type Step3Props = {
 // --- 1. Reusable Google Place Parser ---
 const parseGooglePlace = (e: any, onUpdate: (data: any) => void) => {
   const place = e.target?.value;
-  
+
   if (place && place.location) {
     const lat = place.location.lat();
     const lng = place.location.lng();
     const name = place.displayName;
-  
+
     let city = '';
     let state = '';
     let country = '';
@@ -33,14 +34,14 @@ const parseGooglePlace = (e: any, onUpdate: (data: any) => void) => {
           city = component.longText;
         }
         if (types.includes('administrative_area_level_1')) {
-          state = component.shortText; 
+          state = component.shortText;
         }
         if (types.includes('country')) {
           country = component.longText;
         }
       });
     }
-    
+
     if (!city) {
       city = name;
     }
@@ -114,29 +115,37 @@ const LocationCard = ({
     </div>
 
     {/* Mini Map (Renders when BOTH fields are selected globally) */}
-    {showMap && inputValue?.lat != null && inputValue?.lng != null && (
-      <div className="relative mb-4 h-[170px] rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-        <gmp-map
-          center={`${inputValue.lat},${inputValue.lng}`}
-          zoom="11"
-          map-id="DEMO_MAP_ID"
-          style={{ height: '100%', width: '100%' }}
+    <AnimatePresence>
+      {showMap && inputValue?.lat != null && inputValue?.lng != null && (
+        <motion.div
+          initial={{ height: 0, opacity: 0, marginBottom: 0 }}
+          animate={{ height: 170, opacity: 1, marginBottom: 16 }} // 16px is mb-4
+          exit={{ height: 0, opacity: 0, marginBottom: 0 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="relative rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden"
         >
-          <gmp-advanced-marker
-            position={`${inputValue.lat},${inputValue.lng}`}
-            title={inputValue.city}
-          />
-        </gmp-map>
-        <div className="pointer-events-none absolute inset-0 ring-1 ring-white/[0.06]" />
-      </div>
-    )}
+          <gmp-map
+            center={`${inputValue.lat},${inputValue.lng}`}
+            zoom="11"
+            map-id="DEMO_MAP_ID"
+            style={{ height: '100%', width: '100%' }}
+          >
+            <gmp-advanced-marker
+              position={`${inputValue.lat},${inputValue.lng}`}
+              title={inputValue.city}
+            />
+          </gmp-map>
+          <div className="pointer-events-none absolute inset-0 ring-1 ring-white/[0.06]" />
+        </motion.div>
+      )}
+    </AnimatePresence>
 
     {belowMap}
 
     {/* Google Place Picker */}
     <div className="relative placepicker-shell">
       <PlacePicker
-        ref={placePickerRef} 
+        ref={placePickerRef}
         key={placePickerKey}
         placeholder="Search for a city or airport"
         className="w-full"
@@ -215,9 +224,16 @@ function Step3SingleHub({ onNext, registerCommit }: Step3Props) {
       </div>
 
       {/* Sticky Yes button at bottom of viewport */}
-      {canContinue && (
-        <div className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent">
-          <div className="pointer-events-auto">
+      <AnimatePresence>
+        {canContinue && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent"
+          >
+            <div className="pointer-events-auto">
             <div className="flex items-center gap-4 rounded-full px-6 py-3">
               <span className="text-sm text-white/80 text-center pl-2 select-none">
                 Are we going from{' '}
@@ -239,8 +255,9 @@ function Step3SingleHub({ onNext, registerCommit }: Step3Props) {
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {canContinue && <div className="h-16 shrink-0" aria-hidden />}
     </>
@@ -331,7 +348,7 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
       <APILoader apiKey={GOOGLE_MAPS_API_KEY} solutionChannel="GMP_GE_placepicker_v2" />
 
       <div className={`w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 animate-[fade-in_400ms_ease-out] ${canContinue ? 'pb-24' : ''}`}>
-        
+
         {/* --- SOURCE CARD --- */}
         <LocationCard
           title="Where are we starting from?"
@@ -380,29 +397,37 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
           belowMap={
             <>
               {/* Custom Multi-Map (Same 170px height as SingleHub) */}
-              {canContinue && destinationsInput.length > 0 && (
-                <div className="relative mb-4 h-[170px] rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-                  <gmp-map
-                    ref={mapRef}
-                    center={`${destinationsInput[0].lat},${destinationsInput[0].lng}`}
-                    zoom="11"
-                    map-id="DEMO_MAP_ID"
-                    style={{ height: '100%', width: '100%' }}
+              <AnimatePresence>
+                {canContinue && destinationsInput.length > 0 && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0, marginBottom: 0 }}
+                    animate={{ height: 170, opacity: 1, marginBottom: 16 }} // 16px is mb-4
+                    exit={{ height: 0, opacity: 0, marginBottom: 0 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="relative rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden"
                   >
-                    {/* ONLY iterate destinations. No lines. No source pin. */}
-                    {destinationsInput.map((s, idx) =>
-                      s.lat != null && s.lng != null ? (
-                        <gmp-advanced-marker
-                          key={`${s.lat}-${s.lng}-${idx}`}
-                          position={`${s.lat},${s.lng}`}
-                          title={s.city ?? `Stop ${idx + 1}`}
-                        />
-                      ) : null,
-                    )}
-                  </gmp-map>
-                  <div className="pointer-events-none absolute inset-0 ring-1 ring-white/[0.06]" />
-                </div>
-              )}
+                    <gmp-map
+                      ref={mapRef}
+                      center={`${destinationsInput[0].lat},${destinationsInput[0].lng}`}
+                      zoom="11"
+                      map-id="DEMO_MAP_ID"
+                      style={{ height: '100%', width: '100%' }}
+                    >
+                      {/* ONLY iterate destinations. No lines. No source pin. */}
+                      {destinationsInput.map((s, idx) =>
+                        s.lat != null && s.lng != null ? (
+                          <gmp-advanced-marker
+                            key={`${s.lat}-${s.lng}-${idx}`}
+                            position={`${s.lat},${s.lng}`}
+                            title={s.city ?? `Stop ${idx + 1}`}
+                          />
+                        ) : null,
+                      )}
+                    </gmp-map>
+                    <div className="pointer-events-none absolute inset-0 ring-1 ring-white/[0.06]" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Pills */}
               {destinationsInput.length > 0 && (
@@ -433,9 +458,16 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
       </div>
 
       {/* Sticky Yes button at bottom of viewport */}
-      {canContinue && (
-        <div className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent">
-          <div className="pointer-events-auto">
+      <AnimatePresence>
+        {canContinue && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent"
+          >
+            <div className="pointer-events-auto">
             <div className="flex items-center gap-4 rounded-full px-6 py-3">
               <span className="text-sm text-white/80 text-center pl-2 select-none">
                 Are we starting this trip from{' '}
@@ -457,8 +489,9 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {canContinue && <div className="h-16 shrink-0" aria-hidden />}
     </>

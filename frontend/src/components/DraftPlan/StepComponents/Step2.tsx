@@ -101,7 +101,7 @@ export function Step2RoutingStyle({ planningStyle, onSelect }: Props) {
   // Fetch contextual texts exactly once
   const planStep = PLAN_STEPS.find((step) => step.id === 'planning-style');
   const selectedPlanText = planStep?.options?.find((opt) => opt.id === planningStyle);
-  
+
   const routeStep = PLAN_STEPS.find((step) => step.id === 'routing-style');
   const routeOptions = routeStep?.options || [];
 
@@ -111,7 +111,7 @@ export function Step2RoutingStyle({ planningStyle, onSelect }: Props) {
       style={{ maxWidth: 'min(calc(50% - 1rem), 600px)', minWidth: '340px' }}
     >
       <div className={`relative rounded-2xl border backdrop-blur-sm p-10 bg-carbon/50 ${theme.borderColor} ${theme.shadowColor}`}>
-        
+
         {/* Panel Badge & Context Description */}
         <div className="flex items-center gap-3 mb-2">
           <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${theme.iconBg}`}>

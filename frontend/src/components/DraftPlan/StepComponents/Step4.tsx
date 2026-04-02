@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarPlus, CalendarCheck } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { DayPicker } from 'react-day-picker';
 import type { TripData, TripDate } from '../../../context/TripContext';
 import { api } from '../../../apis/utils';
 import { DateTime } from 'luxon';
 
 // Optional: if you haven't imported the base styles in your global css
-import 'react-day-picker/dist/style.css'; 
+import 'react-day-picker/dist/style.css';
 
 type Step4Props = {
   tripData: TripData | null;
@@ -54,7 +55,7 @@ const DateCard = ({
   month,
   onMonthChange,
 }: DateCardProps) => {
-  
+
   // Convert YYYY-MM-DD to a local JS Date at midnight (date-only, no timezone drift)
   const selectedDate = useMemo(() => {
     if (!inputValue) return undefined;
@@ -139,8 +140,8 @@ const DateCard = ({
           modifiers={
             inBetweenModifier
               ? {
-                  inBetween: inBetweenModifier,
-                }
+                inBetween: inBetweenModifier,
+              }
               : undefined
           }
           // Tailwind formatting for the calendar
@@ -167,7 +168,7 @@ export function Step4Dates({ tripData, updateTripData, onNext, registerCommit }:
   const origin = tripData?.origin ?? null;
 
   const [timezoneId, setTimezoneId] = useState<string | null>(
-     null,
+    null,
   );
 
   const [startInput, setStartInput] = useState<string>(() => {
@@ -260,7 +261,7 @@ export function Step4Dates({ tripData, updateTripData, onNext, registerCommit }:
       setEndInput('');
       setEndMonth(new Date(s.year, s.month - 1, 1));
     }
-    if (s < DateTime.now().startOf('day')){
+    if (s < DateTime.now().startOf('day')) {
       setStartInput('');
       setEndInput('');
     }
@@ -299,59 +300,66 @@ export function Step4Dates({ tripData, updateTripData, onNext, registerCommit }:
 
   const handleStartMonthChange = (newMonth: Date) => {
     if (newMonth > startMonth) {
-       const diffMonths = (newMonth.getFullYear() - startMonth.getFullYear()) * 12 + (newMonth.getMonth() - startMonth.getMonth());
-       const nextEndMonth = new Date(endMonth);
-       nextEndMonth.setMonth(nextEndMonth.getMonth() + diffMonths);
-       setEndMonth(nextEndMonth);
+      const diffMonths = (newMonth.getFullYear() - startMonth.getFullYear()) * 12 + (newMonth.getMonth() - startMonth.getMonth());
+      const nextEndMonth = new Date(endMonth);
+      nextEndMonth.setMonth(nextEndMonth.getMonth() + diffMonths);
+      setEndMonth(nextEndMonth);
     }
     setStartMonth(newMonth);
   };
 
   return (
     <>
-    <div className={`w-full max-w-5xl animate-[fade-in_400ms_ease-out] ${canConfirm ? 'pb-24' : ''}`}>
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-        {/* Start Date */}
-        <DateCard
-          title="When do we kick things off?"
-          subtitle="Your trip start date"
-          Icon={CalendarPlus}
-          gradientPos="30% 20%"
-          inputValue={startInput}
-          onChange={setStartInput}
-          minDateJs={minDateJs}
-          rangeStartIso={startInput && endInput ? startInput : undefined}
-          rangeEndIso={startInput && endInput ? endInput : undefined}
-          rangeMode="start"
-          month={startMonth}
-          onMonthChange={handleStartMonthChange}
-        />
+      <div className={`w-full max-w-5xl animate-[fade-in_400ms_ease-out] ${canConfirm ? 'pb-24' : ''}`}>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          {/* Start Date */}
+          <DateCard
+            title="When do we kick things off?"
+            subtitle="Your trip start date"
+            Icon={CalendarPlus}
+            gradientPos="30% 20%"
+            inputValue={startInput}
+            onChange={setStartInput}
+            minDateJs={minDateJs}
+            rangeStartIso={startInput && endInput ? startInput : undefined}
+            rangeEndIso={startInput && endInput ? endInput : undefined}
+            rangeMode="start"
+            month={startMonth}
+            onMonthChange={handleStartMonthChange}
+          />
 
-        {/* End Date */}
-        <DateCard
-          title="When does this chapter wrap?"
-          subtitle="The day you head back"
-          Icon={CalendarCheck}
-          gradientPos="70% 20%"
-          inputValue={endInput}
-          onChange={setEndInput}
-          minDateJs={endMinDateJs}
-          animDelay="0.3s" // Offsets the wiggle animation slightly for a natural feel!
-          rangeStartIso={startInput && endInput ? startInput : undefined}
-          rangeEndIso={startInput && endInput ? endInput : undefined}
-          rangeMode="end"
-          month={endMonth}
-          onMonthChange={setEndMonth}
-        />
-      </div>
+          {/* End Date */}
+          <DateCard
+            title="When does this chapter wrap?"
+            subtitle="The day you head back"
+            Icon={CalendarCheck}
+            gradientPos="70% 20%"
+            inputValue={endInput}
+            onChange={setEndInput}
+            minDateJs={endMinDateJs}
+            animDelay="0.3s" // Offsets the wiggle animation slightly for a natural feel!
+            rangeStartIso={startInput && endInput ? startInput : undefined}
+            rangeEndIso={startInput && endInput ? endInput : undefined}
+            rangeMode="end"
+            month={endMonth}
+            onMonthChange={setEndMonth}
+          />
+        </div>
       </div>
 
       {/* Sticky Yes button at bottom of viewport */}
-      {canConfirm && (
-        // 1. Taller gradient (pt-32) creates a perfectly smooth fade with no harsh lines
-        <div className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent">
-          
-          <div className="pointer-events-auto">
+      <AnimatePresence>
+        {canConfirm && (
+          // 1. Taller gradient (pt-32) creates a perfectly smooth fade with no harsh lines
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent"
+          >
+
+            <div className="pointer-events-auto">
             <div className="flex items-center gap-4 rounded-full px-6 py-3">
               <span className="text-sm text-white/80 text-center pl-2 select-none">
                 Are we travelling from{' '}
@@ -368,8 +376,9 @@ export function Step4Dates({ tripData, updateTripData, onNext, registerCommit }:
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
       {canConfirm && <div className="h-16 shrink-0" aria-hidden />}
     </>
   );

@@ -88,7 +88,7 @@ export default function SettingsPanel() {
     'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all duration-200';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-7xl">
       {/* Change Password */}
       <section className={`flex flex-col ${isGoogle ? 'pointer-events-none select-none' : ''}`}>
         <div className="flex items-center gap-3 mb-6">
@@ -174,8 +174,8 @@ export default function SettingsPanel() {
                 onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
                 placeholder="Re-enter new password"
                 className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${passwordMismatch
-                    ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                    : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
+                  ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                  : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
                   }`}
               />
               <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan/80 hover:text-cyan transition-colors cursor-pointer">

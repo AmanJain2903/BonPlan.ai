@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plane, MapPin, Utensils, Dices, Coffee } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const nodes = [
   { icon: Plane, label: 'Flight From SFO', time: '12:00 PM', anchor: true },
@@ -29,7 +30,13 @@ export default function RoutingVisual() {
   }, []);
 
   return (
-    <div className="relative rounded-2xl border border-white/[0.06] bg-carbon/40 p-6 sm:p-8 overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.8, clipPath: 'inset(10% 30% 10% 30% round 16px)', filter: 'blur(8px)', willChange: 'transform, opacity, filter, clip-path' }}
+      whileInView={{ opacity: 1, scale: 1, clipPath: 'inset(0% 0% 0% 0% round 16px)', filter: 'blur(0px)' }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+      className="relative rounded-2xl border border-white/[0.06] bg-carbon/40 p-6 sm:p-8 overflow-hidden"
+    >
       {/* Scanning beam */}
       <div
         className="pointer-events-none absolute top-0 bottom-0 w-24 z-10 transition-none"
@@ -129,6 +136,6 @@ export default function RoutingVisual() {
           Transit verified via <span className="text-cyan/40">Google Maps API</span>
         </span>
       </div>
-    </div>
+    </motion.div>
   );
 }

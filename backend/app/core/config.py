@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD")
 
     # Fallbacks
-    FALLBACK_IMAGE_DRAFT: str = os.getenv("FALLBACK_IMAGE_DRAFT", "https://unsplash.com/photos/airplanes-window-view-of-sky-during-golden-hour-oCdVtGFeDC0")
+    FALLBACK_IMAGE: str = os.getenv("FALLBACK_IMAGE", "https://unsplash.com/photos/airplanes-window-view-of-sky-during-golden-hour-oCdVtGFeDC0")
 
 
     @property

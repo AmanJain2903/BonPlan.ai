@@ -98,7 +98,7 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
   return (
     <div className="animate-[fade-in_500ms_ease-out]">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl w-full">
-        
+
         {/* 3. Map over the options instead of hardcoding buttons */}
         {options.map((option) => {
           const theme = THEME_MAP[option.id];
@@ -136,7 +136,7 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
                 <h2 className={`text-2xl font-bold text-white transition-colors duration-300 ${theme.titleHover}`}>
                   {option.title}
                 </h2>
-                
+
                 {/* Tooltip */}
                 <div
                   className="relative"

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Gauge, Wallet } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { PlanOption } from '../Plan';
 import type { TripData } from '../../../context/TripContext';
 import { PLAN_STEPS } from '../Plan';
@@ -31,11 +32,10 @@ function ChoiceCard({ choice, isSelected, onSelect, index }: ChoiceCardProps) {
     <button
       type="button"
       onClick={onSelect}
-      className={`group relative rounded-xl border p-4 text-left transition-all duration-300 cursor-pointer overflow-hidden ${
-        isSelected
+      className={`group relative rounded-xl border p-4 text-left transition-all duration-300 cursor-pointer overflow-hidden ${isSelected
           ? 'border-cyan/40 bg-cyan/10 shadow-[0_0_24px_rgba(102,252,241,0.15)]'
           : 'border-white/[0.08] bg-white/[0.02] hover:border-cyan/25 hover:bg-cyan/5'
-      }`}
+        }`}
       style={{ animation: `fade-in 400ms ease-out ${index * 60}ms both` }}
     >
       <div
@@ -201,58 +201,65 @@ export function Step5BudgetPacing({ tripData, updateTripData, onNext, registerCo
 
   return (
     <>
-    <div className={`w-full max-w-5xl animate-[fade-in_400ms_ease-out] ${canConfirm ? 'pb-24' : ''}`}>
-      {/* Pace & Budget Cards - Big Screen: 5 subcards each */}
-      <div className="space-y-6 hidden md:block">
-        <SectionCard
-          title={paceOption?.title ?? 'Trip Pace'}
-          subtitle={paceOption?.description ?? 'Choose your pace'}
-          Icon={Gauge}
-          choices={paceChoices}
-          value={pace ?? ''}
-          onChange={setPace}
-          gradientPos="20% 30%"
-        />
-        <SectionCard
-          title={budgetOption?.title ?? 'Trip Budget'}
-          subtitle={budgetOption?.description ?? 'Choose your budget'}
-          Icon={Wallet}
-          choices={budgetChoices}
-          value={budget ?? ''}
-          onChange={setBudget}
-          gradientPos="70% 20%"
-        />
+      <div className={`w-full max-w-5xl animate-[fade-in_400ms_ease-out] ${canConfirm ? 'pb-24' : ''}`}>
+        {/* Pace & Budget Cards - Big Screen: 5 subcards each */}
+        <div className="space-y-6 hidden md:block">
+          <SectionCard
+            title={paceOption?.title ?? 'Trip Pace'}
+            subtitle={paceOption?.description ?? 'Choose your pace'}
+            Icon={Gauge}
+            choices={paceChoices}
+            value={pace ?? ''}
+            onChange={setPace}
+            gradientPos="20% 30%"
+          />
+          <SectionCard
+            title={budgetOption?.title ?? 'Trip Budget'}
+            subtitle={budgetOption?.description ?? 'Choose your budget'}
+            Icon={Wallet}
+            choices={budgetChoices}
+            value={budget ?? ''}
+            onChange={setBudget}
+            gradientPos="70% 20%"
+          />
+        </div>
+
+        {/* Small Screen: Slider 1-5 with current title/description */}
+        <div className="space-y-6 md:hidden">
+          <SliderCard
+            title={paceOption?.title ?? 'Trip Pace'}
+            subtitle={paceOption?.description ?? 'Choose your pace'}
+            Icon={Gauge}
+            choices={paceChoices}
+            value={pace ?? ''}
+            onChange={setPace}
+            gradientPos="20% 30%"
+          />
+          <SliderCard
+            title={budgetOption?.title ?? 'Trip Budget'}
+            subtitle={budgetOption?.description ?? 'Choose your budget'}
+            Icon={Wallet}
+            choices={budgetChoices}
+            value={budget ?? ''}
+            onChange={setBudget}
+            gradientPos="70% 20%"
+          />
+        </div>
       </div>
 
-      {/* Small Screen: Slider 1-5 with current title/description */}
-      <div className="space-y-6 md:hidden">
-        <SliderCard
-          title={paceOption?.title ?? 'Trip Pace'}
-          subtitle={paceOption?.description ?? 'Choose your pace'}
-          Icon={Gauge}
-          choices={paceChoices}
-          value={pace ?? ''}
-          onChange={setPace}
-          gradientPos="20% 30%"
-        />
-        <SliderCard
-          title={budgetOption?.title ?? 'Trip Budget'}
-          subtitle={budgetOption?.description ?? 'Choose your budget'}
-          Icon={Wallet}
-          choices={budgetChoices}
-          value={budget ?? ''}
-          onChange={setBudget}
-          gradientPos="70% 20%"
-        />
-      </div>     
-      </div> 
-
       {/* Sticky Yes button at bottom of viewport */}
-      {canConfirm && (
-        <div className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent">
-          <div className="pointer-events-auto">
+      <AnimatePresence>
+        {canConfirm && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent"
+          >
+            <div className="pointer-events-auto">
             <div className="flex items-center gap-4 rounded-full px-6 py-3">
-            <span className="text-sm text-white/70 text-center">
+              <span className="text-sm text-white/70 text-center">
                 Do you want {/^[aeiou]/i.test(paceChoice?.title ?? '') ? 'an' : 'a'}{' '}
                 <span className="text-cyan font-semibold">{paceChoice?.title ?? 'Balanced'}</span>{' '}
                 trip on a{' '}
@@ -267,8 +274,9 @@ export function Step5BudgetPacing({ tripData, updateTripData, onNext, registerCo
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
       {canConfirm && <div className="h-16 shrink-0" aria-hidden />}
     </>
   );

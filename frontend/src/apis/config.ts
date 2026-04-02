@@ -6,3 +6,6 @@ export const GOOGLE_CLIENT_ID: string =
 
 export const GOOGLE_MAPS_API_KEY: string =
   import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+export const FALLBACK_IMAGE: string =
+  import.meta.env.VITE_FALLBACK_IMAGE;

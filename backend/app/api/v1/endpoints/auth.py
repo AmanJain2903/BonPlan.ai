@@ -7,6 +7,7 @@ This file contains the authentication endpoints for the v1 version of the API.
 from app.utils.emailVerification import send_email
 from app.database.database import Session, get_db
 from app.database.models.usersTable import User
+from app.database.schemas.preferences import TripPreferencesSchema
 from app.core.config import settings
 
 from fastapi import HTTPException, Request, APIRouter, Depends
@@ -16,10 +17,21 @@ import bcrypt
 import jwt
 import re
 
+from sqlalchemy.exc import IntegrityError
+
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from pydantic import BaseModel
 
 router = APIRouter()
+
+class UpdateProfileRequest(BaseModel):
+    token: str
+    first_name: str
+    last_name: str
+    country_code: str | None = None
+    phone: str | None = None
+    preferences: dict = {}
 
 """
 Helper functions
@@ -76,21 +88,25 @@ def google_login(token: str, db: Session = Depends(get_db)):
     if existingUser and existingUser.auth_provider == "local":
         raise HTTPException(status_code=400, detail="An account with this email already exists. Please log in with your password.")
     elif existingUser and existingUser.auth_provider == "google":
+        existingUser.is_new_user = False
+        db.commit()
         token_payload = {
             "user_id": str(existingUser.id),
             "exp": datetime.now(timezone.utc) + timedelta(days=7)
         }
         jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-        return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email}
+        prefs = existingUser.preferences or TripPreferencesSchema().model_dump()
+        return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email, "preferences": prefs, "is_new_user": existingUser.is_new_user}
     else:
         try:
             newUser = User(
                 first_name=makeFirstLetterCapital(first_name),
                 last_name=makeFirstLetterCapital(last_name),
                 email=email,
-                phone={'country_code': "", 'number': ""},
+                phone={'country_code': None, 'number': None},
                 auth_provider="google",
                 is_verified=True,
+                preferences=TripPreferencesSchema().model_dump(),
             )
             db.add(newUser)
             db.commit()
@@ -99,8 +115,9 @@ def google_login(token: str, db: Session = Depends(get_db)):
                 "exp": datetime.now(timezone.utc) + timedelta(days=7)
             }
             jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-            return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email}
+            return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True}
         except Exception as e:
+            db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
 
 """
@@ -123,22 +140,30 @@ def local_register(first_name: str, last_name: str, email: str, password: str, c
         raise HTTPException(status_code=400, detail="User already exists. Please log in.")
     elif existingUser and existingUser.auth_provider == "google":
         raise HTTPException(status_code=400, detail="User already exists. Please log in with Google.")
+    isPhoneNumberUnique = db.query(User).filter(User.phone == {'country_code': code if code else None, 'number': phone if phone else None}).first()
+    if isPhoneNumberUnique:
+        raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
     else:
         try:
             newUser = User(
                 first_name=makeFirstLetterCapital(first_name),
                 last_name=makeFirstLetterCapital(last_name),
                 email=email,
-                phone={'country_code': code, 'number': phone},
+                phone={'country_code': code if code else None, 'number': phone if phone else None},
                 password_hash=bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
                 auth_provider="local",
                 is_verified=False,
+                preferences=TripPreferencesSchema().model_dump()
             )
             db.add(newUser)
             db.commit()
             send_verification_email(email, db)
             return {"message": "Registration successful. A verification email has been sent to your email address. Please verify your email address to login.", "status_code": 201}
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
         except Exception as e:
+            db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
 
 """
@@ -159,13 +184,20 @@ def local_login(email: str, password: str, db: Session = Depends(get_db)):
     if not user.is_verified:
         send_verification_email(email, db)
         raise HTTPException(status_code=403, detail="User not verified. A verification email has been sent to your email address. Please verify your email address to login.")
-    
-    token_payload = {
-        "user_id": str(user.id),
-        "exp": datetime.now(timezone.utc) + timedelta(days=7)
-    }
-    jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-    return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": user.first_name, "last_name": user.last_name, "email": user.email}
+    try:
+        is_new = user.is_new_user
+        user.is_new_user = False
+        db.commit()
+        token_payload = {
+            "user_id": str(user.id),
+            "exp": datetime.now(timezone.utc) + timedelta(days=7)
+        }
+        jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
+        prefs = user.preferences or TripPreferencesSchema().model_dump()
+        return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": user.first_name, "last_name": user.last_name, "email": user.email, "preferences": prefs, "is_new_user": is_new}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to login: {e}")
 
 """
 User Verification endpoints
@@ -287,9 +319,13 @@ def reset_password(token: str, new_password: str, db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="User not found.")
     if user.auth_provider != "local":
         raise HTTPException(status_code=400, detail="Password reset is not available for Google accounts.")
-    user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    db.commit()
-    return {"message": "Password has been reset successfully. You can now log in.", "status_code": 200}
+    try:
+        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        db.commit()
+        return {"message": "Password has been reset successfully. You can now log in.", "status_code": 200}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to reset password: {e}")
 
 """
 Get Profile endpoint — returns user profile data
@@ -311,6 +347,7 @@ def get_profile(token: str, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     phone = user.phone or {}
+    prefs = user.preferences or TripPreferencesSchema().model_dump()
     return {
         "first_name": user.first_name,
         "last_name": user.last_name,
@@ -318,6 +355,7 @@ def get_profile(token: str, db: Session = Depends(get_db)):
         "country_code": phone.get("country_code", ""),
         "phone": phone.get("number", ""),
         "auth_provider": user.auth_provider,
+        "preferences": prefs,
         "status_code": 200,
     }
 
@@ -325,7 +363,14 @@ def get_profile(token: str, db: Session = Depends(get_db)):
 Update Profile endpoint — updates editable user fields
 """
 @router.post("/profile", response_model=dict)
-def update_profile(token: str, first_name: str, last_name: str, country_code: str = "", phone: str = "", db: Session = Depends(get_db)):
+def update_profile(req: UpdateProfileRequest, db: Session = Depends(get_db)):
+    token = req.token
+    first_name = req.first_name
+    last_name = req.last_name
+    country_code = req.country_code
+    phone = req.phone
+    preferences = req.preferences
+
     if not token:
         raise HTTPException(status_code=400, detail="Token is required.")
     if not first_name or not last_name:
@@ -342,18 +387,27 @@ def update_profile(token: str, first_name: str, last_name: str, country_code: st
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-    user.first_name = makeFirstLetterCapital(first_name.strip())
-    user.last_name = makeFirstLetterCapital(last_name.strip())
-    user.phone = {"country_code": country_code.strip() if country_code else "", "number": phone.strip() if phone else ""}
-    db.commit()
-    return {
-        "message": "Profile updated successfully.",
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "country_code": (user.phone or {}).get("country_code", ""),
-        "phone": (user.phone or {}).get("number", ""),
-        "status_code": 200,
-    }
+    try:
+        user.first_name = makeFirstLetterCapital(first_name.strip())
+        user.last_name = makeFirstLetterCapital(last_name.strip())
+        user.phone = {"country_code": country_code.strip() if country_code else None, "number": phone.strip() if phone else None}
+        user.preferences = preferences if preferences else user.preferences
+        db.commit()
+        return {
+            "message": "Profile updated successfully.",
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "country_code": (user.phone or {}).get("country_code", ""),
+            "phone": (user.phone or {}).get("number", ""),
+            "preferences": user.preferences,
+            "status_code": 200,
+        }
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update profile: {e}")
 
 """
 Change Password endpoint — local users only
@@ -382,9 +436,13 @@ def change_password(token: str, current_password: str, new_password: str, db: Se
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters with one uppercase, one lowercase, one number, and one special character.")
     if current_password == new_password:
         raise HTTPException(status_code=400, detail="New password must be different from the current password.")
-    user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    db.commit()
-    return {"message": "Password changed successfully.", "status_code": 200}
+    try:
+        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        db.commit()
+        return {"message": "Password changed successfully.", "status_code": 200}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to change password: {e}")
 
 """
 User Delete endpoint — works for both local and Google users via JWT
@@ -405,8 +463,11 @@ def delete_user(token: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-    db.delete(user)
-    db.commit()
-    return {"message": "Account deleted successfully", "status_code": 200}
-
+    try:
+        db.delete(user)
+        db.commit()
+        return {"message": "Account deleted successfully", "status_code": 200}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete account: {e}")
 

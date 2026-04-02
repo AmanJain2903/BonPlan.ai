@@ -16,6 +16,8 @@ export type LoginResponse = {
   first_name?: string;
   last_name?: string;
   email?: string;
+  preferences?: any;
+  is_new_user?: boolean;
 };
 
 export type VerifyEmailResponse = {
@@ -49,6 +51,7 @@ export type ProfileResponse = {
   country_code?: string;
   phone?: string;
   auth_provider?: string;
+  preferences?: any;
   status_code?: number;
   detail?: string;
 };
@@ -59,6 +62,7 @@ export type UpdateProfileResponse = {
   last_name?: string;
   country_code?: string;
   phone?: string;
+  preferences?: any;
   status_code?: number;
   detail?: string;
 };
@@ -78,6 +82,8 @@ export type GoogleLoginResponse = {
   first_name?: string;
   last_name?: string;
   email?: string;
+  preferences?: any;
+  is_new_user?: boolean;
 };
 
 export const api = {
@@ -163,11 +169,18 @@ export const api = {
     last_name: string,
     country_code: string | null = null,
     phone: string | null = null,
+    preferences: any = {},
   ): Promise<UpdateProfileResponse> => {
     const { data } = await axios.post<UpdateProfileResponse>(
       `${API_BASE}/api/v1/auth/profile`,
-      null,
-      { params: { token, first_name, last_name, country_code, phone } },
+      { 
+        token, 
+        first_name, 
+        last_name, 
+        country_code: country_code || "", 
+        phone: phone || "", 
+        preferences: preferences || {} 
+      },
     );
     return data;
   },

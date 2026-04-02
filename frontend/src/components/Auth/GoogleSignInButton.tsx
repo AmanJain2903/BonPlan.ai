@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { GOOGLE_CLIENT_ID } from '../../apis/config';
+import WelcomePreferencesModal from './WelcomePreferencesModal';
 
 declare global {
   interface Window {
@@ -42,6 +43,7 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
   const { login } = useAuth();
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
     const render = () => {
@@ -60,8 +62,15 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
                 lastName: res.last_name ?? '',
                 email: res.email ?? '',
                 authProvider: 'google',
+                preferences: res.preferences,
               });
-              navigate('/');
+
+              // Show welcome modal only for first-time registrations (server-driven)
+              if (res.is_new_user) {
+                setShowWelcome(true);
+              } else {
+                navigate('/');
+              }
             }
           } catch (err: unknown) {
             const detail =
@@ -100,18 +109,27 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
   }, []);
 
   return (
-    <div className="w-full">
-      <div
-        ref={containerRef}
-        className={`w-full flex items-center justify-center rounded-xl overflow-hidden transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
-        style={{ minHeight: 44 }}
+    <>
+      <div className="w-full">
+        <div
+          ref={containerRef}
+          className={`w-full flex items-center justify-center rounded-xl overflow-hidden transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
+          style={{ minHeight: 44 }}
+        />
+        {!ready && (
+          <div className="w-full flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/40">
+            <span className="h-4 w-4 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
+            Loading Google Sign-In…
+          </div>
+        )}
+      </div>
+
+      <WelcomePreferencesModal
+        open={showWelcome}
+        onSetup={() => { setShowWelcome(false); navigate('/account/preferences?from=welcome'); }}
+        onSkip={() => { setShowWelcome(false); navigate('/'); }}
       />
-      {!ready && (
-        <div className="w-full flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/40">
-          <span className="h-4 w-4 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
-          Loading Google Sign-In…
-        </div>
-      )}
-    </div>
+    </>
   );
 }
+

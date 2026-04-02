@@ -17,6 +17,32 @@ export type TripDate = {
   timezoneId: string | null;
 };
 
+export type TravelPreferences = {
+  travel_to_destination: string;
+  travel_around_destination: string;
+};
+
+export type OtherPreferences = {
+  pet_friendly: boolean;
+  child_friendly: boolean;
+  toddler_friendly: boolean;
+  smoking_allowed: boolean;
+  alcohol_allowed: boolean;
+  ev_charging_available: boolean;
+  additional_notes: string;
+};
+
+export type TripPreferences = {
+  dietary_restrictions: string[];
+  accessibility_preferences: string;
+  travel_preferences: TravelPreferences;
+  schedule_rhythm: string;
+  activity_interests: string[];
+  accommodation_style: string;
+  dining_style: string;
+  other_preferences: OtherPreferences;
+};
+
 export type TripData = {
   origin: Place | null;
   destinations: Place[] | null;
@@ -24,9 +50,9 @@ export type TripData = {
   endDate: TripDate | null;
   pace: string | null;
   budget: string | null;
-  conversationalContext: string | null;
   adults: number | null;
   children: number | null;
+  preferences: TripPreferences | null;
 }
 
 export type TripDraft = {

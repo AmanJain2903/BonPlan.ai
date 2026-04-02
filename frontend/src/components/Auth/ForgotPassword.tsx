@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Mail } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { api } from '../../api';
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
@@ -30,10 +31,15 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-midnight flex items-center justify-center px-4 py-12 sm:py-24">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 sm:py-24">
       <div className="pointer-events-none fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-cyan/[0.03] blur-[120px]" />
 
-      <div className="relative w-full max-w-md">
+      <motion.div 
+        initial={{ opacity: 0, y: 30, filter: 'blur(8px)', willChange: 'transform, opacity, filter' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-md"
+      >
         <div className="text-center mb-10">
           <Link to="/" className="inline-flex items-center gap-1.5 text-2xl font-bold text-white mb-6">
             <img src="/logo.png" alt="BonPlan.ai" className="h-15 w-15 object-contain" />
@@ -47,11 +53,10 @@ export default function ForgotPassword() {
         </div>
 
         {message && (
-          <div className={`mb-4 rounded-xl px-4 py-3 text-sm text-center ${
-            status === 'success'
-              ? 'text-cyan bg-cyan/5 border border-cyan/20'
-              : 'text-red-400 bg-red-400/5 border border-red-400/20'
-          }`}>
+          <div className={`mb-4 rounded-xl px-4 py-3 text-sm text-center ${status === 'success'
+            ? 'text-cyan bg-cyan/5 border border-cyan/20'
+            : 'text-red-400 bg-red-400/5 border border-red-400/20'
+            }`}>
             {message}
           </div>
         )}
@@ -107,7 +112,7 @@ export default function ForgotPassword() {
             Back to login
           </Link>
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }
