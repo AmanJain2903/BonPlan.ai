@@ -179,6 +179,8 @@ def local_login(email: str, password: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Please register first.")
+    if user.auth_provider != "local":
+        raise HTTPException(status_code=400, detail="This account uses Google sign-in. Please log in with Google.")
     if not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
         raise HTTPException(status_code=400, detail="Incorrect password. Please try again.")
     if not user.is_verified:

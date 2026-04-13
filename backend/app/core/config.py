@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_MAPS_API_KEY_UNRESTRICTED: str = os.getenv("GOOGLE_MAPS_API_KEY_UNRESTRICTED")
 
+    # Gemini API Keys
+    SERPER_CONTENT_PARSER_API_KEY: str = os.getenv("SERPER_CONTENT_PARSER_API_KEY")
+
+    # Gemini Models
+    SERPER_CONTENT_PARSER_MODEL: str = "gemini-2.5-flash-lite"
+
+    # Serper API key
+    SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")
+
+    # Rapid API key
+    RAPID_API_KEY: str = os.getenv("RAPID_API_KEY")
+
     # Secret key for JWT
     SECRET_KEY: str = os.getenv("SECRET_KEY")
 

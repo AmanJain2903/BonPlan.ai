@@ -15,8 +15,40 @@ import jwt
 
 from fastapi import HTTPException, Request, APIRouter, Depends
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 router = APIRouter()
+
+def get_utc_datetime(data):
+    local_tz = ZoneInfo(data["timezoneId"])
+    local_dt = datetime(
+        year=data["year"], 
+        month=data["month"], 
+        day=data["day"], 
+        hour=0, 
+        minute=0, 
+        second=0, 
+        tzinfo=local_tz
+    )
+    utc_tz = ZoneInfo("UTC")
+    utc_dt = local_dt.astimezone(utc_tz)
+    utc_time_string = utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    utc_timestamp = int(utc_dt.timestamp())
+    return utc_time_string, utc_timestamp
+
+def get_local_time_string(data, isEndTime: bool = False):
+    local_dt = datetime(
+        year=data["year"], 
+        month=data["month"], 
+        day=data["day"], 
+        hour=23 if isEndTime else 0, 
+        minute=59 if isEndTime else 0, 
+        second=0
+    )
+    local_time_string = local_dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return local_time_string
 
 """
 Draft a plan endpoint
@@ -49,12 +81,23 @@ def draft_plan( token: str, data: dict, db: Session = Depends(get_db)):
         origin = tripData.get("origin")
         destinations = tripData.get("destinations")
         startDate = tripData.get("startDate")
+        startDate_utc_time_string, startDate_utc_timestamp = get_utc_datetime(startDate)
+        startDate_local_time_string = get_local_time_string(startDate)
+        startDate["utcTimeString"] = startDate_utc_time_string
+        startDate["utcTimestamp"] = startDate_utc_timestamp
+        startDate["localTimeString"] = startDate_local_time_string
         endDate = tripData.get("endDate")
+        endDate_utc_time_string, endDate_utc_timestamp = get_utc_datetime(endDate)
+        endDate_local_time_string = get_local_time_string(endDate, isEndTime=True)
+        endDate["utcTimeString"] = endDate_utc_time_string
+        endDate["utcTimestamp"] = endDate_utc_timestamp
+        endDate["localTimeString"] = endDate_local_time_string
         pace = tripData.get("pace")
         budget = tripData.get("budget")
         adults = tripData.get("adults")
         children = tripData.get("children")
         preferences = tripData.get("preferences")
+        
         if origin is None or destinations is None or startDate is None or endDate is None or pace is None or budget is None or adults is None or children is None:
             raise HTTPException(status_code=400, detail="All fields are required.")
         
@@ -280,8 +323,20 @@ def update_plan( token: str, id: str, data: dict, db: Session = Depends(get_db))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update plan: {e}")
     try:
-        plan.start_date = data.get("startDate")
-        plan.end_date = data.get("endDate")
+        startDate = data.get("startDate")
+        startDate_utc_time_string, startDate_utc_timestamp = get_utc_datetime(startDate)
+        startDate_local_time_string = get_local_time_string(startDate)
+        startDate["utcTimeString"] = startDate_utc_time_string
+        startDate["utcTimestamp"] = startDate_utc_timestamp
+        startDate["localTimeString"] = startDate_local_time_string
+        endDate = data.get("endDate")
+        endDate_utc_time_string, endDate_utc_timestamp = get_utc_datetime(endDate)
+        endDate_local_time_string = get_local_time_string(endDate, isEndTime=True)
+        endDate["utcTimeString"] = endDate_utc_time_string
+        endDate["utcTimestamp"] = endDate_utc_timestamp
+        endDate["localTimeString"] = endDate_local_time_string
+        plan.start_date = startDate
+        plan.end_date = endDate
         plan.pace = data.get("pace")
         plan.budget = data.get("budget")
         plan.adults = data.get("adults")

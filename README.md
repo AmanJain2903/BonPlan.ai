@@ -23,5 +23,47 @@ Before development began, the system architecture and product vision were strict
 * **Phase 1: Architecture & Planning** - ✅ Complete
 * **Phase 2: MVP Development** - ⏳ Ongoing
 
+### 🛠️ Requirements
+- Python `3.13.3`
+- Node.js `v20.16.0`
+- npm `10.8.1`
+- npx `10.8.1`
+
+### 🚀 How to Run
+
+#### 1 Frontend setup
+```bash
+cd frontend
+npm install
+```
+
+#### 2 Backend setup
+```bash
+cd backend
+brew bundle
+python3.13 -m venv .bonplan
+source .bonplan/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+#### 3 Start frontend
+From `frontend/`:
+```bash
+npm run dev
+```
+
+#### 4 Start backend
+From `backend/`:
+```bash
+uvicorn app.app:app --reload
+```
+
+#### 5 Run MCP Inspector
+From `backend/`:
+```bash
+npx @modelcontextprotocol/inspector python -m app.agent.mcp_server.main
+```
+
 ---
 *Built as a passion project to explore Agentic AI and constraint-based routing.*

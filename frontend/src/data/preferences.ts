@@ -1,5 +1,5 @@
 import {
-    Plane, Train, Bus, Car, Bike, Footprints, Globe,
+    Plane, Bus, Car, Bike, Footprints, Globe,
     Clock, Compass, Utensils, Building2, MapPin, Accessibility, Heart, StickyNote,
     type LucideIcon,
 } from 'lucide-react';
@@ -69,7 +69,6 @@ export const ACTIVITY_INTERESTS = [
 
 export const ACCOMMODATION_STYLES = [
     { value: 'hotel', label: 'Hotel' },
-    { value: 'airbnb', label: 'Airbnb' },
     { value: 'hostel', label: 'Hostel' },
     { value: 'lodge', label: 'Lodge' },
     { value: 'any', label: 'Any' },
@@ -86,8 +85,6 @@ export const DINING_STYLES = [
 export const TRAVEL_TO_OPTIONS = [
     { value: 'any', label: 'Any', icon: Globe },
     { value: 'airplane', label: 'Airplane', icon: Plane },
-    { value: 'train', label: 'Train', icon: Train },
-    { value: 'bus', label: 'Bus', icon: Bus },
     { value: 'own_car', label: 'Own Car', icon: Car },
     { value: 'rental_car', label: 'Rental Car', icon: Car },
     { value: 'cab', label: 'Cab', icon: Car },
