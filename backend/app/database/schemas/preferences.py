@@ -36,7 +36,6 @@ class ScheduleRhythm(str, Enum):
 
 class AccommodationStyle(str, Enum):
     HOTEL = "hotel"
-    AIRBNB = "airbnb"
     HOSTEL = "hostel"
     LODGE = "lodge"
     ANY = "any"

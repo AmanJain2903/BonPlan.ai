@@ -37,9 +37,11 @@ class Settings(BaseSettings):
 
     # Gemini API Keys
     SERPER_CONTENT_PARSER_API_KEY: str = os.getenv("SERPER_CONTENT_PARSER_API_KEY")
+    PLANNER_AGENT_API_KEY: str = os.getenv("PLANNER_AGENT_API_KEY")
 
     # Gemini Models
     SERPER_CONTENT_PARSER_MODEL: str = "gemini-2.5-flash-lite"
+    PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"
 
     # Serper API key
     SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")
