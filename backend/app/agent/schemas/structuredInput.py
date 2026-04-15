@@ -50,8 +50,6 @@ class TripPreferencesInput(BaseModel):
     other_preferences: OtherPreferences = Field(description="Other preferences the user prefers")
 
 class TripInput(BaseModel):
-    owner_id: str = Field(description="The ID of the user who owns the trip")
-    trip_id: str = Field(description="The ID of the trip")
     hasMultipleDestinations: bool = Field(description="Whether the trip has multiple destinations (more than 1) or not")
     origin: LocationInput = Field(description="The starting location of the trip")
     destinations: List[LocationInput] = Field(description="List of destinations to visit during the trip. Has single destination if hasMultipleDestinations is false")

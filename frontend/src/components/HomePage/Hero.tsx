@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import RoutingVisual from './RoutingVisual';
 import { useAuth } from '../../context/AuthContext';
 import { Plan } from '../../apis/plan';
-import { useDraftPlans } from '../../hooks/useTripFilters';
+import { useDraftPlans, usePersonalPlans } from '../../hooks/useTripFilters';
 
 interface HeroProps {
   plans?: Plan[];
@@ -18,11 +18,15 @@ export default function Hero({ plans = [], isLoadingPlans = false }: HeroProps) 
   const firstName = user?.firstName;
 
   const draftPlans = useDraftPlans(plans);
+  const personalPlans = usePersonalPlans(plans);
 
   // Setup dynamic pills based on drafted plans
   const pills = [];
   if (draftPlans && draftPlans.length > 0) {
     pills.push({ label: 'Draft Plans', href: '#draft-plans' });
+  }
+  if (personalPlans && personalPlans.length > 0) {
+    pills.push({ label: 'Personal Plans', href: '#personal-plans' });
   }
   pills.push({ label: 'Explore Features', href: '#features' });
 

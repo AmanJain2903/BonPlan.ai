@@ -25,7 +25,7 @@ export interface Plan {
     budget: string;
     adults: number;
     children: number;
-    is_draft: boolean;
+    status: string;
     role: string;
     created_at: string;
     updated_at: string;
@@ -98,5 +98,16 @@ export const api = {
             { params: { token } },
         );
         return data;
+    },
+    generateSoloPlan: async (token: string, id: string, bodyData: any, signal?: AbortSignal): Promise<Response> => {
+        return await fetch(`${API_BASE}/api/v1/plan/generate/solo/${id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(bodyData),
+            signal
+        });
     },
 };

@@ -1,13 +1,5 @@
 {
   "properties": {
-    "owner_id": {
-      "description": "The ID of the user who owns the trip",
-      "type": "string"
-    },
-    "trip_id": {
-      "description": "The ID of the trip",
-      "type": "string"
-    },
     "hasMultipleDestinations": {
       "description": "Whether the trip has multiple destinations (more than 1) or not",
       "type": "boolean"
@@ -362,8 +354,6 @@
     }
   },
   "required": [
-    "owner_id",
-    "trip_id",
     "hasMultipleDestinations",
     "origin",
     "destinations",

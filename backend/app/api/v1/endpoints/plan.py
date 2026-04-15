@@ -5,19 +5,24 @@ This file contains the plan endpoints for the v1 version of the API.
 """
 
 from app.database.database import Session, get_db
-from app.database.models.tripsTable import Trip, PlanningType, RoutingStyle
+from app.database.models.tripsTable import Trip, PlanningType, RoutingStyle, PlanStatus
 from app.database.models.usersTable import User
 from app.database.models.tripMembersTable import TripMember, TripRole
 from app.data.labels import paceLabels, budgetLabels
 from app.core.config import settings
 
 import jwt
+import json
 
 from fastapi import HTTPException, Request, APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from app.agent.planner import generate_trip_itinerary
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -113,7 +118,7 @@ def draft_plan( token: str, data: dict, db: Session = Depends(get_db)):
             budget=budgetLabels[budget],
             adults=adults,
             children=children,
-            is_draft=True,
+            status=PlanStatus.DRAFT,
         )
         db.add(newTrip)
         db.commit()
@@ -225,7 +230,7 @@ def get_plans( token: str, db: Session = Depends(get_db)):
             "end_date": plan.end_date,
             "adults": plan.adults,
             "children": plan.children,
-            "is_draft": plan.is_draft,
+            "status": plan.status,
             "role": role,
         })
     return {"message": "Plans fetched successfully.", "status_code": 200, "plans": response}
@@ -278,7 +283,7 @@ def get_plan( token: str, id: str, db: Session = Depends(get_db)):
         "budget": plan.budget,
         "adults": plan.adults,
         "children": plan.children,
-        "is_draft": plan.is_draft,
+        "status": plan.status,
         "role": role,
         "created_at": plan.created_at,
         "updated_at": plan.updated_at,
@@ -341,7 +346,7 @@ def update_plan( token: str, id: str, data: dict, db: Session = Depends(get_db))
         plan.budget = data.get("budget")
         plan.adults = data.get("adults")
         plan.children = data.get("children")
-        plan.is_draft = data.get("isDraft")
+        plan.status = data.get("status")
         db.commit()
         db.refresh(plan)
         return {"message": "Plan updated successfully.", "status_code": 200, "plan": plan}
@@ -393,3 +398,102 @@ def delete_plan( token: str, id: str, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete plan: {e}")
+
+"""
+Generate Solo Plan via SSE endpoint
+"""
+@router.post("/generate/solo/{id}")
+async def generate_solo_plan(request: Request, id: str, db: Session = Depends(get_db)):
+    # 1. Validate Token from Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+    token = auth_header.split(" ")[1]
+    
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("user_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid session. Please log in again.")
+        
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid token.")
+        
+    # 2. Extract Body Parameters (chatInput, mode)
+    try:
+        body = await request.json()
+        chat_input = body.get("chatInput", "")
+        mode = body.get("mode", "autonomous")
+    except Exception:
+        chat_input = ""
+        mode = "autonomous"
+
+
+    # 3. Authenticate and Gather Plan Data
+    try:
+        rbac = db.query(TripMember).filter(TripMember.trip_id == id, TripMember.user_id == user_id).first()
+        if not rbac or rbac.role not in ["owner", "shared_editor"]:
+            raise HTTPException(status_code=403, detail="Not authorized to generate or edit this plan.")
+        
+        plan = db.query(Trip).filter(Trip.id == id).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan not found.")
+        
+        plan.status = PlanStatus.GENERATING
+        db.commit()
+        db.refresh(plan)
+            
+        # Parse Destinations correctly depending on if it's a stringified JSON array or multiple records
+        destinations_list = plan.destinations
+        if isinstance(destinations_list, str):
+            try:
+                destinations_list = json.loads(destinations_list)
+            except:
+                destinations_list = []
+                
+        if isinstance(plan.start_date, str):
+            start_date = json.loads(plan.start_date)
+        else:
+            start_date = plan.start_date
+            
+        if isinstance(plan.end_date, str):
+            end_date = json.loads(plan.end_date)
+        else:
+            end_date = plan.end_date
+            
+        trip_payload = {
+            "hasMultipleDestinations": len(destinations_list) > 1,
+            "planning_type": plan.planning_type.value if hasattr(plan.planning_type, 'value') else plan.planning_type,
+            "routing_style": plan.routing_style.value if hasattr(plan.routing_style, 'value') else plan.routing_style,
+            "origin": json.loads(plan.origin) if isinstance(plan.origin, str) else plan.origin,
+            "destinations": destinations_list,
+            "start_date": start_date,
+            "end_date": end_date,
+            "pace": plan.pace,
+            "budget": plan.budget,
+            "adults": plan.adults,
+            "children": plan.children,
+            "preferences": rbac.trip_preferences or {},
+            "textualContext": chat_input
+        }
+    except Exception as e:
+        plan.status = PlanStatus.DRAFT
+        db.commit()
+        db.refresh(plan)
+        raise HTTPException(status_code=500, detail=f"Failed to assemble Trip data: {e}")
+
+    # 4. Stream Generator Wrapper
+    async def event_generator():
+        try:
+            async for chunk in generate_trip_itinerary(
+                trip_payload, 
+                mode=mode, 
+                owner_id=str(user_id), 
+                trip_id=str(plan.id),
+                cancellation_callback=request.is_disconnected
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+    # 5. Return SSE Response
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

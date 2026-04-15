@@ -20,6 +20,13 @@ class RoutingStyle(str, enum.Enum):
     SINGLE_HUB = "single-hub"
     MULTI_HOP = "multi-hop"
 
+class PlanStatus(str, enum.Enum):
+    DRAFT = "draft"
+    GENERATING = "generating"
+    GENERATED = "generated"
+    EDITING = "editing"
+    COMPLETED = "completed"
+
 class Trip(Base):
     __tablename__ = "trips"
 
@@ -39,7 +46,7 @@ class Trip(Base):
     adults = Column(Integer, nullable=False)
     children = Column(Integer, nullable=False)
 
-    is_draft = Column(Boolean, nullable=False, default=True)
+    status = Column(Enum(PlanStatus), nullable=False, default=PlanStatus.DRAFT)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -1,10 +1,14 @@
 import asyncio
 import json
 from app.agent.planner import generate_trip_itinerary
+import os
+
+relativePath = "app/agent/mock_data/"
+absolutePath = os.path.abspath(relativePath)
+if not os.path.exists(absolutePath):
+    os.makedirs(absolutePath)
 
 test_trip_payload = {
-    "owner_id": "98c1837d-b37d-42aa-b3d0-5d185fe9d843",
-    "trip_id": "1b3df3fa-b334-4754-8213-c2b84f07372c",
     "hasMultipleDestinations": False,
     "planning_type": "SOLO",
     "origin": {
@@ -70,8 +74,15 @@ async def run_test():
     print("Testing the BonPlan Planner Agent...")
     print("-------------------------------------")
     try:
+        chunks_log = []
+        mock_file_path = os.path.join(absolutePath, "mock_chunks.json")
+        
         # the function returns an async generator
-        async for chunk in generate_trip_itinerary(test_trip_payload):
+        async for chunk in generate_trip_itinerary(test_trip_payload, mode="autonomous", owner_id="98c1837d-b37d-42aa-b3d0-5d185fe9d843", trip_id="1b3df3fa-b334-4754-8213-c2b84f07372c"):
+            chunks_log.append(chunk)
+            with open(mock_file_path, "w") as f:
+                json.dump(chunks_log, f, indent=2)
+                
             chunk_type = chunk.get("type", "unknown")
             
             if chunk_type == "thinking":

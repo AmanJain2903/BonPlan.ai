@@ -6,6 +6,7 @@ import ScrollManager from './components/shared/ScrollManager';
 import Hero from './components/HomePage/Hero';
 import Features from './components/HomePage/Features';
 import DraftPlansComponent from './components/HomePage/DraftPlansComponent';
+import PersonalPlansComponent from './components/HomePage/PersonalPlansComponent';
 import Footer from './components/HomePage/Footer';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -59,6 +60,7 @@ function HomePage() {
       <main className="relative w-full min-h-screen pt-[24px]">
         <Hero plans={plans} isLoadingPlans={isFetchingPlans} />
         {plans.length > 0 && <DraftPlansComponent plans={plans} />}
+        {plans.length > 0 && <PersonalPlansComponent plans={plans} />}
         <Features />
       </main>
       <Footer />
