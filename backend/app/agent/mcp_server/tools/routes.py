@@ -1,8 +1,14 @@
-import requests
-from typing import Dict, Optional, Annotated, Literal, List, Union
+from typing import Dict, Optional, Annotated, Literal, List
 from pydantic import Field, BaseModel
 from app.core.config import settings
+from app.utils.http import get_http_client
 from app.agent.mcp_server.tools.constants import GoogleFieldMasks
+from app.agent.mcp_server.tools._shared import (
+    Waypoint,
+    normalize_waypoint,
+    waypoint_validation_error,
+)
+from app.agent.mcp_server.tools._errors import tool_error
 import urllib.parse
 import pathlib
 from app.agent.mcp_server.tools.geocoding import get_address
@@ -11,24 +17,6 @@ api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
 
 # Types
-class LatLng(BaseModel):
-    latitude: float = Field(ge=-90.0, le=90.0, description="The latitude of the location")
-    longitude: float = Field(ge=-180.0, le=180.0, description="The longitude of the location")
-
-class LocationWrapper(BaseModel):
-    latLng: LatLng
-
-class LocationFormat(BaseModel):
-    location: LocationWrapper
-
-class PlaceIdFormat(BaseModel):
-    placeId: str = Field(description="The Google Place ID of the location")
-
-class AddressFormat(BaseModel):
-    address: str = Field(description="The raw address string of the location")
-
-WaypointType = Union[LocationFormat, PlaceIdFormat, AddressFormat]
-
 travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT", "TWO_WHEELER"]
 
 routingPreferences = Literal["TRAFFIC_AWARE", "TRAFFIC_UNAWARE", "TRAFFIC_AWARE_OPTIMAL"]
@@ -43,35 +31,29 @@ class RouteModifiers(BaseModel):
     vehicleInfo: Optional[VehicleInfo] = Field(description="The vehicle information to use for the route.", default=None)
 
 # Helper Functions
-def getOptimizedRoute(optimized_intermediate_waypoint_index: List[int], origin: WaypointType, destination: WaypointType, intermediate_waypoints: List[WaypointType]) -> List[WaypointType]:
-    route = []
-    route.append(origin)
-    for index in optimized_intermediate_waypoint_index:
-        route.append(intermediate_waypoints[index])
-    route.append(destination)
-    return route
-
 def parse_mcp_location(loc: dict) -> tuple[str, str]:
     """
-    Parses WaypointType dictionary into (String_Query, Place_ID).
+    Parses a Google-shaped waypoint dict (produced by `normalize_waypoint`)
+    into a (String_Query, Place_ID) tuple for building maps URLs.
     Google Maps URLs require a string query even if you provide a Place ID.
     """
     if "address" in loc:
         return loc["address"], ""
-    
+
     elif "location" in loc:
         lat = loc["location"]["latLng"]["latitude"]
         lng = loc["location"]["latLng"]["longitude"]
         return f"{lat},{lng}", ""
-    
+
     elif "placeId" in loc:
         return "Saved Location", loc["placeId"]
-        
+
     return "", ""
 
 def generate_maps_app_url(origin_dict: dict, destination_dict: dict, waypoints_list: List[dict]) -> str:
     """
     Builds the official Google Maps Universal URL, preserving optimization and data types.
+    Inputs are Google-shaped waypoint dicts (output of `normalize_waypoint`).
     """
     # The official base URL for Google Maps routing intents
     base_url = "https://www.google.com/maps/dir/?api=1"
@@ -110,7 +92,7 @@ def generate_maps_app_url(origin_dict: dict, destination_dict: dict, waypoints_l
 
     return url
 
-def get_route_leg(leg: dict) -> dict:
+async def get_route_leg(leg: dict) -> dict:
     routeLeg = {
         "startLocation": {
             "latitude": leg.get("startLocation", {}).get("latLng", {}).get("latitude", None),
@@ -136,24 +118,24 @@ def get_route_leg(leg: dict) -> dict:
     }
 
     try:
-        startAddress = get_address(routeLeg["startLocation"]["latitude"], routeLeg["startLocation"]["longitude"])["address"]
+        startAddress = (await get_address(routeLeg["startLocation"]["latitude"], routeLeg["startLocation"]["longitude"]))["address"]
         routeLeg["startLocation"]["address"] = startAddress
-    except Exception as e:
+    except Exception:
         routeLeg["startLocation"]["address"] = ""
 
     try:
-        endAddress = get_address(routeLeg["endLocation"]["latitude"], routeLeg["endLocation"]["longitude"])["address"]
+        endAddress = (await get_address(routeLeg["endLocation"]["latitude"], routeLeg["endLocation"]["longitude"]))["address"]
         routeLeg["endLocation"]["address"] = endAddress
-    except Exception as e:
+    except Exception:
         routeLeg["endLocation"]["address"] = ""
 
     return routeLeg
 
 # Routes API
-def get_route(
-    origin: Annotated[WaypointType, Field(description="The origin route waypoint dictionary containing an address, location latLng, or placeId.")],
-    destination: Annotated[WaypointType, Field(description="The destination route waypoint dictionary.")],
-    intermediate_waypoints: Annotated[Optional[List[WaypointType]], Field(description="The optional list of intermediate route waypoint dictionaries to pass through.", default=None)],
+async def get_route(
+    origin: Annotated[Waypoint, Field(description="The origin waypoint. Provide ONE of: `address` (string), both `lat`+`lng` (floats), or `place_id` (Google Place ID).")],
+    destination: Annotated[Waypoint, Field(description="The destination waypoint. Same shape as `origin`.")],
+    intermediate_waypoints: Annotated[Optional[List[Waypoint]], Field(description="Optional ordered list of intermediate waypoints to pass through. Same shape as `origin`.", default=None)],
     travel_mode: Annotated[travelModes, Field(description="The primary mode of travel (e.g., 'DRIVE', 'WALK', 'TRANSIT').", default="DRIVE")],
     routing_preference: Annotated[routingPreferences, Field(description="The strategy for route calculation. Determines if traffic should be considered.", default="TRAFFIC_AWARE")],
     departure_time: Annotated[Optional[str], Field(description="The exact future departure time as a UTC ISO 8601 string.", default=None)],
@@ -163,14 +145,40 @@ def get_route(
     optimize_waypoint_order: Annotated[bool, Field(description="If true, arbitrarily re-orders intermediate waypoints to find the shortest total trip time (errand mode). False enforces strict visitation order.", default=True)],
 ) -> Dict:
     if not api_key:
-        return {"error": "Google API key not configured"}
+        return tool_error(
+            "Google Maps API key is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry.",
+        )
 
+    # Normalize all inputs up front so the rest of the function deals with
+    # Google-shaped dicts only. Any bad waypoint short-circuits with an
+    # actionable error the model can self-correct from.
+    try:
+        origin_google = normalize_waypoint(origin)
+    except ValueError:
+        return waypoint_validation_error("origin", origin.model_dump(exclude_none=True))
+
+    try:
+        destination_google = normalize_waypoint(destination)
+    except ValueError:
+        return waypoint_validation_error("destination", destination.model_dump(exclude_none=True))
+
+    intermediates_google: List[dict] = []
+    intermediates_flat: List[dict] = []
     if intermediate_waypoints:
-        params["intermediate_waypoints"] = [waypoint.model_dump() for waypoint in intermediate_waypoints]
-    
-    if route_modifiers:
-        params["route_modifiers"] = route_modifiers.model_dump(exclude_none=True)
-    
+        for idx, wp in enumerate(intermediate_waypoints):
+            try:
+                intermediates_google.append(normalize_waypoint(wp))
+            except ValueError:
+                return waypoint_validation_error(
+                    f"intermediate_waypoints[{idx}]",
+                    wp.model_dump(exclude_none=True),
+                )
+            intermediates_flat.append(wp.model_dump(exclude_none=True))
+
+    origin_flat = origin.model_dump(exclude_none=True)
+    destination_flat = destination.model_dump(exclude_none=True)
+
     url = f"https://routes.googleapis.com/directions/v2:computeRoutes"
 
     headers = {
@@ -180,8 +188,8 @@ def get_route(
     }
 
     body = {
-        "origin": origin.model_dump(),
-        "destination": destination.model_dump(),
+        "origin": origin_google,
+        "destination": destination_google,
         "travelMode": travel_mode,
         "units": units_system,
         "computeAlternativeRoutes": compute_alternative_routes,
@@ -189,22 +197,28 @@ def get_route(
     }
     if travel_mode in ["DRIVE", "TWO_WHEELER"] and routing_preference:
         body["routingPreference"] = routing_preference
-    
+
     if departure_time:
         body["departureTime"] = departure_time
         if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE", "TWO_WHEELER"]:
             body["routingPreference"] = "TRAFFIC_AWARE"
 
-    if intermediate_waypoints and travel_mode != "TRANSIT":
-        body["intermediates"] = [waypoint.model_dump() for waypoint in intermediate_waypoints]
-    
+    if intermediates_google and travel_mode != "TRANSIT":
+        body["intermediates"] = intermediates_google
+
     if travel_mode in ["DRIVE", "TWO_WHEELER"] and route_modifiers:
         body["routeModifiers"] = route_modifiers.model_dump(exclude_none=True)
 
     try:
-        response = requests.post(url, json=body, headers=headers, timeout=5)
-        if not response.ok:
-            return {"error": f"Routes API error: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.post(url, json=body, headers=headers, timeout=5)
+        if response.status_code >= 400:
+            return tool_error(
+                "Routes API request failed.",
+                fix_hint="Verify waypoints are reachable for the chosen `travel_mode` and that `departure_time` (if supplied) is in the future. 5xx is transient — retry once.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         data = response.json()
 
         routes = []
@@ -224,25 +238,25 @@ def get_route(
                     "logicalValueSeconds": int(route.get("duration", None).rstrip('s')) if route.get("duration", None) else None,
                     "humanReadableValue": route.get("localizedValues", {}).get("duration", {}).get("text", ""),
                 },
-                "routeLegs": [get_route_leg(leg) for leg in route.get("legs", [])],
+                "routeLegs": [await get_route_leg(leg) for leg in route.get("legs", [])],
                 "warnings": route.get("warnings", []),
                 "travelAdvisory": route.get("travelAdvisory", {}),
                 "optimizedIntermediateWaypointIndex": route.get("optimizedIntermediateWaypointIndex", []),
                 "polyline" : route.get("polyline", {}),
                 "routeToken": route.get("routeToken", None),
-                "mapsUrl" : generate_maps_app_url(origin.model_dump(), destination.model_dump(), [])
+                "mapsUrl" : generate_maps_app_url(origin_google, destination_google, [])
             }
 
-            if intermediate_waypoints:
-                r["intermediateWaypoints"] = [waypoint.model_dump() for waypoint in intermediate_waypoints]
-                r["mapsUrl"] = generate_maps_app_url(origin.model_dump(), destination.model_dump(), r["intermediateWaypoints"])
-            
+            if intermediates_flat:
+                r["intermediateWaypoints"] = intermediates_flat
+                r["mapsUrl"] = generate_maps_app_url(origin_google, destination_google, intermediates_google)
+
             if r["optimizedIntermediateWaypointIndex"] != []:
-                r["optimizedIntermediateWaypoints"] = [intermediate_waypoints[index].model_dump() for index in r["optimizedIntermediateWaypointIndex"]]
-                raw_optimized_route = getOptimizedRoute(r["optimizedIntermediateWaypointIndex"], origin, destination, intermediate_waypoints)
-                r["optimizedRoute"] = [wp.model_dump() for wp in raw_optimized_route]
-                r["mapsUrl"] = generate_maps_app_url(origin.model_dump(), destination.model_dump(), r["optimizedIntermediateWaypoints"])
-            
+                r["optimizedIntermediateWaypoints"] = [intermediates_flat[index] for index in r["optimizedIntermediateWaypointIndex"]]
+                optimized_google = [intermediates_google[index] for index in r["optimizedIntermediateWaypointIndex"]]
+                r["optimizedRoute"] = [origin_flat, *r["optimizedIntermediateWaypoints"], destination_flat]
+                r["mapsUrl"] = generate_maps_app_url(origin_google, destination_google, optimized_google)
+
             if travel_mode == "TRANSIT":
                 r["transitFare"] = {
                     "logicalObject" : route.get("travelAdvisory", {}).get("transitFare", {}),
@@ -250,14 +264,21 @@ def get_route(
                 }
 
             routes.append(r)
-        
+
         if len(routes) == 0:
-            return {"error": "No routes found for this request"}
+            return tool_error(
+                "No routes found between the supplied waypoints.",
+                fix_hint="Try a different `travel_mode` (e.g. DRIVE instead of TRANSIT), widen the route_modifiers (avoid fewer road types), or verify the waypoints are routable (not over water / in closed regions).",
+            )
 
         return {"routes": routes}
 
     except Exception as e:
-        return {"error": f"Routes API error: {str(e)}"}
+        return tool_error(
+            "Routes API raised an unexpected error.",
+            fix_hint="Retry once with the same arguments. If it fails again, simplify the route (fewer waypoints) or switch `travel_mode` and retry.",
+            extra={"exception": str(e)},
+        )
 
 PROMPTS_DIR = pathlib.Path(__file__).parent / "prompts"
 get_route.__doc__ = (PROMPTS_DIR / "get_route.md").read_text()

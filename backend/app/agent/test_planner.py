@@ -1,6 +1,7 @@
 import asyncio
 import json
-from app.agent.planner import generate_trip_itinerary
+from app.agent.solo_planner import generate_trip_itinerary
+from app.agent.runtime import agent_runtime_context
 import os
 
 relativePath = "app/agent/mock_data/"
@@ -74,37 +75,74 @@ async def run_test():
     print("Testing the BonPlan Planner Agent...")
     print("-------------------------------------")
     try:
-        chunks_log = []
-        mock_file_path = os.path.join(absolutePath, "mock_chunks.json")
+        # chunks_log = []
+        # mock_file_path = os.path.join(absolutePath, "mock_chunk_resuming.json")
+        # current_trip_itinerary = [{
+        #                           "car_pickup_details": {
+        #                             "pickup_location_name": "Budget Car Rental - Santa Clara",
+        #                             "vehicle": {
+        #                               "vehicle_transmission": "Automatic",
+        #                               "group": "Compact",
+        #                               "vehicle_id": "compact_01",
+        #                               "fuel_type": "Petrol",
+        #                               "vehicle_seats": 5,
+        #                               "airbags": True,
+        #                               "vehicle_name": "Economy Compact",
+        #                               "mileage": "Unlimited",
+        #                               "free_cancellation": True,
+        #                               "vehicle_doors": 4,
+        #                               "vehicle_image_url": "https://www.budget.com/compact_car.jpg"
+        #                             },
+        #                             "pickup_location_id": "budget_santa_clara_01",
+        #                             "pickup_instructions": "Pick up your vehicle at the Budget counter. Please present your driver's license and a credit card for the security deposit.",
+        #                             "booking_url": "https://www.budget.com",
+        #                             "rental_company_name": "Budget",
+        #                             "pickup_location_coordinates": {
+        #                               "longitude": -121.9503279,
+        #                               "latitude": 37.364769
+        #                             },
+        #                             "pickup_tips": "Check the vehicle for any existing scratches or dents before leaving the lot. Confirm the fuel policy with the agent.",
+        #                             "pickup_time": "2026-04-29T08:00:00",
+        #                             "cost": 68,
+        #                             "rental_company_logo_url": "https://www.budget.com/logo.png",
+        #                             "pickup_location_address": "2390 Lafayette St, Santa Clara, CA 95050, USA"
+        #                           },
+        #                           "event_number": 1,
+        #                           "event_type": "CAR_PICKUP",
+        #                           "day_number": 1,
+        #                           "day_title": "Day 1 - San Francisco Discovery",
+        #                           "date": "2026-04-29"
+        #                         }]
         
         # the function returns an async generator
-        async for chunk in generate_trip_itinerary(test_trip_payload, mode="autonomous", owner_id="98c1837d-b37d-42aa-b3d0-5d185fe9d843", trip_id="1b3df3fa-b334-4754-8213-c2b84f07372c"):
-            chunks_log.append(chunk)
-            with open(mock_file_path, "w") as f:
-                json.dump(chunks_log, f, indent=2)
-                
-            chunk_type = chunk.get("type", "unknown")
-            
-            if chunk_type == "thinking":
-                print(f"{chunk.get('content')}", end="", flush=True)
-            elif chunk_type == "summary":
-                print(f"{chunk.get('content')}")
-            elif chunk_type == "tool_call":
-                args_str = json.dumps(chunk.get('args', {}))
-                print(f"\n[TOOL CALL] {chunk.get('tool_name')} | Args: {args_str}")
-            elif chunk_type == "tool_response":
-                print(f"[TOOL RESPONSE] {chunk.get('tool_name')} returned: {json.dumps(chunk.get('response'), indent=2)[:500]} ... [truncated]")
-            elif chunk_type == "event":
-                print(f"\n=============================================")
-                print(f"[NEW ITINERARY EVENT EMITTED]")
-                print(json.dumps(chunk.get("data", {}), indent=2))
-                print(f"=============================================\n")
-            elif chunk_type == "system":
-                print(f"\n[SYSTEM] {chunk.get('content')}")
-            elif chunk_type == "error":
-                print(f"\n[ERROR] {chunk.get('content')}")
-            else:
-                print(f"\n[UNKNOWN CHUNK] {chunk}")
+        async with agent_runtime_context():
+            async for chunk in generate_trip_itinerary(test_trip_payload, mode="autonomous", owner_id="98c1837d-b37d-42aa-b3d0-5d185fe9d843", trip_id="1b3df3fa-b334-4754-8213-c2b84f07372c"):
+                # chunks_log.append(chunk)
+                # with open(mock_file_path, "w") as f:
+                #     json.dump(chunks_log, f, indent=2)
+
+                chunk_type = chunk.get("type", "unknown")
+
+                if chunk_type == "thinking":
+                    print(f"{chunk.get('content')}", end="", flush=True)
+                elif chunk_type == "summary":
+                    print(f"{chunk.get('content')}")
+                elif chunk_type == "tool_call":
+                    args_str = json.dumps(chunk.get('args', {}))
+                    print(f"\n[TOOL CALL] {chunk.get('tool_name')} | Args: {args_str}")
+                elif chunk_type == "tool_response":
+                    print(f"[TOOL RESPONSE] {chunk.get('tool_name')} returned: {json.dumps(chunk.get('response'), indent=2)[:500]} ... [truncated]")
+                elif chunk_type == "event":
+                    print(f"\n=============================================")
+                    print(f"[NEW ITINERARY EVENT EMITTED]")
+                    print(json.dumps(chunk.get("data", {}), indent=2))
+                    print(f"=============================================\n")
+                elif chunk_type == "system":
+                    print(f"\n[SYSTEM] {chunk.get('content')}")
+                elif chunk_type == "error":
+                    print(f"\n[ERROR] {chunk.get('content')}")
+                else:
+                    print(f"\n[UNKNOWN CHUNK] {chunk}")
                 
     except Exception as e:
         print(f"\n[CRITICAL ERROR] Failed to run test: {e}")

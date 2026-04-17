@@ -51,5 +51,6 @@ class Trip(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    members = relationship("TripMember", back_populates="trip", cascade="all, delete-orphan")
-    owner = relationship("User", back_populates="owned_trips")
+    members = relationship("TripMember", back_populates="trip", cascade="all, delete-orphan", lazy="selectin")
+    itineraries = relationship("TripItinerary", back_populates="trip", cascade="all, delete-orphan", lazy="selectin")
+    owner = relationship("User", back_populates="owned_trips", lazy="selectin")

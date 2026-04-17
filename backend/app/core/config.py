@@ -17,11 +17,14 @@ class Settings(BaseSettings):
 
     # Deployment settings
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
+    AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     # Project settings
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "BonPlan.ai")
+    AGENT_NAME: str = os.getenv("AGENT_NAME", "BonPlan.ai - Agent")
     PROJECT_VERSION: str = os.getenv("PROJECT_VERSION", "v0.0.0")
+    AGENT_VERSION: str = os.getenv("AGENT_VERSION", "v0.0.0")
 
     # PostgreSQL settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "bonplan_admin")
@@ -41,7 +44,7 @@ class Settings(BaseSettings):
 
     # Gemini Models
     SERPER_CONTENT_PARSER_MODEL: str = "gemini-2.5-flash-lite"
-    PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"
+    PLANNER_AGENT_MODEL: str = "gemini-3.1-flash-lite-preview"#"gemma-4-31b-it" #"gemini-3.1-flash-lite-preview" #"gemma-4-26b-a4b-it" #"gemma-4-31b-it"
     PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
     # Serper API key
@@ -63,6 +66,6 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
 settings = Settings()

@@ -1,18 +1,28 @@
+# backend/app/agent/mcp_server/caching.py
+
+"""
+Async helpers for MCP tools to call the agent's API cache endpoints.
+"""
+
 import hashlib
 import json
-import requests
-from app.core.config import settings
 
-API_URL = settings.BACKEND_URL
+from app.core.config import settings
+from app.utils.http import get_http_client
+
+AGENT_URL = settings.AGENT_URL
+
 
 def generate_cache_key(api_name: str, params: dict) -> str:
     param_str = json.dumps(params, sort_keys=True)
     return hashlib.sha256(f"{api_name}:{param_str}".encode()).hexdigest()
 
-def retrieve_api_cache(cache_key: str, expires_in: int = 7) -> dict:
+
+async def retrieve_api_cache(cache_key: str, expires_in: int = 7) -> dict | None:
     try:
-        response = requests.get(
-            f"{API_URL}/api/v1/api-cache/retrieve",
+        client = get_http_client()
+        response = await client.get(
+            f"{AGENT_URL}/agent/api/v1/api-cache/retrieve",
             params={"cache_key": cache_key, "expires_in": expires_in},
             timeout=10,
         )
@@ -24,11 +34,13 @@ def retrieve_api_cache(cache_key: str, expires_in: int = 7) -> dict:
     except Exception as e:
         print(f"Failed to retrieve API cache: {e}")
         return None
-    
-def insert_api_cache(cache_key: str, cache_value: dict) -> None:
+
+
+async def insert_api_cache(cache_key: str, cache_value: dict) -> None:
     try:
-        requests.post(
-            f"{API_URL}/api/v1/api-cache/insert",
+        client = get_http_client()
+        await client.post(
+            f"{AGENT_URL}/agent/api/v1/api-cache/insert",
             json={"cache_key": cache_key, "cache_value": cache_value},
             timeout=10,
         )

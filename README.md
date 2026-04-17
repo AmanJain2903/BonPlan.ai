@@ -29,7 +29,7 @@ Before development began, the system architecture and product vision were strict
 - npm `10.8.1`
 - npx `10.8.1`
 
-### 🚀 How to Run
+### 🚀 How to Run Locally
 
 #### 1 Frontend setup
 ```bash
@@ -56,10 +56,16 @@ npm run dev
 #### 4 Start backend
 From `backend/`:
 ```bash
-uvicorn app.app:app --reload
+uvicorn app.app:app --port 8000 --workers 4 # Or -- reload but this will ignore workers flag. You can choose any number of workers.
 ```
 
-#### 5 Run MCP Inspector
+#### 5 Start agent
+From `backend/`:
+```bash
+uvicorn app.ai:app --port 8001 --workers 2 # Or -- reload but this will ignore workers flag. You can choose any number of workers.
+```
+
+#### 6 Run MCP Inspector (Optional - Just for local testing the MCP Sever)
 From `backend/`:
 ```bash
 npx @modelcontextprotocol/inspector python -m app.agent.mcp_server.main

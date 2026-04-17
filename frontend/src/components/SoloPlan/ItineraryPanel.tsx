@@ -1,22 +1,42 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Info, ArrowRight, ArrowDown, AlertTriangle, OctagonX } from 'lucide-react';
+import { Sparkles, Info, ArrowRight, ArrowDown, AlertTriangle, OctagonX, RefreshCw, Play } from 'lucide-react';
 import { EASE_OUT_EXPO, SHIMMER_WIDTHS } from './constants';
 import { ItineraryState } from './types';
 import DayCard from './DayCard';
 
 interface ItineraryPanelProps {
   isChatMinimized: boolean;
-  plannerMode: 'autonomous' | 'collaborative';
   planStatus: string;
   itineraryState: ItineraryState;
   errorType?: 'stopped' | 'error' | null;
+  onRetry?: () => void;
 }
 
-export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatus, itineraryState, errorType }: ItineraryPanelProps) {
+export default function ItineraryPanel({
+  isChatMinimized,
+  planStatus,
+  itineraryState,
+  errorType,
+  onRetry,
+}: ItineraryPanelProps) {
   const [showTips, setShowTips] = useState(false);
+  const tipsRef = useRef<HTMLDivElement>(null);
 
-  const isGenerating = planStatus === 'generating';
+  useEffect(() => {
+    if (!showTips) return;
+    const handler = (e: MouseEvent) => {
+      if (tipsRef.current && !tipsRef.current.contains(e.target as Node)) {
+        setShowTips(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showTips]);
+
+  const isGenerating = planStatus === 'GENERATING';
+  const hasStarted = itineraryState.hasStarted && itineraryState.days.length > 0;
+  const hasDayCards = hasStarted && itineraryState.days.some((d) => d.events.length > 0);
 
   return (
     <motion.div
@@ -28,16 +48,23 @@ export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatu
         width: isChatMinimized ? '100%' : '70%',
         x: 0,
       }}
-      exit={{ opacity: 0 }}
+      exit={{ opacity: 0, transition: { duration: 0.3  } }}
       transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
       className="flex-shrink-0 flex flex-col bg-carbon/40 border border-white/[0.06] rounded-3xl overflow-hidden"
     >
-      <div className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full overflow-y-auto ${!itineraryState.hasStarted ? 'justify-center' : 'justify-start'}`}>
-        {itineraryState.hasStarted && itineraryState.tripTips && itineraryState.tripTips.length > 0 && (
-          <div className="absolute top-4 right-4 z-40 flex flex-col items-end">
+      <div
+        className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full overflow-y-auto ${
+          (!hasStarted || (errorType && !hasDayCards)) ? 'justify-center' : 'justify-start'
+        }`}
+      >
+        {/* Trip tips button */}
+        {hasStarted && itineraryState.tripTips && itineraryState.tripTips.length > 0 && (
+          <div ref={tipsRef} className="absolute top-4 right-4 z-40 flex flex-col items-end">
             <button
               onClick={() => setShowTips(!showTips)}
-              className={`p-2 rounded-full transition-colors group ${showTips ? 'bg-cyan text-black' : 'bg-cyan/10 text-cyan hover:bg-cyan/20'}`}
+              className={`p-2 rounded-full transition-colors group ${
+                showTips ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'
+              }`}
               title="Trip Tips"
             >
               <Info className="w-5 h-5" />
@@ -47,7 +74,7 @@ export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatu
                 <motion.div
                   initial={{ opacity: 0, y: -10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95, transition: { duration: 0.3 } }}
                   transition={{ duration: 0.2 }}
                   className="mt-2 w-72 p-5 bg-carbon/90 border border-cyan/20 rounded-2xl shadow-2xl backdrop-blur-xl max-h-[60vh] overflow-hidden bg-gradient-to-t from-cyan/10 to-transparent"
                 >
@@ -68,8 +95,8 @@ export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatu
           </div>
         )}
 
-        {/* ── Error / Stopped State ── */}
-        {errorType ? (
+        {/* Error/stopped state WITHOUT day cards rendered */}
+        {errorType && !hasDayCards ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -92,16 +119,34 @@ export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatu
               <h2 className="text-xl font-bold text-red-400 mb-1">
                 {errorType === 'stopped' ? 'Execution Stopped' : 'Error Occurred'}
               </h2>
-              <p className="text-sm text-white/40">
+              <p className="text-sm text-white/40 mb-4">
                 {errorType === 'stopped'
                   ? 'You stopped the generation.'
-                  : 'Something went wrong during generation. Please try again.'}
+                  : 'Something went wrong during generation.'}
               </p>
+              {onRetry && (
+                <button
+                  onClick={onRetry}
+                  className="flex items-center gap-2 mx-auto text-cyan/70 hover:text-cyan transition-colors text-xs font-bold uppercase tracking-wider group"
+                >
+                  {errorType === 'stopped' ? (
+                    <>
+                      <Play className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      <span>Resume</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                      <span>Try Again</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </motion.div>
-        ) : !itineraryState.hasStarted ? (
+        ) : !hasStarted ? (
           <>
-            {/* Header */}
+            {/* Pre-start / shimmer state */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -122,15 +167,12 @@ export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatu
                 </h2>
                 <p className="text-sm text-white/40">
                   {isGenerating
-                    ? plannerMode === 'autonomous'
-                      ? 'AI is autonomously planning your trip'
-                      : 'Building your trip collaboratively'
+                    ? 'AI is planning your trip'
                     : 'Your itinerary will appear here'}
                 </p>
               </div>
             </motion.div>
 
-            {/* Shimmer placeholder rows — only animate when generating */}
             <div className="w-full max-w-lg flex flex-col gap-3">
               {SHIMMER_WIDTHS.map((w, i) => (
                 <motion.div
@@ -153,29 +195,41 @@ export default function ItineraryPanel({ isChatMinimized, plannerMode, planStatu
             </div>
           </>
         ) : (
-          <div className={`w-full ${itineraryState.days.length === 1 ? 'max-w-2xl flex flex-col items-center' : 'max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-y-12 gap-x-12'} relative pb-10 pt-4`}>
+          /* Day cards grid */
+          <div
+            className={`w-full ${
+              itineraryState.days.length === 1
+                ? 'max-w-2xl flex flex-col items-center'
+                : 'max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-y-12 gap-x-12'
+            } relative pb-10 pt-4`}
+          >
             {itineraryState.days.map((day, index) => (
               <div key={day.dayNumber} className="relative flex flex-col h-full z-10 w-full">
-                <DayCard day={day} />
+                <DayCard day={day} index={index} />
 
-                {/* Desktop Arrow (pointing right) */}
                 {index < itineraryState.days.length - 1 && index % 2 === 0 && itineraryState.days.length > 1 && (
                   <div className="hidden md:flex absolute top-1/2 -right-10 transform -translate-y-1/2 z-0 text-cyan/20">
                     <ArrowRight className="w-8 h-8" />
                   </div>
                 )}
 
-                {/* Desktop/Mobile Arrow (pointing down-left for row transitions) */}
                 {index < itineraryState.days.length - 1 && index % 2 !== 0 && itineraryState.days.length > 1 && (
                   <div className="hidden md:flex absolute -bottom-10 -left-10 z-0 text-cyan/20 w-10 h-10">
-                    <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+                    <svg
+                      viewBox="0 0 100 100"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="w-full h-full"
+                    >
                       <line x1="100" y1="0" x2="0" y2="100" />
                       <polyline points="25 100 0 100 0 75" />
                     </svg>
                   </div>
                 )}
 
-                {/* Strict Mobile Arrow (always point down) */}
                 {index < itineraryState.days.length - 1 && (
                   <div className="md:hidden flex justify-center absolute -bottom-8 left-1/2 transform -translate-x-1/2 z-0 text-cyan/20">
                     <ArrowDown className="w-6 h-6" />

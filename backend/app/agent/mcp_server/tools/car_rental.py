@@ -1,12 +1,13 @@
-import requests
 from typing import Dict, Annotated, List, Optional, Literal
 from pydantic import Field, BaseModel
 import pathlib
 from app.agent.mcp_server.tools.constants import WebSearchSites, SERPER_CONTENT_PARSER_PROMPT
 from app.core.config import settings
+from app.utils.http import get_http_client
 from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 from app.agent.mcp_server.tools.timezone import convert_target_local_time_to_utc, get_timezone
 from app.agent.mcp_server.tools.geocoding import get_coordinates
+from app.agent.mcp_server.tools._errors import tool_error
 import time
 from datetime import datetime
 
@@ -80,7 +81,7 @@ def format_rental_cars(data: Dict) -> Dict:
     }
 
 # RapidAPI Booking.com API
-def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(description="The coordinates of the pickup location.")],
+async def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(description="The coordinates of the pickup location.")],
                        pickupDateTime: Annotated[DateTime, Field(description="The date and time of the pickup according to the wall clock time of the pickup location.")],
                        dropOffDateTime: Annotated[DateTime, Field(description="The date and time of the dropoff according to the wall clock time of the dropoff location.")],
                        dropOffCoordinates: Annotated[Optional[Coordinates], Field(description="The coordinates of the dropoff location.", default=None)],
@@ -88,13 +89,19 @@ def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(descripti
                        carTypes: Annotated[Optional[List[carTypes]], Field(description="The types of cars to search for.", default=None)],
                        driverAge: Annotated[Optional[int], Field(description="The age of the driver.", default=None)],
                        units: Annotated[Optional[Literal["METRIC", "IMPERIAL"]], Field(description="The units to use for the results.", default="IMPERIAL")],
-                       resultsPerPage: Annotated[Optional[int], Field(description="The number of results to return per page.", default=10)],
-                       page: Annotated[Optional[int], Field(description="The page number to return.", default=1)]) -> Dict:
+                       resultsPerPage: Annotated[Optional[int], Field(ge=5, le=50, description="The number of results to return per page (min 5, max 50).", default=10)],
+                       page: Annotated[Optional[int], Field(ge=1, description="The page number to return (1-based).", default=1)]) -> Dict:
 
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Rental-car search provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed with the trip plan without this rental-car search.",
+        )
     if not pickupCoordinates or not pickupDateTime or not dropOffDateTime:
-        return {"error": "Required parameters are missing"}
+        return tool_error(
+            "Required parameters are missing.",
+            fix_hint="Retry with `pickupCoordinates`, `pickupDateTime`, and `dropOffDateTime` all populated.",
+        )
     url = "https://booking-com18.p.rapidapi.com/car/search-coordinates"
     headers = {
         "Content-Type": "application/json",
@@ -119,35 +126,56 @@ def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(descripti
         carType = ",".join("carCategory::" + car for car in carTypes)
         params["carType"] = carType
     cache_key = generate_cache_key("search_rental_cars", params)
-    cache_value = retrieve_api_cache(cache_key, expires_in=1)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     try:
         if cache_value:
             data = cache_value
         else:
-            response = requests.get(url, headers=headers, params=params, timeout=45)
-            if not response.ok:
-                return {"error": f"Failed to search rental cars: {response.status_code} {response.text}"}
+            client = get_http_client()
+            response = await client.get(url, headers=headers, params=params, timeout=45)
+            if response.status_code >= 400:
+                return tool_error(
+                    "Rental-car search failed upstream.",
+                    fix_hint="Verify pickup < dropoff, dates in the future, valid coordinates, and retry. 5xx responses are transient — try once more; 4xx usually means invalid args.",
+                    status_code=response.status_code,
+                    extra={"upstream": response.text[:300]},
+                )
             data = response.json()
-            insert_api_cache(cache_key, data)
+            await insert_api_cache(cache_key, data)
         data = data.get("data", {})
         rentalCars = data.get("search_results", [])
+        totalResults = data.get("count", len(rentalCars))
+        totalPages = max(1, (totalResults + resultsPerPage - 1) // resultsPerPage) if resultsPerPage else 1
         startIndex = (page - 1) * resultsPerPage
         endIndex = startIndex + resultsPerPage
-        if startIndex >= len(rentalCars) or endIndex > len(rentalCars):
-            return {"error": "Page number out of range"}
+        if startIndex >= len(rentalCars):
+            return tool_error(
+                f"`page` {page} is out of range.",
+                fix_hint=f"This search has {totalResults} total result(s) and {totalPages} page(s) at resultsPerPage={resultsPerPage}. Retry with a `page` in [1, {totalPages}].",
+                extra={"page_length": len(rentalCars), "total_results": totalResults, "total_pages": totalPages},
+            )
         rentalCars = rentalCars[startIndex:endIndex]
-        if not rentalCars or len(rentalCars) == 0:
-            return {"error": "No rental cars found for the given parameters and page number"}
+        if not rentalCars:
+            return tool_error(
+                "No rental cars returned for this page.",
+                fix_hint="Retry with page=1, or broaden the search (wider pickup/dropoff window, remove carTypes filter).",
+            )
         result = {}
-        result["totalResults"] = data.get("count", None)
+        result["totalResults"] = totalResults
+        result["totalPages"] = totalPages
+        result["page"] = page
         result["searchContext"] = data.get("search_context", {})
         result["rentalCarOptions"] = [format_rental_cars(rentalCar) for rentalCar in rentalCars]
-        result["hasMorePages"] = result["totalResults"] > endIndex
+        result["hasMorePages"] = totalResults > endIndex
         result["nextPage"] = page + 1 if result["hasMorePages"] else None
         return result
 
     except Exception as e:
-        return {"error": f"Failed to search rental cars: {str(e)}"}
+        return tool_error(
+            "Rental-car search raised an unexpected error.",
+            fix_hint="Retry once with the same arguments. If it fails again, proceed without rental-car data.",
+            extra={"exception": str(e)},
+        )
 
 PROMPTS_DIR = pathlib.Path(__file__).parent / "prompts"
 search_rental_cars.__doc__ = (PROMPTS_DIR / "search_rental_cars.md").read_text()

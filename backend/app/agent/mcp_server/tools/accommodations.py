@@ -1,11 +1,12 @@
-import requests
 from typing import Dict, Annotated, List, Optional, Literal
 from pydantic import Field, BaseModel
 import pathlib
 from app.agent.mcp_server.tools.constants import WebSearchSites, SERPER_CONTENT_PARSER_PROMPT
 from app.core.config import settings
+from app.utils.http import get_http_client
 from app.agent.mcp_server.tools.timezone import convert_target_local_time_to_utc, get_timezone
 from app.agent.mcp_server.tools.geocoding import get_coordinates
+from app.agent.mcp_server.tools._errors import tool_error
 import time
 from datetime import datetime
 import math
@@ -77,7 +78,7 @@ def format_hotel_data(data: Dict) -> Dict:
     }
 
 # RapidAPI Booking.com API
-def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(description="The coordinates of the search location.")],
+async def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(description="The coordinates of the search location.")],
                   checkinDate: Annotated[str, Field(description="The checkin date in format YYYY-MM-DD.")],
                   checkoutDate: Annotated[str, Field(description="The checkout date in format YYYY-MM-DD.")],
                   rooms: Annotated[Optional[int], Field(ge=1, le=30, description="The number of rooms to search for.", default=1)],
@@ -85,13 +86,19 @@ def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(descript
                   children: Annotated[Optional[List[int]], Field(description="List of children ages to search for. Ranging from 0 to 17.", default=None)],
                   minPrice: Annotated[Optional[int], Field(ge=0, description="The minimum price to search for in USD.", default=None)],
                   maxPrice: Annotated[Optional[int], Field(ge=0, description="The maximum price to search for in USD.", default=None)],
-                  resultsPerPage: Annotated[Optional[int], Field(ge=5, le=50, description="The number of results to return per page.", default=10)],
-                  page: Annotated[Optional[int], Field(ge=1, description="The page number to return.", default=1)],
+                  resultsPerPage: Annotated[Optional[int], Field(ge=5, le=50, description="The number of results to return per page. Minimum 5, maximum 50.", default=10)],
+                  page: Annotated[Optional[int], Field(ge=1, description="The page number to return. Minimum 1.", default=1)],
                   units: Annotated[Optional[Literal["METRIC", "IMPERIAL"]], Field(description="The units to use for the results.", default="IMPERIAL")]) -> Dict:
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Hotel search provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed with the trip plan without this hotel search.",
+        )
     if not searchCoordinates or not checkinDate or not checkoutDate:
-        return {"error": "Required parameters are missing"}
+        return tool_error(
+            "Required parameters are missing.",
+            fix_hint="Retry with `searchCoordinates` (lat, lng, radiusKm), `checkinDate` (YYYY-MM-DD), and `checkoutDate` (YYYY-MM-DD) all populated.",
+        )
     
     url = "https://booking-com18.p.rapidapi.com/stays/search-by-geo"
     headers = {
@@ -118,7 +125,10 @@ def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(descript
         params["children"] = ",".join(str(child) for child in children)
     if minPrice and maxPrice:
         if minPrice > maxPrice:
-            return {"error": "Minimum price must be less than maximum price"}
+            return tool_error(
+                "`minPrice` must be less than `maxPrice`.",
+                fix_hint="Retry with `minPrice` strictly less than `maxPrice`, or drop one of them to remove the price filter.",
+            )
         params["minPrice"] = minPrice
         params["maxPrice"] = maxPrice
     elif minPrice:
@@ -126,9 +136,15 @@ def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(descript
     elif maxPrice:
         params["maxPrice"] = maxPrice
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=45)
-        if not response.ok:
-            return {"error": f"Failed to search hotels: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=45)
+        if response.status_code >= 400:
+            return tool_error(
+                "Hotel search failed upstream.",
+                fix_hint="Verify that check-in < check-out, that both dates are in the future, that coordinates/radius are reasonable, and retry. If the status is 5xx the upstream provider is temporarily unavailable — try once more.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         data = response.json()
         data = data.get("data", {})
         metaData = data.get("searchMeta", {})
@@ -143,7 +159,11 @@ def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(descript
         returnData["hotels"] = [format_hotel_data(hotel) for hotel in results]
         return returnData
     except Exception as e:
-        return {"error": f"Failed to search hotels: {str(e)}"}
+        return tool_error(
+            "Hotel search raised an unexpected error.",
+            fix_hint="Retry once with the same arguments. If it fails again, proceed without this hotel search and note it in your reasoning.",
+            extra={"exception": str(e)},
+        )
 
 PROMPTS_DIR = pathlib.Path(__file__).parent / "prompts"
 search_hotels.__doc__ = (PROMPTS_DIR / "search_hotels.md").read_text()

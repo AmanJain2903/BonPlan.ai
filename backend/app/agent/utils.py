@@ -1,3 +1,6 @@
+from google.genai import types
+from app.agent.schemas.structuredOutput import AddItineraryEvent
+
 def fix_schema_for_gemini(schema: dict) -> dict:
     import copy
     schema = copy.deepcopy(schema)
@@ -46,3 +49,18 @@ def fix_schema_for_gemini(schema: dict) -> dict:
             return [process_node(v) for v in node]
         return node
     return process_node(schema)
+
+ADD_EVENT_TOOL = types.FunctionDeclaration(
+    name="add_itinerary_event",
+    description="Call this tool to commit a specific event (Flight, Hotel, etc.) to the user's itinerary. "
+                "The agent must call this multiple times to build a full trip.",
+    # This ensures Gemini treats the arguments as a strictly structured JSON object
+    parameters=fix_schema_for_gemini(AddItineraryEvent.model_json_schema())
+)
+
+def convert_mcp_to_gemini(mcp_tool) -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name=mcp_tool.name,
+        description=mcp_tool.description or "",
+        parameters=fix_schema_for_gemini(mcp_tool.inputSchema)
+    )

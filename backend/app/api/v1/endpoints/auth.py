@@ -4,26 +4,29 @@
 This file contains the authentication endpoints for the v1 version of the API.
 """
 
-from app.utils.emailVerification import send_email
-from app.database.database import Session, get_db
-from app.database.models.usersTable import User
-from app.database.schemas.preferences import TripPreferencesSchema
-from app.core.config import settings
-
-from fastapi import HTTPException, Request, APIRouter, Depends
-
-from datetime import datetime, timezone, timedelta
+import asyncio
 import bcrypt
 import jwt
 import re
 
-from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timezone, timedelta
 
+from fastapi import HTTPException, APIRouter
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.database.database import Session
+from app.database.models.usersTable import User
+from app.database.schemas.preferences import TripPreferencesSchema
+from app.utils.emailVerification import send_email
 
 router = APIRouter()
+
 
 class UpdateProfileRequest(BaseModel):
     token: str
@@ -32,6 +35,7 @@ class UpdateProfileRequest(BaseModel):
     country_code: str | None = None
     phone: str | None = None
     preferences: dict = {}
+
 
 """
 Helper functions
@@ -58,16 +62,59 @@ def makeFirstLetterCapital(string):
     return string.capitalize()
 
 
+async def _hash_password(password: str) -> str:
+    """bcrypt.hashpw is CPU-bound (hundreds of ms); offload to a thread."""
+    hashed = await asyncio.to_thread(
+        bcrypt.hashpw, password.encode("utf-8"), bcrypt.gensalt()
+    )
+    return hashed.decode("utf-8")
+
+
+async def _check_password(password: str, password_hash: str) -> bool:
+    return await asyncio.to_thread(
+        bcrypt.checkpw, password.encode("utf-8"), password_hash.encode("utf-8")
+    )
+
+
+async def _send_verification_email_for_user(email: str, db: AsyncSession) -> None:
+    """Build and send a verification email using the provided session.
+
+    Does not open its own session and does not commit. Caller supplies the
+    already-open session.
+    """
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found. Please register first.")
+
+    tokenPayload = {
+        "email": email,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+    }
+    token = jwt.encode(tokenPayload, settings.SECRET_KEY, algorithm="HS256")
+    verificationLink = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+    subject = "BonPlan.ai - Verify your email address"
+    htmlContent = f"""
+    <p>Hello {user.first_name},</p>
+    <p>Thank you for registering with BonPlan.ai. Please click the link below to verify your email address.</p>
+    <a href="{verificationLink}">{verificationLink}</a>
+    <p>If you did not request this verification, please ignore this email.</p>
+    <p>Thank you,</p>
+    <p>The BonPlan.ai Team</p>
+    """
+    await send_email(email, subject, htmlContent)
+
+
 """
 Google authentication endpoint
 """
 @router.post("/google", response_model=dict)
-def google_login(token: str, db: Session = Depends(get_db)):
+async def google_login(token: str):
     if not token:
         raise HTTPException(status_code=400, detail="Token is required.")
 
     try:
-        id_info = id_token.verify_oauth2_token(
+        id_info = await asyncio.to_thread(
+            id_token.verify_oauth2_token,
             token,
             google_requests.Request(),
             settings.GOOGLE_CLIENT_ID,
@@ -84,159 +131,162 @@ def google_login(token: str, db: Session = Depends(get_db)):
     if not first_name:
         raise HTTPException(status_code=400, detail="Google account has no first name.")
 
-    existingUser = db.query(User).filter(User.email == email).first()
-    if existingUser and existingUser.auth_provider == "local":
-        raise HTTPException(status_code=400, detail="An account with this email already exists. Please log in with your password.")
-    elif existingUser and existingUser.auth_provider == "google":
-        existingUser.is_new_user = False
-        db.commit()
-        token_payload = {
-            "user_id": str(existingUser.id),
-            "exp": datetime.now(timezone.utc) + timedelta(days=7)
-        }
-        jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-        prefs = existingUser.preferences or TripPreferencesSchema().model_dump()
-        return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email, "preferences": prefs, "is_new_user": existingUser.is_new_user}
-    else:
-        try:
-            newUser = User(
-                first_name=makeFirstLetterCapital(first_name),
-                last_name=makeFirstLetterCapital(last_name),
-                email=email,
-                phone={'country_code': None, 'number': None},
-                auth_provider="google",
-                is_verified=True,
-                preferences=TripPreferencesSchema().model_dump(),
-            )
-            db.add(newUser)
-            db.commit()
+    async with Session() as db:
+        existingUser = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if existingUser and existingUser.auth_provider == "local":
+            raise HTTPException(status_code=400, detail="An account with this email already exists. Please log in with your password.")
+        elif existingUser and existingUser.auth_provider == "google":
+            existingUser.is_new_user = False
+            await db.commit()
             token_payload = {
-                "user_id": str(newUser.id),
+                "user_id": str(existingUser.id),
                 "exp": datetime.now(timezone.utc) + timedelta(days=7)
             }
             jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-            return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True}
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
+            prefs = existingUser.preferences or TripPreferencesSchema().model_dump()
+            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email, "preferences": prefs, "is_new_user": existingUser.is_new_user}
+        else:
+            try:
+                newUser = User(
+                    first_name=makeFirstLetterCapital(first_name),
+                    last_name=makeFirstLetterCapital(last_name),
+                    email=email,
+                    phone={'country_code': None, 'number': None},
+                    auth_provider="google",
+                    is_verified=True,
+                    preferences=TripPreferencesSchema().model_dump(),
+                )
+                db.add(newUser)
+                await db.commit()
+                await db.refresh(newUser)
+                token_payload = {
+                    "user_id": str(newUser.id),
+                    "exp": datetime.now(timezone.utc) + timedelta(days=7)
+                }
+                jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
+                return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True}
+            except Exception as e:
+                await db.rollback()
+                raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
+
 
 """
 Local registration endpoint
 """
 @router.post("/register", response_model=dict)
-def local_register(first_name: str, last_name: str, email: str, password: str, code: str = "", phone: str = "", db: Session = Depends(get_db)):
+async def local_register(first_name: str, last_name: str, email: str, password: str, code: str = "", phone: str = ""):
     if not first_name or not last_name or not email or not password:
         missingField = "email" if not email else "password" if not password else "first_name" if not first_name else "last_name"
         raise HTTPException(status_code=400, detail=f"Missing required field: {missingField}")
-    
+
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address. Please enter a valid email address.")
-    
+
     if not is_valid_password(password):
         raise HTTPException(status_code=400, detail="Invalid password. Please enter a valid password.")
-    
-    existingUser = db.query(User).filter(User.email == email).first()
-    if existingUser and existingUser.auth_provider == "local":
-        raise HTTPException(status_code=400, detail="User already exists. Please log in.")
-    elif existingUser and existingUser.auth_provider == "google":
-        raise HTTPException(status_code=400, detail="User already exists. Please log in with Google.")
-    isPhoneNumberUnique = db.query(User).filter(User.phone == {'country_code': code if code else None, 'number': phone if phone else None}).first()
-    if isPhoneNumberUnique:
-        raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
-    else:
+
+    async with Session() as db:
+        existingUser = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if existingUser and existingUser.auth_provider == "local":
+            raise HTTPException(status_code=400, detail="User already exists. Please log in.")
+        elif existingUser and existingUser.auth_provider == "google":
+            raise HTTPException(status_code=400, detail="User already exists. Please log in with Google.")
+
+        phone_json = {'country_code': code if code else None, 'number': phone if phone else None}
+        isPhoneNumberUnique = (await db.execute(
+            select(User).where(User.phone == phone_json)
+        )).scalar_one_or_none()
+        if isPhoneNumberUnique:
+            raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
+
         try:
+            password_hash = await _hash_password(password)
             newUser = User(
                 first_name=makeFirstLetterCapital(first_name),
                 last_name=makeFirstLetterCapital(last_name),
                 email=email,
-                phone={'country_code': code if code else None, 'number': phone if phone else None},
-                password_hash=bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                phone=phone_json,
+                password_hash=password_hash,
                 auth_provider="local",
                 is_verified=False,
                 preferences=TripPreferencesSchema().model_dump()
             )
             db.add(newUser)
-            db.commit()
-            send_verification_email(email, db)
+            await db.commit()
+            await _send_verification_email_for_user(email, db)
             return {"message": "Registration successful. A verification email has been sent to your email address. Please verify your email address to login.", "status_code": 201}
         except IntegrityError:
-            db.rollback()
+            await db.rollback()
             raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
+        except HTTPException:
+            raise
         except Exception as e:
-            db.rollback()
+            await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
+
 
 """
 Local Login endpoint
 """
 @router.post("/login", response_model=dict)
-def local_login(email: str, password: str, db: Session = Depends(get_db)):
+async def local_login(email: str, password: str):
     if not email or not password:
         missingField = "email" if not email else "password"
         raise HTTPException(status_code=400, detail=f"Missing required field: {missingField}")
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address. Please enter a valid email address.")
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found. Please register first.")
-    if user.auth_provider != "local":
-        raise HTTPException(status_code=400, detail="This account uses Google sign-in. Please log in with Google.")
-    if not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
-        raise HTTPException(status_code=400, detail="Incorrect password. Please try again.")
-    if not user.is_verified:
-        send_verification_email(email, db)
-        raise HTTPException(status_code=403, detail="User not verified. A verification email has been sent to your email address. Please verify your email address to login.")
-    try:
-        is_new = user.is_new_user
-        user.is_new_user = False
-        db.commit()
-        token_payload = {
-            "user_id": str(user.id),
-            "exp": datetime.now(timezone.utc) + timedelta(days=7)
-        }
-        jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-        prefs = user.preferences or TripPreferencesSchema().model_dump()
-        return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": user.first_name, "last_name": user.last_name, "email": user.email, "preferences": prefs, "is_new_user": is_new}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to login: {e}")
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found. Please register first.")
+        if user.auth_provider != "local":
+            raise HTTPException(status_code=400, detail="This account uses Google sign-in. Please log in with Google.")
+        if not await _check_password(password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Incorrect password. Please try again.")
+        if not user.is_verified:
+            await _send_verification_email_for_user(email, db)
+            raise HTTPException(status_code=403, detail="User not verified. A verification email has been sent to your email address. Please verify your email address to login.")
+        try:
+            is_new = user.is_new_user
+            user.is_new_user = False
+            await db.commit()
+            token_payload = {
+                "user_id": str(user.id),
+                "exp": datetime.now(timezone.utc) + timedelta(days=7)
+            }
+            jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
+            prefs = user.preferences or TripPreferencesSchema().model_dump()
+            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": user.first_name, "last_name": user.last_name, "email": user.email, "preferences": prefs, "is_new_user": is_new}
+        except HTTPException:
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to login: {e}")
+
 
 """
 User Verification endpoints
 """
 @router.post("/send-verification-email", response_model=dict)
-def send_verification_email(email: str, db: Session = Depends(get_db)):
+async def send_verification_email(email: str):
     if not email:
         raise HTTPException(status_code=400, detail="Email is required.")
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address. Please enter a valid email address.")
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found. Please register first.")
-    
-    tokenPayload = {
-        "email": email,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=15)
-    }
-    token = jwt.encode(tokenPayload, settings.SECRET_KEY, algorithm="HS256")
-    verificationLink = f"{settings.FRONTEND_URL}/verify-email?token={token}"
-    subject = "BonPlan.ai - Verify your email address"
-    htmlContent = f"""
-    <p>Hello {user.first_name},</p>
-    <p>Thank you for registering with BonPlan.ai. Please click the link below to verify your email address.</p>
-    <a href="{verificationLink}">{verificationLink}</a>
-    <p>If you did not request this verification, please ignore this email.</p>
-    <p>Thank you,</p>
-    <p>The BonPlan.ai Team</p>
-    """
-    try:
-        send_email(email, subject, htmlContent)
-        return {"message": "Verification email sent successfully", "status_code": 200}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send verification email: {e}")
+
+    async with Session() as db:
+        try:
+            await _send_verification_email_for_user(email, db)
+            return {"message": "Verification email sent successfully", "status_code": 200}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to send verification email: {e}")
+
 
 @router.post("/verify-email", response_model=dict)
-def verify_email(token: str, db: Session = Depends(get_db)):
+async def verify_email(token: str):
     try:
         token_payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
@@ -246,61 +296,68 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     email = token_payload.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="Invalid verification link.")
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    if user.is_verified == True:
-        raise HTTPException(status_code=400, detail="Email already verified.")
-    try:
-        user.is_verified = True
-        db.commit()
-        return {"message": "Email verified successfully", "status_code": 200}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to verify email.")
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        if user.is_verified == True:
+            raise HTTPException(status_code=400, detail="Email already verified.")
+        try:
+            user.is_verified = True
+            await db.commit()
+            return {"message": "Email verified successfully", "status_code": 200}
+        except Exception:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to verify email.")
+
 
 """
 Forgot Password — sends a reset link to the user's email
 """
 @router.post("/forgot-password", response_model=dict)
-def forgot_password(email: str, db: Session = Depends(get_db)):
+async def forgot_password(email: str):
     if not email:
         raise HTTPException(status_code=400, detail="Email is required.")
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address.")
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not user:
+            return {"message": "If an account with that email exists, a reset link has been sent.", "status_code": 200}
+        if user.auth_provider != "local":
+            raise HTTPException(status_code=400, detail="This account uses Google sign-in. Password reset is not available.")
+
+        tokenPayload = {
+            "email": email,
+            "purpose": "password_reset",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        }
+        token = jwt.encode(tokenPayload, settings.SECRET_KEY, algorithm="HS256")
+        resetLink = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        subject = "BonPlan.ai - Reset your password"
+        htmlContent = f"""
+        <p>Hello {user.first_name},</p>
+        <p>We received a request to reset your password. Click the link below to set a new password.</p>
+        <a href="{resetLink}">{resetLink}</a>
+        <p>This link will expire in 15 minutes.</p>
+        <p>If you did not request this, please ignore this email.</p>
+        <p>Thank you,</p>
+        <p>The BonPlan.ai Team</p>
+        """
+        try:
+            await send_email(email, subject, htmlContent)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to send reset email. Please try again later.")
         return {"message": "If an account with that email exists, a reset link has been sent.", "status_code": 200}
-    if user.auth_provider != "local":
-        raise HTTPException(status_code=400, detail="This account uses Google sign-in. Password reset is not available.")
-    tokenPayload = {
-        "email": email,
-        "purpose": "password_reset",
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
-    }
-    token = jwt.encode(tokenPayload, settings.SECRET_KEY, algorithm="HS256")
-    resetLink = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-    subject = "BonPlan.ai - Reset your password"
-    htmlContent = f"""
-    <p>Hello {user.first_name},</p>
-    <p>We received a request to reset your password. Click the link below to set a new password.</p>
-    <a href="{resetLink}">{resetLink}</a>
-    <p>This link will expire in 15 minutes.</p>
-    <p>If you did not request this, please ignore this email.</p>
-    <p>Thank you,</p>
-    <p>The BonPlan.ai Team</p>
-    """
-    try:
-        send_email(email, subject, htmlContent)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to send reset email. Please try again later.")
-    return {"message": "If an account with that email exists, a reset link has been sent.", "status_code": 200}
+
 
 """
 Reset Password — validates the reset token and sets a new password
 """
 @router.post("/reset-password", response_model=dict)
-def reset_password(token: str, new_password: str, db: Session = Depends(get_db)):
+async def reset_password(token: str, new_password: str):
     if not token or not new_password:
         raise HTTPException(status_code=400, detail="All fields are required.")
     try:
@@ -316,24 +373,27 @@ def reset_password(token: str, new_password: str, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="Invalid reset link.")
     if not is_valid_password(new_password):
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters with one uppercase, one lowercase, one number, and one special character.")
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    if user.auth_provider != "local":
-        raise HTTPException(status_code=400, detail="Password reset is not available for Google accounts.")
-    try:
-        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.commit()
-        return {"message": "Password has been reset successfully. You can now log in.", "status_code": 200}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to reset password: {e}")
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        if user.auth_provider != "local":
+            raise HTTPException(status_code=400, detail="Password reset is not available for Google accounts.")
+        try:
+            user.password_hash = await _hash_password(new_password)
+            await db.commit()
+            return {"message": "Password has been reset successfully. You can now log in.", "status_code": 200}
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to reset password: {e}")
+
 
 """
 Get Profile endpoint — returns user profile data
 """
 @router.get("/profile", response_model=dict)
-def get_profile(token: str, db: Session = Depends(get_db)):
+async def get_profile(token: str):
     if not token:
         raise HTTPException(status_code=400, detail="Token is required.")
     try:
@@ -345,27 +405,30 @@ def get_profile(token: str, db: Session = Depends(get_db)):
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid token.")
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    phone = user.phone or {}
-    prefs = user.preferences or TripPreferencesSchema().model_dump()
-    return {
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email,
-        "country_code": phone.get("country_code", ""),
-        "phone": phone.get("number", ""),
-        "auth_provider": user.auth_provider,
-        "preferences": prefs,
-        "status_code": 200,
-    }
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        phone = user.phone or {}
+        prefs = user.preferences or TripPreferencesSchema().model_dump()
+        return {
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "country_code": phone.get("country_code", ""),
+            "phone": phone.get("number", ""),
+            "auth_provider": user.auth_provider,
+            "preferences": prefs,
+            "status_code": 200,
+        }
+
 
 """
 Update Profile endpoint — updates editable user fields
 """
 @router.post("/profile", response_model=dict)
-def update_profile(req: UpdateProfileRequest, db: Session = Depends(get_db)):
+async def update_profile(req: UpdateProfileRequest):
     token = req.token
     first_name = req.first_name
     last_name = req.last_name
@@ -386,36 +449,39 @@ def update_profile(req: UpdateProfileRequest, db: Session = Depends(get_db)):
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid token.")
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    try:
-        user.first_name = makeFirstLetterCapital(first_name.strip())
-        user.last_name = makeFirstLetterCapital(last_name.strip())
-        user.phone = {"country_code": country_code.strip() if country_code else None, "number": phone.strip() if phone else None}
-        user.preferences = preferences if preferences else user.preferences
-        db.commit()
-        return {
-            "message": "Profile updated successfully.",
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "country_code": (user.phone or {}).get("country_code", ""),
-            "phone": (user.phone or {}).get("number", ""),
-            "preferences": user.preferences,
-            "status_code": 200,
-        }
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to update profile: {e}")
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        try:
+            user.first_name = makeFirstLetterCapital(first_name.strip())
+            user.last_name = makeFirstLetterCapital(last_name.strip())
+            user.phone = {"country_code": country_code.strip() if country_code else None, "number": phone.strip() if phone else None}
+            user.preferences = preferences if preferences else user.preferences
+            await db.commit()
+            return {
+                "message": "Profile updated successfully.",
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "country_code": (user.phone or {}).get("country_code", ""),
+                "phone": (user.phone or {}).get("number", ""),
+                "preferences": user.preferences,
+                "status_code": 200,
+            }
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update profile: {e}")
+
 
 """
 Change Password endpoint — local users only
 """
 @router.post("/change-password", response_model=dict)
-def change_password(token: str, current_password: str, new_password: str, db: Session = Depends(get_db)):
+async def change_password(token: str, current_password: str, new_password: str):
     if not token or not current_password or not new_password:
         raise HTTPException(status_code=400, detail="All fields are required.")
     try:
@@ -427,30 +493,33 @@ def change_password(token: str, current_password: str, new_password: str, db: Se
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid token.")
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    if user.auth_provider != "local":
-        raise HTTPException(status_code=400, detail="Password change is not available for Google accounts.")
-    if not bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8')):
-        raise HTTPException(status_code=400, detail="Current password is incorrect.")
-    if not is_valid_password(new_password):
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters with one uppercase, one lowercase, one number, and one special character.")
-    if current_password == new_password:
-        raise HTTPException(status_code=400, detail="New password must be different from the current password.")
-    try:
-        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.commit()
-        return {"message": "Password changed successfully.", "status_code": 200}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to change password: {e}")
+
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        if user.auth_provider != "local":
+            raise HTTPException(status_code=400, detail="Password change is not available for Google accounts.")
+        if not await _check_password(current_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect.")
+        if not is_valid_password(new_password):
+            raise HTTPException(status_code=400, detail="New password must be at least 8 characters with one uppercase, one lowercase, one number, and one special character.")
+        if current_password == new_password:
+            raise HTTPException(status_code=400, detail="New password must be different from the current password.")
+        try:
+            user.password_hash = await _hash_password(new_password)
+            await db.commit()
+            return {"message": "Password changed successfully.", "status_code": 200}
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to change password: {e}")
+
 
 """
 User Delete endpoint — works for both local and Google users via JWT
 """
 @router.post("/delete", response_model=dict)
-def delete_user(token: str, db: Session = Depends(get_db)):
+async def delete_user(token: str):
     if not token:
         raise HTTPException(status_code=400, detail="Token is required.")
     try:
@@ -462,14 +531,15 @@ def delete_user(token: str, db: Session = Depends(get_db)):
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid token.")
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    try:
-        db.delete(user)
-        db.commit()
-        return {"message": "Account deleted successfully", "status_code": 200}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete account: {e}")
 
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        try:
+            await db.delete(user)
+            await db.commit()
+            return {"message": "Account deleted successfully", "status_code": 200}
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to delete account: {e}")

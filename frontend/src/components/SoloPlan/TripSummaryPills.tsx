@@ -8,7 +8,7 @@ interface TripSummaryPillsProps {
   plan: Plan;
   tripCostEstimate?: number;
   actualCost?: number;
-  planStatus: string;
+  isGenerating: boolean;
   dynamicTitle?: string;
   dynamicJourney?: string[];
 }
@@ -53,6 +53,7 @@ function Pill({
   id,
   icon: Icon,
   label,
+  index,
   hoveredPill,
   onHover,
   onLeave,
@@ -60,6 +61,7 @@ function Pill({
   id: string;
   icon: typeof MapPin;
   label: string;
+  index: number;
   hoveredPill: string | null;
   onHover: () => void;
   onLeave: () => void;
@@ -69,14 +71,26 @@ function Pill({
 
   return (
     <motion.div
-      layout
-      transition={SPRING_PILL}
+      initial={{ opacity: 0, y: -8, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ ...SPRING_PILL, delay: 0.1 + index * 0.08 }}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
-      className={`flex items-center gap-2.5 bg-black/60 border border-white/10 rounded-full px-5 py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity] duration-300 ${isActive ? 'max-w-[800px] z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'max-w-[200px] sm:max-w-[250px] z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
+      className={`flex items-center gap-2.5 bg-black/60 border border-white/10 rounded-full px-5 py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,max-width,border-color,box-shadow] duration-300 ${isActive ? 'max-w-[800px] transition-smooth duration-800 z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'max-w-[200px] sm:max-w-[250px] z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
     >
       <Icon className="text-cyan w-4 h-4 shrink-0" />
-      <span className="text-xs sm:text-sm font-semibold text-white/90 truncate whitespace-nowrap">{label}</span>
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={label}
+          initial={{ opacity: 0, y: 0 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4, transition: { duration: 0.3  } }}
+          transition={{ duration: 0.2 }}
+          className="text-xs sm:text-sm font-semibold text-white/90 truncate whitespace-nowrap"
+        >
+          {label}
+        </motion.span>
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -87,7 +101,7 @@ const PILLS_CONFIG = [
   { id: 'dates', icon: CalendarDays, dataKey: 'datesLabel' as const },
 ];
 
-export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, planStatus, dynamicTitle, dynamicJourney }: TripSummaryPillsProps) {
+export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, isGenerating, dynamicTitle, dynamicJourney }: TripSummaryPillsProps) {
   const [hoveredPill, setHoveredPill] = useState<string | null>(null);
   const data = useTripDisplayData(plan, dynamicTitle, dynamicJourney);
 
@@ -95,17 +109,19 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, p
     <AnimatePresence>
       {plan && (
         <motion.div
-          initial={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20, height: 0, marginBottom: 0 }}
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20, height: 0, marginBottom: 0, transition: { duration: 0.3  } }}
           transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
           className="w-full shrink-0 flex flex-wrap items-center justify-center gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8"
         >
-          {PILLS_CONFIG.map(({ id, icon, dataKey }) => (
+          {PILLS_CONFIG.map(({ id, icon, dataKey }, i) => (
             <Pill
               key={id}
               id={id}
               icon={icon}
               label={data[dataKey]}
+              index={i}
               hoveredPill={hoveredPill}
               onHover={() => setHoveredPill(id)}
               onLeave={() => setHoveredPill(null)}
@@ -116,10 +132,11 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, p
               id="cost"
               icon={DollarSign}
               label={
-                planStatus !== 'generating' && actualCost !== undefined
-                  ? `Trip Cost: $${actualCost.toFixed(2)}`
+                !isGenerating && actualCost !== undefined
+                  ? `Estimated Cost: $${actualCost.toFixed(2)}`
                   : `Estimated Cost: $${tripCostEstimate.toFixed(2)}`
               }
+              index={PILLS_CONFIG.length}
               hoveredPill={hoveredPill}
               onHover={() => setHoveredPill('cost')}
               onLeave={() => setHoveredPill(null)}

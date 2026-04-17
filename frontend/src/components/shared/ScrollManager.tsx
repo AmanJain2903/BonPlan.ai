@@ -33,30 +33,29 @@ export default function ScrollManager() {
     if (forceTop) {
       sessionStorage.removeItem('force-scroll-top');
       sessionStorage.removeItem(`scroll-pos-${location.pathname}`);
-      window.scrollTo(0, 0);
-      // Delayed fallback in case of structural mounts taking time
-      const t = setTimeout(() => window.scrollTo(0, 0), 100);
-      return () => clearTimeout(t);
     }
 
-    const savedPos = sessionStorage.getItem(`scroll-pos-${location.pathname}`);
-    const restore = () => {
-      if (savedPos !== null) {
-        window.scrollTo(0, parseInt(savedPos, 10));
-      } else {
-        window.scrollTo(0, 0);
+    const savedPos = forceTop ? null : sessionStorage.getItem(`scroll-pos-${location.pathname}`);
+    const targetY = savedPos !== null ? parseInt(savedPos, 10) : 0;
+
+    window.scrollTo(0, targetY);
+
+    // For scroll-to-top, the immediate call always succeeds
+    if (targetY <= 0) return;
+
+    // For non-zero targets, retry until the browser can actually scroll there.
+    // Covers AnimatePresence exit delays + lazy content loading.
+    let attempts = 0;
+    const intervalId = setInterval(() => {
+      window.scrollTo(0, targetY);
+      attempts++;
+      const reached = Math.abs(window.scrollY - targetY) <= 5;
+      if (reached || attempts >= 20) {
+        clearInterval(intervalId);
       }
-    };
+    }, 100);
 
-    restore();
-    // Re-trigger scroll to fight layout shifts caused by AnimatePresence or lazy images
-    const t1 = setTimeout(restore, 100);
-    const t2 = setTimeout(restore, 350);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    return () => clearInterval(intervalId);
   }, [location.pathname]);
 
   return null;

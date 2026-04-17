@@ -1,44 +1,37 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ItineraryDay } from './types';
-import { Calendar, DollarSign, Activity, Loader2, CheckCircle2 } from 'lucide-react';
+import { Calendar, DollarSign, Activity, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import PlacesPolaroid from './PlacesPolaroid';
+import { formatDateForDayCard, EASE_OUT_EXPO } from './constants';
 
-export function formatDate(date: string) {
-  const year = date.split('-')[0];
-  const month = date.split('-')[1];
-  const day = date.split('-')[2];
-  const monthMap = {
-    '01': 'January',
-    '02': 'February',
-    '03': 'March',
-    '04': 'April',
-    '05': 'May',
-    '06': 'June',
-    '07': 'July',
-    '08': 'August',
-    '09': 'September',
-    '10': 'October',
-    '11': 'November',
-    '12': 'December'
-  }
-  return `${day}-${monthMap[month as keyof typeof monthMap]}-${year}`;
-}
+const VALUE_SWAP = {
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -6 },
+  transition: { duration: 0.25 },
+};
 
-export default function DayCard({ day }: { day: ItineraryDay }) {
+export default function DayCard({ day, index = 0 }: { day: ItineraryDay; index?: number }) {
   const isDefaultTitle = typeof day.title === 'string' && day.title.trim().toLowerCase() === `day ${day.dayNumber}`;
   const displayTitle = day.title && !isDefaultTitle ? `${day.title}` : `Day ${day.dayNumber}`;
+
+  const borderClass = day.hasError
+    ? 'bg-black/60 border border-red-500/40 shadow-[0_0_30px_rgba(239,68,68,0.15)]'
+    : day.isLoading
+      ? 'bg-black/60 border border-cyan/40 shadow-[0_0_30px_rgba(102,252,241,0.15)] glow-cyan'
+      : 'bg-black/40 border border-cyan/20 shadow-2xl hover:border-cyan/40';
+
+  const statusKey = day.hasError ? 'error' : day.isLoading ? 'loading' : 'done';
 
   return (
     <motion.div
       layout
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className={`relative flex flex-col gap-5 p-6 h-full overflow-hidden rounded-3xl backdrop-blur-md transition-all duration-300 ${day.isLoading
-        ? 'bg-black/60 border border-cyan/40 shadow-[0_0_30px_rgba(102,252,241,0.15)] glow-cyan'
-        : 'bg-black/40 border border-cyan/20 shadow-2xl hover:border-cyan/40'
-        }`}
+      initial={{ opacity: 0, y: 0, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.5, delay: index * 0.1, ease: EASE_OUT_EXPO }}
+      className={`relative flex flex-col gap-5 p-6 h-full overflow-hidden rounded-3xl backdrop-blur-md transition-all duration-300 ${borderClass}`}
     >
-      {/* Animated Loading Pulse Overlay */}
-      {day.isLoading && (
+      {day.isLoading && !day.hasError && (
         <motion.div
           animate={{ opacity: [0.2, 0.7, 0.2] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
@@ -49,18 +42,29 @@ export default function DayCard({ day }: { day: ItineraryDay }) {
       <div className="flex items-start justify-between relative z-10 min-h-[4rem]">
         <div className="flex flex-col flex-1 min-w-0 pr-4">
           <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white/90 truncate block max-w-full" title={displayTitle}>
-            {displayTitle}
+            <AnimatePresence mode="wait">
+              <motion.span key={displayTitle} {...VALUE_SWAP} className="block truncate">
+                {displayTitle}
+              </motion.span>
+            </AnimatePresence>
           </h3>
 
-
-          {/* Preserved height placeholder for Date */}
           <div className="h-7 mt-2 flex items-center">
-            {day.date ? (
-              <div className="flex items-center gap-1.5 text-cyan/70 bg-cyan/10 px-2.5 py-1 rounded-full w-fit">
-                <Calendar className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-xs font-semibold uppercase tracking-wider">{formatDate(day.date)}</span>
-              </div>
-            ) : null}
+            <AnimatePresence>
+              {day.date && (
+                <motion.div
+                  key={day.date}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25 }}
+                  className="flex items-center gap-1.5 text-cyan/70 bg-cyan/10 px-2.5 py-1 rounded-full w-fit"
+                >
+                  <Calendar className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-xs font-semibold uppercase tracking-wider">{formatDateForDayCard(day.date)}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -72,27 +76,41 @@ export default function DayCard({ day }: { day: ItineraryDay }) {
       <div className="flex items-center gap-5 pt-5 border-t border-white/[0.08] relative z-10">
         <div className="flex items-center gap-2 text-white/60 hover:text-white/90 transition-colors">
           <Activity className="w-4 h-4 text-cyan" />
-          <span className="text-sm font-medium">{day.eventsCount} Activities</span>
+          <AnimatePresence mode="wait">
+            <motion.span key={day.eventsCount} {...VALUE_SWAP} className="text-sm font-medium">
+              {day.eventsCount} Activities
+            </motion.span>
+          </AnimatePresence>
         </div>
         <div className="flex items-center gap-1.5 text-white/60 hover:text-white/90 transition-colors">
           <DollarSign className="w-4 h-4 text-emerald-400" />
-          <span className="text-sm font-medium">${day.cost.toFixed(2)}</span>
+          <AnimatePresence mode="wait">
+            <motion.span key={day.cost} {...VALUE_SWAP} className="text-sm font-medium">
+              ${day.cost.toFixed(2)}
+            </motion.span>
+          </AnimatePresence>
         </div>
 
-        {/* Dynamic Loading Spinner (Bottom Right) */}
-        {day.isLoading && (
-          <div className="ml-auto flex items-center text-cyan">
-            <Loader2 className="w-5 h-5 animate-spin" />
-          </div>
-        )}
-        {!day.isLoading && (
-          <div className="ml-auto flex items-center text-cyan">
-            <CheckCircle2 className="w-5 h-5 text-cyan/70" />
-          </div>
-        )}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={statusKey}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.2 }}
+            className="ml-auto flex items-center"
+          >
+            {statusKey === 'error' ? (
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+            ) : statusKey === 'loading' ? (
+              <Loader2 className="w-5 h-5 text-cyan animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-cyan/70" />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Background radial highlight */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-cyan/5 via-transparent to-transparent pointer-events-none" />
     </motion.div>
   );

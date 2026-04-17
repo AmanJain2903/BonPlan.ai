@@ -1,21 +1,26 @@
 # backend/app/database/database.py
 
 """
-Database connection and session management.
+Async database connection and session management.
 """
 
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.core.config import settings
 
-engine = create_engine(settings.DATABASE_URL)
-Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,
+    future=True,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 
-# Get a database session
-def get_db():
-    db = Session()
-    try:
-        yield db
-    finally:
-        db.close()
+Session = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+Base = declarative_base()

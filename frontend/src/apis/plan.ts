@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_BASE } from './config';
+import { API_BASE, AGENT_BASE } from './config';
 
 export type RegisterResponse = {
     message?: string;
@@ -37,10 +37,27 @@ export interface GetPlansResponse {
     plans?: Plan[];
 }
 
+export interface TripItinerary {
+    id: string;
+    title: string | null;
+    origin: string | null;
+    destinations: string[];
+    start_date: any;
+    end_date: any;
+    cost: number | null;
+    days: number | null;
+    events: any[];
+    tips: string[];
+    status: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface GetPlanResponse {
     message?: string;
     status_code?: number;
     plan?: Plan;
+    tripItinerary?: TripItinerary;
 }
 
 export interface UpdatePlanResponse {
@@ -91,16 +108,8 @@ export const api = {
         );
         return data;
     },
-    updatePlan: async (token: string, id: string, bodyData: any): Promise<UpdatePlanResponse> => {
-        const { data } = await axios.put<UpdatePlanResponse>(
-            `${API_BASE}/api/v1/plan/${id}`,
-            bodyData,
-            { params: { token } },
-        );
-        return data;
-    },
     generateSoloPlan: async (token: string, id: string, bodyData: any, signal?: AbortSignal): Promise<Response> => {
-        return await fetch(`${API_BASE}/api/v1/plan/generate/solo/${id}`, {
+        return await fetch(`${AGENT_BASE}/agent/api/v1/solo-planner/generate/solo/${id}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

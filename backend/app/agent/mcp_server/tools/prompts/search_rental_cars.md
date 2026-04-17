@@ -23,11 +23,14 @@ Use this tool when finding available car rentals for a trip. It can return a lis
   - Example: `30`
 - `units` (Literal["METRIC", "IMPERIAL"], optional): The distance units. Default is "IMPERIAL".
   - Example: `"METRIC"`
-- `resultsPerPage` (int, optional): Results to return per page. Default is 10.
+- `resultsPerPage` (int, optional): Per-request page size (5 to 50). This is the number of cars returned in one call, not a total cap. Default `10`.
   - Example: `15`
-- `page` (int, optional): Page number. Default is 1.
+- `page` (int, optional): 1-based page number. Default `1`.
   - Example: `1`
 
+## Pagination semantics
+One call fetches up to `resultsPerPage` cars from the full result set starting at `(page - 1) * resultsPerPage`. To walk more cars for the same query, re-call with the same arguments but `page = nextPage` from the previous response, until `hasMorePages` is `false`.
+
 ## Returns
-- **Success**: A dictionary containing `totalResults`, `rentalCarOptions` (includes `supplierInfo`, `vehicleInfo`, `routeInfo`, `ratingInfo`, `pricingInfo`, `bookingUrl`), `hasMorePages`, and `nextPage`. If `hasMorePages` is true, make another exact same call using `page` = `nextPage` to retrieve more cars.
-- **Error**: A dictionary containing an `error` key with the cause of failure.
+- **Success**: `{"totalResults", "totalPages", "page", "searchContext", "rentalCarOptions": [...], "hasMorePages", "nextPage"}`. Each entry in `rentalCarOptions` contains `supplierInfo`, `vehicleInfo`, `routeInfo`, `ratingInfo`, `pricingInfo`, and `bookingUrl`.
+- **Error**: `{"error", "fix_hint", ...}`. Out-of-range `page` errors include `total_pages` so you can pick a valid page number.

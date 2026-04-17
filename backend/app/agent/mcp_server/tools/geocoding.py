@@ -1,7 +1,8 @@
-import requests
 from typing import Dict, Annotated, Tuple, Optional, List
 from pydantic import Field, BaseModel
 from app.core.config import settings
+from app.utils.http import get_http_client
+from app.agent.mcp_server.tools._errors import tool_error
 import pathlib
 from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 import math
@@ -25,15 +26,21 @@ def haversineDistance(point1: Tuple[float, float], point2: Tuple[float, float]) 
     return R * c
 
 # Geocoding API
-def get_coordinates(address: Annotated[str, Field(description="The formal physical address or general city name to convert to absolute lat/lng coordinates.")]) -> Dict:
+async def get_coordinates(address: Annotated[str, Field(description="The formal physical address or general city name to convert to absolute lat/lng coordinates.")]) -> Dict:
     if not api_key:
-        return {"error": "Google API key not configured"}
-    
+        return tool_error(
+            "Google Maps API key is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry.",
+        )
+
     if not address:
-        return {"error": "Address is required"}
-    
+        return tool_error(
+            "`address` is required.",
+            fix_hint="Retry with a non-empty address or city name.",
+        )
+
     cache_key = generate_cache_key("get_coordinates", {"address": address.lower().strip()})
-    cache_value = retrieve_api_cache(cache_key, expires_in=31)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=31)
 
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {
@@ -45,85 +52,152 @@ def get_coordinates(address: Annotated[str, Field(description="The formal physic
         if cache_value:
             data = cache_value
         else:
-            response = requests.get(url, params=params, timeout=5)
-            if not response.ok:
-                return {"error": f"Geocoding API error: {response.status_code} {response.text}"}
+            client = get_http_client()
+            response = await client.get(url, params=params, timeout=5)
+            if response.status_code >= 400:
+                return tool_error(
+                    "Geocoding failed upstream.",
+                    fix_hint="5xx responses are transient — retry once. 4xx typically means the address was invalid; simplify it (try just the city and country) and retry.",
+                    status_code=response.status_code,
+                    extra={"upstream": response.text[:300]},
+                )
             data = response.json()
             if data["status"] != "OK":
-                return {"error": f"Geocoding failed with status: {data.get('status', 'Unknown error')}"}
-            insert_api_cache(cache_key, data)
+                return tool_error(
+                    f"Geocoding returned status '{data.get('status', 'Unknown')}'.",
+                    fix_hint="Simplify the address (e.g. 'Eiffel Tower, Paris' instead of a full street address), or fall back to a well-known landmark name and retry.",
+                    extra={"upstream_status": data.get("status"), "error_message": data.get("error_message")},
+                )
+            await insert_api_cache(cache_key, data)
 
 
-        result = data["results"][0]
-        if not result or not result["geometry"]["location"]:
-            return {"error": "Geocoding failed with status: No results found"}
-        
+        results = data.get("results") or []
+        if not results or not results[0].get("geometry", {}).get("location"):
+            return tool_error(
+                "Geocoding returned no results.",
+                fix_hint="Simplify the query and retry (e.g. just the city and country), or use a landmark name.",
+            )
+
+        result = results[0]
         return {
             "address": result.get("formatted_address", ""),
             "lat": result.get("geometry", {}).get("location", {}).get("lat", None),
             "lng": result.get("geometry", {}).get("location", {}).get("lng", None),
             "place_id": result.get("place_id", None)
         }
-        
-    except Exception as e:
-        return {"error": f"Connection error: {str(e)}"}
 
-def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
+    except Exception as e:
+        return tool_error(
+            "Geocoding raised an unexpected error.",
+            fix_hint="Retry once. If it fails again, use a different address phrasing.",
+            extra={"exception": str(e)},
+        )
+
+async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                 lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")]) -> Dict:
     if not api_key:
-        return {"error": "Google API key not configured"}
-    
-    if not lat or not lng:
-        return {"error": "Latitude and longitude are required"}
-    
+        return tool_error(
+            "Google Maps API key is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry.",
+        )
+
+    # Use `is None` so the legitimate coordinate 0.0 isn't rejected as falsy.
+    if lat is None or lng is None:
+        return tool_error(
+            "Both `lat` and `lng` are required.",
+            fix_hint="Retry with both lat and lng as floats. Use 0.0 explicitly if the coordinate really is zero.",
+        )
+
     cache_key = generate_cache_key("get_address", {"lat": lat, "lng": lng})
-    cache_value = retrieve_api_cache(cache_key, expires_in=31)
-        
+    cache_value = await retrieve_api_cache(cache_key, expires_in=31)
+
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {
         "latlng": f"{lat},{lng}",
         "key": api_key
     }
-    
+
     try:
         if cache_value:
             data = cache_value
         else:
-            response = requests.get(url, params=params, timeout=5)
-            if not response.ok:
-                return {"error": f"Geocoding API error: {response.status_code} {response.text}"}
+            client = get_http_client()
+            response = await client.get(url, params=params, timeout=5)
+            if response.status_code >= 400:
+                return tool_error(
+                    "Reverse-geocoding failed upstream.",
+                    fix_hint="5xx responses are transient — retry once. 4xx means the coordinate was rejected; verify lat/lng ranges and retry.",
+                    status_code=response.status_code,
+                    extra={"upstream": response.text[:300]},
+                )
             data = response.json()
             if data["status"] != "OK":
-                return {"error": f"Geocoding failed with status: {data.get('status', 'Unknown error')}"}
-            insert_api_cache(cache_key, data)
-        
-        result = data["results"][0]
-        if not result or not result["formatted_address"]:
-            return {"error": "Geocoding failed with status: No results found"}  
-        return {"address": result.get("formatted_address", "")}
-        
-    except Exception as e:
-        return {"error": f"Connection error: {str(e)}"}
+                return tool_error(
+                    f"Reverse-geocoding returned status '{data.get('status', 'Unknown')}'.",
+                    fix_hint="The coordinate may fall outside populated areas. If you only need an approximate label, proceed without a formatted address.",
+                    extra={"upstream_status": data.get("status"), "error_message": data.get("error_message")},
+                )
+            await insert_api_cache(cache_key, data)
 
-def get_optimal_route(origin: Annotated[Location, Field(description="The origin location.")], destinations: Annotated[List[Location], Field(description="The list of destinations.")]) -> Dict:
+        results = data.get("results") or []
+        if not results or not results[0].get("formatted_address"):
+            return tool_error(
+                "Reverse-geocoding returned no address.",
+                fix_hint="The coordinate may fall in ocean or an unpopulated area. Proceed without a formatted address.",
+            )
+        return {"address": results[0].get("formatted_address", "")}
+
+    except Exception as e:
+        return tool_error(
+            "Reverse-geocoding raised an unexpected error.",
+            fix_hint="Retry once. If it fails again, proceed without a formatted address.",
+            extra={"exception": str(e)},
+        )
+
+async def get_optimal_route(origin: Annotated[Location, Field(description="The origin location.")], destinations: Annotated[List[Location], Field(description="The list of destinations.")]) -> Dict:
+    if not api_key:
+        return tool_error(
+            "Google Maps API key is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry.",
+        )
+
     if not origin:
-        return {"error": "An origin is required to calculate a route."}
+        return tool_error(
+            "An origin is required to calculate a route.",
+            fix_hint="Retry with `origin` populated.",
+        )
 
     if not destinations or len(destinations) == 0:
-        return {"error": "At least one destination is required to calculate a route."}
-    
-    if not origin.lat or not origin.lng:
-        originCoordinates = get_coordinates(origin.addressOrName)
-        origin.lat = originCoordinates["lat"]
-        origin.lng = originCoordinates["lng"]
-    for destination in destinations:
-        if not destination.lat or not destination.lng:
-            destinationCoordinates = get_coordinates(destination.addressOrName)
-            destination.lat = destinationCoordinates["lat"]
-            destination.lng = destinationCoordinates["lng"]
-    
+        return tool_error(
+            "At least one destination is required to calculate a route.",
+            fix_hint="Retry with a non-empty `destinations` list.",
+        )
+
+    if origin.lat is None or origin.lng is None:
+        originCoordinates = await get_coordinates(origin.addressOrName)
+        if "error" in originCoordinates:
+            return tool_error(
+                f"Could not geocode origin '{origin.addressOrName}'.",
+                fix_hint="Populate `origin.lat` and `origin.lng` directly, or simplify the address string and retry.",
+                extra={"upstream_error": originCoordinates},
+            )
+        origin.lat = originCoordinates.get("lat")
+        origin.lng = originCoordinates.get("lng")
+
+    for idx, destination in enumerate(destinations):
+        if destination.lat is None or destination.lng is None:
+            destinationCoordinates = await get_coordinates(destination.addressOrName)
+            if "error" in destinationCoordinates:
+                return tool_error(
+                    f"Could not geocode destinations[{idx}] '{destination.addressOrName}'.",
+                    fix_hint="Populate this destination's `lat` and `lng` directly, or simplify its address string and retry.",
+                    extra={"upstream_error": destinationCoordinates},
+                )
+            destination.lat = destinationCoordinates.get("lat")
+            destination.lng = destinationCoordinates.get("lng")
+
     cache_key = generate_cache_key("get_optimal_route", {"origin": origin.model_dump(), "destinations": [destination.model_dump() for destination in destinations]})
-    cache_value = retrieve_api_cache(cache_key, expires_in=31)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=31)
     if cache_value:
         return cache_value
 
@@ -143,9 +217,9 @@ def get_optimal_route(origin: Annotated[Location, Field(description="The origin 
         if current_distance < min_total_distance:
             min_total_distance = current_distance
             best_sequence = current_path
-        
+
     route_names = [loc.addressOrName for loc in best_sequence]
-    
+
     returnData = {
         "optimalSequence": [loc.model_dump() for loc in best_sequence],
         "totalDistanceKm": round(min_total_distance, 2),
@@ -153,7 +227,7 @@ def get_optimal_route(origin: Annotated[Location, Field(description="The origin 
         "sequenceSummary": " -> ".join(route_names),
         "explanation": f"The most efficient route to start at {origin.addressOrName} and visit all {len(destinations)} cities and return to {origin.addressOrName} covers approximately {round(min_total_distance)} km."
     }
-    insert_api_cache(cache_key, returnData)
+    await insert_api_cache(cache_key, returnData)
     return returnData
 
 

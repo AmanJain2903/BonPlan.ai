@@ -1,25 +1,51 @@
-import requests
 from typing import Dict, Optional, Annotated, Literal
 from pydantic import Field
 from app.core.config import settings
+from app.utils.http import get_http_client
+from app.agent.mcp_server.tools._errors import tool_error
 from datetime import datetime, timezone, timedelta
 import pathlib
 
 api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
+
+def _weather_key_missing_error() -> Dict:
+    return tool_error(
+        "Google Maps API key is not configured on the server.",
+        fix_hint="This is a server-side configuration issue — do not retry. Proceed without weather data.",
+    )
+
+
+def _weather_upstream_error(response) -> Dict:
+    return tool_error(
+        "Weather API request failed.",
+        fix_hint="Verify lat/lng are within valid ranges. 5xx is transient — retry once; 4xx usually means invalid parameters.",
+        status_code=response.status_code,
+        extra={"upstream": response.text[:300]},
+    )
+
+
+def _weather_unexpected_error(e: Exception) -> Dict:
+    return tool_error(
+        "Weather API raised an unexpected error.",
+        fix_hint="Retry once with the same arguments. If it fails again, proceed without weather data.",
+        extra={"exception": str(e)},
+    )
+
 # Weather API
-def get_current_weather(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
+async def get_current_weather(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                         lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
                         units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")]) -> Dict:
     if not api_key:
-        return {"error": "Google API key not configured"}
+        return _weather_key_missing_error()
 
     url = f"https://weather.googleapis.com/v1/currentConditions:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}"
 
     try:
-        response = requests.get(url, timeout=5)
-        if not response.ok:
-            return {"error": f"Weather API error: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, timeout=5)
+        if response.status_code >= 400:
+            return _weather_upstream_error(response)
         data = response.json()
 
         return {
@@ -57,21 +83,22 @@ def get_current_weather(lat: Annotated[float, Field(ge=-90.0, le=90.0, descripti
         }
 
     except Exception as e:
-        return {"error": f"Weather API error: {str(e)}"}
+        return _weather_unexpected_error(e)
 
-def get_daily_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
+async def get_daily_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                        lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
                        units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")],
                        days: Annotated[int, Field(ge=1, le=10, description="The number of days to forecast.", default=10)]) -> Dict:
     if not api_key:
-        return {"error": "Google API key not configured"}
+        return _weather_key_missing_error()
 
     url = f"https://weather.googleapis.com/v1/forecast/days:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}&days={days}&pageSize=10"
 
     try:
-        response = requests.get(url, timeout=5)
-        if not response.ok:
-            return {"error": f"Weather API error: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, timeout=5)
+        if response.status_code >= 400:
+            return _weather_upstream_error(response)
         data = response.json()
 
         output = {
@@ -128,21 +155,22 @@ def get_daily_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, descriptio
         }
 
     except Exception as e:
-        return {"error": f"Weather API error: {str(e)}"}
+        return _weather_unexpected_error(e)
 
-def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")], 
+async def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")], 
                         lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")], 
                         units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")], 
                         hours: Annotated[int, Field(ge=1, le=24, description="The total number of hours to forecast (max 24).", default=24)]) -> Dict:
     if not api_key:
-        return {"error": "Google API key not configured"}
+        return _weather_key_missing_error()
 
     url = f"https://weather.googleapis.com/v1/forecast/hours:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}&hours={hours}"
 
     try:
-        response = requests.get(url, timeout=5)
-        if not response.ok:
-            return {"error": f"Weather API error: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, timeout=5)
+        if response.status_code >= 400:
+            return _weather_upstream_error(response)
         data = response.json()
 
         output = {
@@ -182,7 +210,7 @@ def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, descripti
         }
 
     except Exception as e:
-        return {"error": f"Weather API error: {str(e)}"}
+        return _weather_unexpected_error(e)
 
 # FOR FUTURE USE
 # def get_weather_alerts(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The latitude of the location")],
@@ -195,18 +223,18 @@ def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, descripti
 #         NO OTHER ARGUMENTS ARE ALLOWED
 #     """
 #     if not api_key:
-#         return {"error": "Google API key not configured"}
+#         return _weather_key_missing_error()
 
 #     url = f"https://weather.googleapis.com/v1/publicAlerts:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}"
 #     try:
 #         response = requests.get(url, timeout=5)
 #         if not response.ok:
-#             return {"error": f"Weather API error: {response.status_code} {response.text}"}
+#             return _weather_upstream_error(response)
 #         data = response.json()
 
 #         return data
 
-#         return {"error": f"Weather API error: {str(e)}"}
+#         return _weather_unexpected_error(e)
 
 PROMPTS_DIR = pathlib.Path(__file__).parent / "prompts"
 get_current_weather.__doc__ = (PROMPTS_DIR / "get_current_weather.md").read_text()

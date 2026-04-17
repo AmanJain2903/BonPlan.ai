@@ -1,13 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Info, Sparkles } from 'lucide-react';
 
+
 interface HeroPanelProps {
   plannerMode: 'autonomous' | 'collaborative';
   setPlannerMode: (mode: 'autonomous' | 'collaborative') => void;
-  chatInput: string;
-  setChatInput: (val: string) => void;
+  contextInput: string;
+  setContextInput: (val: string) => void;
   onStart: () => void;
 }
+
 
 function AutoResizeTextarea({
   value,
@@ -35,7 +37,7 @@ function AutoResizeTextarea({
   );
 }
 
-export default function HeroPanel({ plannerMode, setPlannerMode, chatInput, setChatInput, onStart }: HeroPanelProps) {
+export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, setContextInput, onStart }: HeroPanelProps) {
   return (
     <motion.div
       key="hero"
@@ -105,8 +107,8 @@ export default function HeroPanel({ plannerMode, setPlannerMode, chatInput, setC
             <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan/30 to-blue/30 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
             <div className="relative flex items-end bg-black border border-white/10 rounded-2xl p-2 px-4 focus-within:border-cyan/50 transition-colors">
               <AutoResizeTextarea
-                value={chatInput}
-                onChange={setChatInput}
+                value={contextInput}
+                onChange={setContextInput}
                 placeholder="Add any conversational context you want to provide, or leave blank for a surprise"
               />
             </div>

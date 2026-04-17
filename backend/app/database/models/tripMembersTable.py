@@ -36,5 +36,5 @@ class TripMember(Base):
         UniqueConstraint('trip_id', 'user_id', name='uix_trip_user'),
     )
 
-    trip = relationship("Trip", back_populates="members")
-    user = relationship("User", back_populates="trip_memberships")
+    trip = relationship("Trip", back_populates="members", lazy="selectin")
+    user = relationship("User", back_populates="trip_memberships", lazy="selectin")

@@ -1,16 +1,51 @@
-import requests
 from typing import Dict, Annotated, List, Optional, Literal
 from pydantic import Field, BaseModel
 import pathlib
 from app.agent.mcp_server.tools.constants import WebSearchSites, SERPER_CONTENT_PARSER_PROMPT
 from app.core.config import settings
+from app.utils.http import get_http_client
 from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 from app.agent.mcp_server.tools.timezone import convert_target_local_time_to_utc, get_timezone
 from app.agent.mcp_server.tools.geocoding import get_coordinates
+from app.agent.mcp_server.tools._errors import tool_error
 import time
 from datetime import datetime
 
 rapid_api_key = settings.RAPID_API_KEY
+
+
+def _assemble_flight_results(
+    top_flights: list, other_flights: list, return_type: Optional[str]
+) -> Dict:
+    """
+    Build the tool's return dict and promote any per-flight `nextToken` to
+    a single root-level `nextToken` so the agent can call get_next_flights
+    with a predictable shape. Once promoted, the per-flight copy is
+    stripped so the model isn't confused by duplicates.
+    """
+    return_data: Dict = {}
+    next_token = None
+    for flight in (*top_flights, *other_flights):
+        if next_token is None and isinstance(flight, dict) and flight.get("nextToken"):
+            next_token = flight["nextToken"]
+        if isinstance(flight, dict):
+            flight.pop("nextToken", None)
+
+    if return_type == "topFlights":
+        if top_flights:
+            return_data["topFlights"] = top_flights
+        else:
+            return_data["note"] = "No top flights found. Returning other flights instead."
+            return_data["otherFlights"] = other_flights
+    elif return_type == "otherFlights":
+        return_data["otherFlights"] = other_flights
+    elif return_type == "all":
+        return_data["topFlights"] = top_flights
+        return_data["otherFlights"] = other_flights
+
+    if next_token is not None:
+        return_data["nextToken"] = next_token
+    return return_data
 
 class Passengers(BaseModel):
     adults: Annotated[int, Field(description="The number of adults (12 years or older) to search the flights for.", default=1)]
@@ -23,15 +58,15 @@ class FlightLeg(BaseModel):
     arrival_id: Annotated[str, Field(description="The arrival airport code in IATA format to search the flights for.")]
     date: Annotated[str, Field(description="The date departure for the flights to search for in format YYYY-MM-DD.")]
 
-def format_date_time(date_time: str, airport_name: str) -> Dict:
+async def format_date_time(date_time: str, airport_name: str) -> Dict:
     if not date_time or not airport_name:
         return {
             "original_local_time": None,
             "utc_string": None,
             "utc_timestamp": None,
         }
-    coordinates = get_coordinates(airport_name)
-    timezone = get_timezone(coordinates.get("lat"), coordinates.get("lng"), timestamp=None)
+    coordinates = await get_coordinates(airport_name)
+    timezone = await get_timezone(coordinates.get("lat"), coordinates.get("lng"), timestamp=None)
     dateTime = date_time.split(" ")
     date = dateTime[0].split("-")
     time = dateTime[1].split(":")
@@ -39,7 +74,7 @@ def format_date_time(date_time: str, airport_name: str) -> Dict:
     return convert_target_local_time_to_utc(dateTimeString, timezone.get("timeZoneId").get("value"))
 
 
-def format_flight_data(data: Dict) -> Dict:
+async def format_flight_data(data: Dict) -> Dict:
     departureTime = None
     arrivalTime = None
     duration = {
@@ -51,8 +86,8 @@ def format_flight_data(data: Dict) -> Dict:
     layovers = []
 
     for flight in data.get("flights", []):
-        departure = format_date_time(flight.get("departure_airport", {}).get("time", None), flight.get("departure_airport", {}).get("airport_name", None))
-        arrival = format_date_time(flight.get("arrival_airport", {}).get("time", None), flight.get("arrival_airport", {}).get("airport_name", None))
+        departure = await format_date_time(flight.get("departure_airport", {}).get("time", None), flight.get("departure_airport", {}).get("airport_name", None))
+        arrival = await format_date_time(flight.get("arrival_airport", {}).get("time", None), flight.get("arrival_airport", {}).get("airport_name", None))
         departureTimeObject = {
             "localTimeString_departureLocation": departure.get("original_local_time", None),
             "utcTimeString": departure.get("utc_string", None),
@@ -126,11 +161,17 @@ def format_flight_data(data: Dict) -> Dict:
     return returnData
 
 # RapidAPI Google Flights API
-def get_country_code(country_name: Annotated[str, Field(description="The name of the country to get the code for. Just the country name, no other text like 'country' or 'code' or 'state' etc.")]) -> Dict:
+async def get_country_code(country_name: Annotated[str, Field(description="The name of the country to get the code for. Just the country name, no other text like 'country' or 'code' or 'state' etc.")]) -> Dict:
     if not country_name:
-        return {"error": "Country name is required"}
+        return tool_error(
+            "`country_name` is required.",
+            fix_hint="Retry with a non-empty country name (e.g. 'France', 'Japan').",
+        )
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
     country_name = country_name.lower().strip()
     url = "https://google-flights2.p.rapidapi.com/api/v1/getLocations"
     headers = {
@@ -139,39 +180,61 @@ def get_country_code(country_name: Annotated[str, Field(description="The name of
         "x-rapidapi-key": rapid_api_key
     }
     cache_key = generate_cache_key("get_country_code", {"type": "all_codes"})
-    cache_value = retrieve_api_cache(cache_key, expires_in=365)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=365)
     if cache_value:
         country_codes = cache_value
     else:
         try:
-            response = requests.get(url, headers=headers, timeout=15)
-            if not response.ok:
-                return {"error": f"Failed to get available locations: {response.status_code} {response.text}"}
+            client = get_http_client()
+            response = await client.get(url, headers=headers, timeout=15)
+            if response.status_code >= 400:
+                return tool_error(
+                    "Failed to fetch country-code table.",
+                    fix_hint="5xx responses are transient — retry once. 4xx means the provider rejected the call; proceed without flight data.",
+                    status_code=response.status_code,
+                    extra={"upstream": response.text[:300]},
+                )
             raw_data = response.json()
             if not raw_data.get("data", []) or len(raw_data.get("data", [])) == 0:
-                return {"error": "No country codes found"}
+                return tool_error(
+                    "Provider returned no country-code entries.",
+                    fix_hint="This should not normally happen. Retry once; if it fails, proceed without flight data.",
+                )
             raw_country_codes = raw_data.get("data", [])
             country_codes = {}
             for raw_country_code in raw_country_codes:
                 country_codes[raw_country_code.get("country_name", "").lower().strip()] = raw_country_code.get("country_code", "")
             if country_codes:
-                insert_api_cache(cache_key, country_codes)
+                await insert_api_cache(cache_key, country_codes)
         except Exception as e:
-            return {"error": f"Failed to get available locations: {str(e)}"}
+            return tool_error(
+                "Unexpected error while fetching country codes.",
+                fix_hint="Retry once with the same arguments. If it fails again, proceed without flight data.",
+                extra={"exception": str(e)},
+            )
     country_code = country_codes.get(country_name, "")
     if not country_code:
-        return {"error": "Country code not found"}
+        return tool_error(
+            f"No country code found for '{country_name}'.",
+            fix_hint="Verify spelling (e.g. use 'United States' not 'USA', 'United Kingdom' not 'UK'). Retry with the exact English country name.",
+        )
     return {"country_code": country_code}
 
-def get_airports_and_codes(query: Annotated[str, Field(description="The query to search the airports for. Can be airport name, place name, city name, etc. Preferably use the airport name as the query.")],
+async def get_airports_and_codes(query: Annotated[str, Field(description="The query to search the airports for. Can be airport name, place name, city name, etc. Preferably use the airport name as the query.")],
                      country_code: Annotated[Optional[str], Field(description="Optional. The country code to search the airports for. If not provided, all airports will be searched.", default=None)]) -> Dict:
     if not query:
-        return {"error": "Query is required"}
+        return tool_error(
+            "`query` is required.",
+            fix_hint="Retry with a non-empty query (airport name, place name, or city name).",
+        )
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
     query = query.lower().strip()
     cache_key = generate_cache_key("get_airports_and_codes", {"query": query, "country_code": country_code})
-    cache_value = retrieve_api_cache(cache_key, expires_in=365)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=365)
     if cache_value:
         return cache_value
     url = f"https://google-flights2.p.rapidapi.com/api/v1/searchAirport"
@@ -186,9 +249,15 @@ def get_airports_and_codes(query: Annotated[str, Field(description="The query to
     if country_code:
         params["country_code"] = country_code
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=15)
-        if not response.ok:
-            return {"error": f"Failed to get airports and codes: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=15)
+        if response.status_code >= 400:
+            return tool_error(
+                "Airport search failed upstream.",
+                fix_hint="Verify the query spelling and, if supplied, that `country_code` is a valid two-letter code. 5xx responses are transient — retry once.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         data = response.json()
         output = {}
         for item in data.get("data", []):
@@ -206,14 +275,21 @@ def get_airports_and_codes(query: Annotated[str, Field(description="The query to
                             "distance": listItem.get("distance", None),
                         }
         if output:
-            insert_api_cache(cache_key, output)
+            await insert_api_cache(cache_key, output)
             return output
         else:
-            return {"error": "No airports found for the given query and country code"}
+            return tool_error(
+                "No airports found for this query.",
+                fix_hint="Retry with a broader query (e.g. the nearest major city name instead of a precise airport name), or remove the `country_code` filter.",
+            )
     except Exception as e:
-        return {"error": f"Failed to get airports and codes: {str(e)}"}
+        return tool_error(
+            "Airport search raised an unexpected error.",
+            fix_hint="Retry once with the same arguments. If it fails again, broaden the query or proceed without flight data.",
+            extra={"exception": str(e)},
+        )
 
-def search_flights(departure_id: Annotated[str, Field(description="The departure airport code to search the flights for.")],
+async def search_flights(departure_id: Annotated[str, Field(description="The departure airport code to search the flights for.")],
                    arrival_id: Annotated[str, Field(description="The arrival airport code to search the flights for.")],
                    outbound_date: Annotated[str, Field(description="The departure date to search the flights for. According to the timezone of the departure airport. Think of it as the wall clock time of the departure airport. In format YYYY-MM-DD")],
                    passengers: Annotated[Passengers, Field(description="The passengers to search the flights for. Default is 1 adult.")],
@@ -222,10 +298,16 @@ def search_flights(departure_id: Annotated[str, Field(description="The departure
                    search_type: Annotated[Optional[Literal["best", "cheap"]], Field(description="The type of flight search to perform.", default=None)],
                    return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="The type of flights to return.", default="topFlights")]) -> Dict:
     if not departure_id or not arrival_id or not outbound_date:
-        return {"error": "Required parameters are missing"}
-    
+        return tool_error(
+            "Required parameters are missing.",
+            fix_hint="Retry with `departure_id`, `arrival_id`, and `outbound_date` (YYYY-MM-DD) all populated. Use get_airports_and_codes first if you don't know the IATA codes.",
+        )
+
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
 
     url = "https://google-flights2.p.rapidapi.com/api/v1/searchFlights"
     headers = {
@@ -249,42 +331,46 @@ def search_flights(departure_id: Annotated[str, Field(description="The departure
     if search_type:
         params["search_type"] = search_type
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=45)
-        if not response.ok:
-            return {"error": f"Failed to search flights: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=45)
+        if response.status_code >= 400:
+            return tool_error(
+                "Flight search failed upstream.",
+                fix_hint="Verify IATA codes are valid and the outbound_date is in the future (and return_date is after outbound_date, if provided). 5xx is transient — retry once.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         data = response.json()
         topFlights = []
         otherFlights = []
         itineraries = data.get("data", {}).get("itineraries", {})
         for flight in itineraries.get("topFlights", []):
-            topFlights.append(format_flight_data(flight))
+            topFlights.append(await format_flight_data(flight))
         for flight in itineraries.get("otherFlights", []):
-            otherFlights.append(format_flight_data(flight))
-        returnData = {}
-        if return_type == "topFlights":
-            if topFlights:
-                returnData["topFlights"] = topFlights
-            else:
-                returnData["Message"] = "No top flights found. Returning other flights instead."
-                returnData["otherFlights"] = otherFlights
-        elif return_type == "otherFlights":
-            returnData["otherFlights"] = otherFlights
-        elif return_type == "all":
-            returnData["topFlights"] = topFlights
-            returnData["otherFlights"] = otherFlights
-        return returnData
+            otherFlights.append(await format_flight_data(flight))
+        return _assemble_flight_results(topFlights, otherFlights, return_type)
     except Exception as e:
-        return {"error": f"Failed to search flights: {str(e)}"}
+        return tool_error(
+            "Flight search raised an unexpected error.",
+            fix_hint="Retry once with the same arguments. If it fails again, proceed without flight data.",
+            extra={"exception": str(e)},
+        )
 
-def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(description="The list of flight legs to search the flights for.")],
+async def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(description="The list of flight legs to search the flights for.")],
                                passengers: Annotated[Passengers, Field(description="The passengers to search the flights for. Default is 1 adult.")],
                                travel_class: Annotated[Optional[Literal["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]], Field(description="The travel class to search the flights for.", default="ECONOMY")],
                                search_type: Annotated[Optional[Literal["best", "cheap"]], Field(description="The type of flight search to perform.", default=None)],
                                return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="The type of flights to return.", default="topFlights")]) -> Dict:
     if not legs:
-        return {"error": "At least one flight leg is required"}
+        return tool_error(
+            "At least one flight leg is required.",
+            fix_hint="Retry with `legs` as a list of at least one {departure_id, arrival_id, date} object.",
+        )
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
     url = "https://google-flights2.p.rapidapi.com/api/v1/searchMultiCityFlights"
 
     headers = {
@@ -304,39 +390,43 @@ def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(description
     if search_type:
         body["search_type"] = search_type
     try:
-        response = requests.post(url, headers=headers, json=body, timeout=45)
-        if not response.ok:
-            return {"error": f"Failed to search multi-city flights: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.post(url, headers=headers, json=body, timeout=45)
+        if response.status_code >= 400:
+            return tool_error(
+                "Multi-city flight search failed upstream.",
+                fix_hint="Verify every leg has valid IATA codes and a future date, and that legs are in chronological order. 5xx is transient — retry once.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         data = response.json()
         topFlights = []
         otherFlights = []
         itineraries = data.get("data", {}).get("itineraries", {})
         for flight in itineraries.get("topFlights", []):
-            topFlights.append(format_flight_data(flight))
+            topFlights.append(await format_flight_data(flight))
         for flight in itineraries.get("otherFlights", []):
-            otherFlights.append(format_flight_data(flight))
-        returnData = {}
-        if return_type == "topFlights":
-            if topFlights:
-                returnData["topFlights"] = topFlights
-            else:
-                returnData["Message"] = "No top flights found. Returning other flights instead."
-                returnData["otherFlights"] = otherFlights
-        elif return_type == "otherFlights":
-            returnData["otherFlights"] = otherFlights
-        elif return_type == "all":
-            returnData["topFlights"] = topFlights
-            returnData["otherFlights"] = otherFlights
-        return returnData
+            otherFlights.append(await format_flight_data(flight))
+        return _assemble_flight_results(topFlights, otherFlights, return_type)
     except Exception as e:
-        return {"error": f"Failed to search multi-city flights: {str(e)}"}
+        return tool_error(
+            "Multi-city flight search raised an unexpected error.",
+            fix_hint="Retry once with the same arguments. If it fails again, proceed without flight data.",
+            extra={"exception": str(e)},
+        )
 
-def get_next_flights(next_token: Annotated[str, Field(description="The next token to get the next flights for. Used to get the return leg of the flights if search_flights is called with return_date. Only pass this if you have received a nextToken from a previous call to search_flights.")],
+async def get_next_flights(next_token: Annotated[str, Field(description="The next token to get the next flights for. Used to get the return leg of the flights if search_flights is called with return_date. Only pass this if you have received a nextToken from a previous call to search_flights.")],
                      return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="The type of flights to return.", default="topFlights")]) -> Dict:
     if not next_token:
-        return {"error": "Next token is required"}
+        return tool_error(
+            "`next_token` is required.",
+            fix_hint="Only call get_next_flights after search_flights / search_multi_city_flights returns a `nextToken`. Pass that exact token as `next_token`.",
+        )
     if not rapid_api_key:
-        return {"error": "RapidAPI key is required"}
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
     url = "https://google-flights2.p.rapidapi.com/api/v1/getNextFlights"
     headers = {
         "Content-Type": "application/json",
@@ -347,32 +437,30 @@ def get_next_flights(next_token: Annotated[str, Field(description="The next toke
         "next_token": next_token
     }
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=45)
-        if not response.ok:
-            return {"error": f"Failed to get next flights: {response.status_code} {response.text}"}
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=45)
+        if response.status_code >= 400:
+            return tool_error(
+                "Next-flights lookup failed upstream.",
+                fix_hint="The `next_token` may have expired or the upstream is temporarily unavailable. Retry once; if it still fails, do another search_flights call to get a fresh token.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         data = response.json()
         topFlights = []
         otherFlights = []
         itineraries = data.get("data", {}).get("itineraries", {})
         for flight in itineraries.get("topFlights", []):
-            topFlights.append(format_flight_data(flight))
+            topFlights.append(await format_flight_data(flight))
         for flight in itineraries.get("otherFlights", []):
-            otherFlights.append(format_flight_data(flight))
-        returnData = {}
-        if return_type == "topFlights":
-            if topFlights:
-                returnData["topFlights"] = topFlights
-            else:
-                returnData["Message"] = "No top flights found. Returning other flights instead."
-                returnData["otherFlights"] = otherFlights
-        elif return_type == "otherFlights":
-            returnData["otherFlights"] = otherFlights
-        elif return_type == "all":
-            returnData["topFlights"] = topFlights
-            returnData["otherFlights"] = otherFlights
-        return returnData
+            otherFlights.append(await format_flight_data(flight))
+        return _assemble_flight_results(topFlights, otherFlights, return_type)
     except Exception as e:
-        return {"error": f"Failed to get next flights: {str(e)}"}
+        return tool_error(
+            "Next-flights lookup raised an unexpected error.",
+            fix_hint="Retry once with the same token. If it fails again, do a fresh search_flights call to obtain a new nextToken.",
+            extra={"exception": str(e)},
+        )
 
 
 PROMPTS_DIR = pathlib.Path(__file__).parent / "prompts"
