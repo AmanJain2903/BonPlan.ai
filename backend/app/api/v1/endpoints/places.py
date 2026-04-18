@@ -27,94 +27,16 @@ FALLBACK_IMAGE = settings.FALLBACK_IMAGE
 maxWidth = 1080
 
 
-@router.get("/destination-image")
-async def get_destination_image(destination: str = Query(..., description="Destination city/place name")):
-    api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
-    if not api_key:
-        return {"image_url": FALLBACK_IMAGE}
-
-    lower_dest = destination.lower().strip()
-    client = get_http_client()
-
-    # 1. Ensure we have an array of Google Photo References for this Destination
-    if lower_dest not in photo_cache or not photo_cache[lower_dest]:
-        try:
-            # text search for Place ID
-            find_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
-            find_params = {
-                "input": destination,
-                "inputtype": "textquery",
-                "fields": "place_id",
-                "key": api_key,
-            }
-            resp = await client.get(find_url, params=find_params, timeout=5)
-
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("status") == "OK" and data.get("candidates"):
-                    place_id = data["candidates"][0]["place_id"]
-
-                    # Fetch all photo references (up to 10) for maximum random variance
-                    details_url = "https://maps.googleapis.com/maps/api/place/details/json"
-                    details_params = {
-                        "place_id": place_id,
-                        "fields": "photos",
-                        "key": api_key,
-                    }
-                    resp2 = await client.get(details_url, params=details_params, timeout=5)
-                    data2 = resp2.json()
-
-                    photos = data2.get("result", {}).get("photos", [])
-                    photo_cache[lower_dest] = [p["photo_reference"] for p in photos]
-        except Exception:
-            pass  # Silent catch - empty cache triggers Fallback below naturally
-
-    available_photos = photo_cache.get(lower_dest, [])
-    if not available_photos:
-        return {"image_url": FALLBACK_IMAGE}
-
-    # 2. Pick random photo references and attempt to resolve to final URLs
-    random.shuffle(available_photos)
-
-    try_count = min(3, len(available_photos))
-    for i in range(try_count):
-        photo_ref = str(available_photos[i])
-
-        # Fast path O(1) cache hit! Prevents Google Request overhead
-        if photo_ref in resolved_url_cache:
-            return {"image_url": resolved_url_cache[photo_ref]}
-
-        photo_url = "https://maps.googleapis.com/maps/api/place/photo"
-        photo_params = {
-            "maxwidth": maxWidth,
-            "photo_reference": photo_ref,
-            "key": str(api_key),
-        }
-
-        try:
-            # Follow redirect logic off, grab the direct source URL from Location header
-            photo_resp = await client.get(
-                photo_url, params=photo_params, follow_redirects=False, timeout=4
-            )
-            if photo_resp.status_code in (301, 302, 303, 307, 308):
-                final_url = photo_resp.headers.get("Location")
-                if final_url is not None:
-                    final_url_str = str(final_url)
-                    # Cache the raw image URL permanently so we never hit Google API for this ref again
-                    resolved_url_cache[photo_ref] = final_url_str
-                    return {"image_url": final_url_str}
-        except Exception:
-            continue  # Try the next photo in the shuffled list
-
-    # Exhausted 3 attempts without a single resolution, drop gracefully
-    return {"image_url": FALLBACK_IMAGE}
+@router.get("/destination-image-by-place-id")
+async def get_destination_image_by_place_id(place_id: str = Query(..., description="Google Place ID")):
+    pass
 
 
-@router.get("/destination-images")
-async def get_destination_images(
+@router.get("/destination-images-by-name")
+async def get_destination_images_by_name(
     destination: str = Query(..., description="Destination city/place name"),
     count: int = Query(10, description="Number of images to return"),
-    min_ratio: float = Query(1.4, description="Minimum ratio of width to height for landscape images"),
+    min_ratio: float = Query(1.5, description="Minimum ratio of width to height for landscape images"),
 ):
     api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
     if not api_key:

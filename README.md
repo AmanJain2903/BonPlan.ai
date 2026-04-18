@@ -71,5 +71,46 @@ From `backend/`:
 npx @modelcontextprotocol/inspector python -m app.agent.mcp_server.main
 ```
 
+### 📂 Database Migrations using Alembic
+
+#### 1 Initialize alembic migrations
+```bash
+cd backend
+alembic init migrations
+```
+
+#### 2 Import all models in `/migrations/env.py` and point to your database
+```bash
+import os
+import sys
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app.database.database import Base
+from app.database.models.usersTable import User
+from app.database.models.tripsTable import Trip
+from app.database.models.tripMembersTable import TripMember
+from app.database.models.apiCacheTable import ApiCache
+from app.database.models.tripItinerariesTable import TripItinerary
+
+from app.core.config import settings
+
+DATABASE_URL = settings.DATABASE_URL
+if "postgresql+asyncpg://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
+```
+
+#### 3 Update Metadata line `target_metadata = None` to
+```bash
+target_metadata = Base.metadata
+```
+
+#### 4 Apply your migrations
+```bash
+alembic revision --autogenerate -m "add cascade delete to trips"
+alembic upgrade head
+```
+
 ---
 *Built as a passion project to explore Agentic AI and constraint-based routing.*

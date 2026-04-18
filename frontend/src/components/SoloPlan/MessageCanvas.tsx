@@ -1,6 +1,6 @@
-import { RefObject, useState, useEffect, useRef, useCallback } from 'react';
+import { RefObject, useState, useEffect, useRef, useCallback, useLayoutEffect, MutableRefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Wrench, Brain, ChevronDown, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Play } from 'lucide-react';
+import { User, Wrench, Brain, ChevronDown, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { EASE_OUT_EXPO } from './constants';
 import { ToolEntry, SystemLog, ChatTurn } from './types';
@@ -420,6 +420,8 @@ interface MessageCanvasProps {
   messageEndRef: RefObject<HTMLDivElement>;
   thinkingEndRef: RefObject<HTMLDivElement>;
   summaryEndRef: RefObject<HTMLDivElement>;
+  scrollPositionRef: MutableRefObject<number>;
+  isAtBottomRef: MutableRefObject<boolean>;
 }
 
 export default function MessageCanvas({
@@ -435,26 +437,131 @@ export default function MessageCanvas({
   messageEndRef,
   thinkingEndRef,
   summaryEndRef,
+  scrollPositionRef,
+  isAtBottomRef,
 }: MessageCanvasProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isUserAtBottomRef = useRef(true);
 
-  const handleScroll = useCallback(() => {
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+  const updateScrollState = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    isUserAtBottomRef.current =
-      container.scrollHeight - container.scrollTop - container.clientHeight <= 1;
-  }, []);
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    scrollPositionRef.current = scrollTop;
+
+    const atBottom = scrollHeight - scrollTop - clientHeight <= 10;
+    isAtBottomRef.current = atBottom;
+
+    setShowScrollTop(scrollTop > 100);
+    setShowScrollBottom(!atBottom && scrollHeight > clientHeight);
+  }, [scrollPositionRef, isAtBottomRef]);
+
+  const handleScroll = () => updateScrollState();
 
   useEffect(() => {
-    if (!isUserAtBottomRef.current) return;
+    // Small timeout to ensure the DOM has rendered the height
+    const timer = setTimeout(updateScrollState, 100);
+    return () => clearTimeout(timer);
+  }, [turns, updateScrollState]);
+
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (container) {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    if (!container) return;
+
+    if (isAtBottomRef.current) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+    } else {
+      // If user is scrolled up, keep them exactly where they were
+      container.scrollTop = scrollPositionRef.current;
     }
-  }, [turns]);
+  }, [turns, toolsExpanded, thoughtsExpanded, systemLogExpanded]);
+
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };[turns, toolsExpanded, thoughtsExpanded, systemLogExpanded]
+
+  const scrollToBottom = () => {
+    scrollContainerRef.current?.scrollTo({ 
+      top: scrollContainerRef.current.scrollHeight, 
+      behavior: 'smooth' 
+    });
+  };
+
+  // useEffect(() => {
+  //   if (!isUserAtBottomRef.current) return;
+  //   const container = scrollContainerRef.current;
+  //   if (container) {
+  //     container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+  //   }
+  // }, [turns]);
 
   return (
+    <div className="relative flex-1 flex flex-col min-h-0">
+      {/* Scroll Navigation Controls */}
+      {/* <div className="absolute left-6 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2 pointer-events-none">
+        <AnimatePresence>
+          {showScrollTop && (
+            <motion.button
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              onClick={scrollToTop}
+              className="p-2 rounded-full bg-white/5 border border-white/10 text-white/40 hover:text-cyan hover:bg-white/10 transition-all pointer-events-auto backdrop-blur-md"
+            >
+              <ArrowUp className="w-4 h-4" />
+            </motion.button>
+          )}
+          {showScrollBottom && (
+            <motion.button
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              onClick={scrollToBottom}
+              className="p-2 rounded-full bg-white/5 border border-white/10 text-white/40 hover:text-cyan hover:bg-white/10 transition-all pointer-events-auto backdrop-blur-md"
+            >
+              <ArrowDown className="w-4 h-4" />
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div> */}
+
+      {/* Scroll to Top - Top Right */}
+<div className="absolute right-0 top-0 z-20 pointer-events-none">
+  <AnimatePresence>
+    {showScrollTop && (
+      <motion.button
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        onClick={scrollToTop}
+        className="p-2.5 text-cyan/40 hover:text-cyan hover:scale-120 transition-all pointer-events-auto shadow-lg"
+      >
+        <ArrowUp className="w-4 h-4" />
+      </motion.button>
+    )}
+  </AnimatePresence>
+</div>
+
+{/* Scroll to Bottom - Bottom Right */}
+<div className="absolute right-0 bottom-0 z-20 pointer-events-none">
+  <AnimatePresence>
+    {showScrollBottom && (
+      <motion.button
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        onClick={scrollToBottom}
+        className="p-2.5 text-cyan/40 hover:text-cyan hover:scale-120 transition-all pointer-events-auto shadow-lg"
+      >
+        <ArrowDown className="w-4 h-4" />
+      </motion.button>
+    )}
+  </AnimatePresence>
+</div>
+      
     <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-20 chat-scrollbar">
       <div className="max-w-3xl mx-auto flex flex-col gap-1.5 relative">
         {turns.map((turn) =>
@@ -480,6 +587,7 @@ export default function MessageCanvas({
 
         <div ref={messageEndRef} />
       </div>
+    </div>
     </div>
   );
 }

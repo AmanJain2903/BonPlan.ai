@@ -14,13 +14,14 @@ export default function DestinationPolaroid({
 }: DestinationPolaroidProps) {
   const [allImages, setAllImages] = useState<string[][]>([]); // One array of URLs per city
   const [cityIndex, setCityIndex] = useState(0);
-  const [imageIndex, setImageIndex] = useState(0);
+  const [imageIndices, setImageIndices] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Parse destinations to string names
   const destNames = destinations.map((d: any) => {
     if (typeof d === 'string') return d;
-    return d.city || d.state || d.country || 'Unknown Destination';
+    const destName = (d.city ? `${d.city}` : "") + (d.state ? `, ${d.state}` : "") + (d.country ? `, ${d.country}` : "")
+    return destName || 'Unknown Destination';
   });
 
   useEffect(() => {
@@ -32,12 +33,13 @@ export default function DestinationPolaroid({
           destNames.map(async (name) => {
             if (name === 'Unknown Destination') return [];
             // Use the new plural API to get multiple images
-            const urls = await api.places.getDestinationImages(name, 10, 1.5);
+            const urls = await api.places.getDestinationImagesByName(name, 10, 1.5);
             return urls && urls.length > 0 ? urls : [];
           })
         );
         if (mounted) {
           setAllImages(fetchedImageSets);
+          setImageIndices(new Array(fetchedImageSets.length).fill(0));
           setLoading(false);
 
           // Force background pre-loading of all images to the browser cache
@@ -66,17 +68,16 @@ export default function DestinationPolaroid({
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
     setCityIndex((prev) => (prev - 1 + allImages.length) % allImages.length);
-    setImageIndex(0);
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
     setCityIndex((prev) => (prev + 1) % allImages.length);
-    setImageIndex(0);
   };
 
   const currentCityImages = allImages[cityIndex] || [];
-  const currentImage = currentCityImages[imageIndex];
+  const currentImageIndex = imageIndices[cityIndex] || 0;
+  const currentImage = currentCityImages[currentImageIndex];
   const currentName = destNames[cityIndex];
   const hasMultipleCities = allImages.length > 1;
 
@@ -92,20 +93,31 @@ export default function DestinationPolaroid({
 
       // 1. Every 6s (every 2nd tick), swap city
       if (totalTicks % 2 === 0 && allImages.length > 1) {
+        setImageIndices(prev => {
+          const newIndices = [...prev];
+          if (cityImages.length > 1) {
+            newIndices[cityIndex] = (newIndices[cityIndex] + 1) % cityImages.length;
+          }
+          return newIndices;
+        });
         setCityIndex(prev => (prev + 1) % allImages.length);
-        setImageIndex(0);
       }
       // 2. Every 3s (every tick), swap image within city
       else if (cityImages.length > 1) {
-        setImageIndex(prev => (prev + 1) % cityImages.length);
+        setImageIndices(prev => {
+          const newIndices = [...prev];
+          newIndices[cityIndex] = (newIndices[cityIndex] + 1) % cityImages.length;
+          return newIndices;
+        });
       }
     }, 3000);
 
     return () => window.clearInterval(intervalId);
   }, [loading, allImages, cityIndex]); // Reset on city change (automatic or manual)
 
+
   return (
-    <div className="relative w-full h-40 sm:h-48 rounded-xl overflow-hidden mb-6 bg-midnight/60 border border-white/[0.04]">
+    <div className="relative w-full aspect-3/2 rounded-xl overflow-hidden mb-6 bg-midnight/60 border border-white/[0.04]">
       {/* Skeleton / Initial Loading Only */}
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-carbon/50 z-10">
@@ -117,7 +129,7 @@ export default function DestinationPolaroid({
       <AnimatePresence initial={false}>
         {!loading && currentImage && (
           <motion.img
-            key={`${cityIndex}-${imageIndex}`}
+            key={`${cityIndex}-${currentImageIndex}`}
             src={currentImage}
             alt={currentName}
             initial={{ opacity: 0 }}
@@ -156,7 +168,7 @@ export default function DestinationPolaroid({
             transition={{ duration: 0.4 }}
           >
             <p className="text-white font-bold text-lg sm:text-xl tracking-wide drop-shadow-md truncate group-hover/card:text-cyan transition-colors">
-              {currentName}
+              {currentName.split(',')[0]}
             </p>
             {allImages.length > 1 && (
               <span className="text-cyan text-[10px] font-bold uppercase tracking-wider opacity-80 drop-shadow-sm block">

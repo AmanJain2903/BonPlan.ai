@@ -122,8 +122,7 @@ async def draft_plan(token: str, data: dict):
                 status=PlanStatus.DRAFT,
             )
             db.add(newTrip)
-            await db.commit()
-            await db.refresh(newTrip)
+            await db.flush()
 
             newTripMember = TripMember(
                 trip_id=newTrip.id,
@@ -132,8 +131,7 @@ async def draft_plan(token: str, data: dict):
                 trip_preferences=preferences,
             )
             db.add(newTripMember)
-            await db.commit()
-            await db.refresh(newTripMember)
+            await db.flush()
 
             if len(destinations) > 1:
                 tripTitle = f"{origin.get('city', 'Origin')} to {destinations[0].get('city', 'Destination')} and {len(destinations) - 1} others"
@@ -149,6 +147,7 @@ async def draft_plan(token: str, data: dict):
                 end_date=endDate
             )
             db.add(newTripItinerary)
+
             await db.commit()
             await db.refresh(newTripItinerary)
 
@@ -158,6 +157,9 @@ async def draft_plan(token: str, data: dict):
             raise
         except Exception as e:
             await db.rollback()
+            import traceback
+            error_message = traceback.format_exc()
+            print(error_message)
             raise HTTPException(status_code=500, detail=f"Failed to draft plan: {e}")
 
 """

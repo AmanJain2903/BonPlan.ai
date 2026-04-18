@@ -197,17 +197,13 @@ export default function ItineraryPanel({
         ) : (
           /* Day cards grid */
           <div
-            className={`w-full ${
-              itineraryState.days.length === 1
-                ? 'max-w-2xl flex flex-col items-center'
-                : 'max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-y-12 gap-x-12'
-            } relative pb-10 pt-4`}
+            className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-y-12 gap-x-12 relative pb-10 pt-4 max-w-5xl mx-auto"
           >
             {itineraryState.days.map((day, index) => (
-              <div key={day.dayNumber} className="relative flex flex-col h-full z-10 w-full">
+              <div key={day.dayNumber} className={`relative flex flex-col h-full z-10 w-full ${(index === itineraryState.days.length - 1 && itineraryState.days.length % 2 !== 0) || itineraryState.days.length === 1 ? 'md:col-span-2 md:w-1/2 md:mx-auto' : ''}`}>
                 <DayCard day={day} index={index} />
 
-                {index < itineraryState.days.length - 1 && index % 2 === 0 && itineraryState.days.length > 1 && (
+                {/* {index < itineraryState.days.length - 1 && index % 2 === 0 && itineraryState.days.length > 1 && (
                   <div className="hidden md:flex absolute top-1/2 -right-10 transform -translate-y-1/2 z-0 text-cyan/20">
                     <ArrowRight className="w-8 h-8" />
                   </div>
@@ -225,16 +221,11 @@ export default function ItineraryPanel({
                       className="w-full h-full"
                     >
                       <line x1="100" y1="0" x2="0" y2="100" />
-                      <polyline points="25 100 0 100 0 75" />
+                      <polyline points="50 100 0 100 0 50" />
                     </svg>
                   </div>
-                )}
+                )} */}
 
-                {index < itineraryState.days.length - 1 && (
-                  <div className="md:hidden flex justify-center absolute -bottom-8 left-1/2 transform -translate-x-1/2 z-0 text-cyan/20">
-                    <ArrowDown className="w-6 h-6" />
-                  </div>
-                )}
               </div>
             ))}
           </div>

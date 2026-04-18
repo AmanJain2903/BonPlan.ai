@@ -31,7 +31,7 @@ class Trip(Base):
     __tablename__ = "trips"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False, index=True)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     planning_type = Column(Enum(PlanningType), nullable=False)
     routing_style = Column(Enum(RoutingStyle), nullable=False)

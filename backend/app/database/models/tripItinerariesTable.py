@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from app.database.database import Base
 from sqlalchemy.sql import func
+from sqlalchemy.ext.mutable import MutableList
 import uuid
 import enum
 
@@ -32,7 +33,7 @@ class TripItinerary(Base):
     cost = Column(Float, nullable=True)
     days = Column(Integer, nullable=True)
 
-    events = Column(ARRAY(JSONB), nullable=False, default=[])
+    events = Column(MutableList.as_mutable(JSONB), nullable=False, default=[])
 
     tips = Column(ARRAY(String), nullable=False, default=[])
 

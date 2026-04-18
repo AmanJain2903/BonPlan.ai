@@ -66,8 +66,15 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
             itinerary.cost = end_details.get("trip_cost", itinerary.cost)
             itinerary.tips = end_details.get("trip_tips", itinerary.tips)
         else:
-            existing_events = itinerary.events or []
-            itinerary.events = [*existing_events, event]
+            existing_event_index = None
+            for i, existing_event in enumerate(itinerary.events):
+                if existing_event.get("day_number") == event.get("day_number") and existing_event.get("event_number") == event.get("event_number"):
+                    existing_event_index = i
+                    break
+            if existing_event_index is None:
+                itinerary.events.append(event)
+            else:
+                itinerary.events[existing_event_index] = event
 
         await db.commit()
 
@@ -188,13 +195,14 @@ async def generate_solo_plan(request: Request, id: str):
                 ).scalar_one_or_none()
                 if plan_row:
                     plan_row.status = PlanStatus.DRAFT
-                    await db.commit()
+                    await db.flush()
                 itinerary_row = (
                     await db.execute(select(TripItinerary).where(TripItinerary.trip_id == id))
                 ).scalar_one_or_none()
                 if itinerary_row:
                     itinerary_row.status = TripItineraryStatus.GENERATING
-                    await db.commit()
+                    await db.flush()
+                await db.commit()
         except Exception:
             pass
         raise HTTPException(
