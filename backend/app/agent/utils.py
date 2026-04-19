@@ -53,7 +53,7 @@ def fix_schema_for_gemini(schema: dict) -> dict:
 ADD_EVENT_TOOL = types.FunctionDeclaration(
     name="add_itinerary_event",
     description="Call this tool to commit a specific event (Flight, Hotel, etc.) to the user's itinerary. "
-                "The agent must call this multiple times to build a full trip.",
+                "The agent must call this multiple times to build a full trip. Be mindful for the format you are passing in the arguments. It is a nested JSON object with the keys and values as per the schema.",
     # This ensures Gemini treats the arguments as a strictly structured JSON object
     parameters=fix_schema_for_gemini(AddItineraryEvent.model_json_schema())
 )

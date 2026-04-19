@@ -9,7 +9,7 @@ import asyncio
 
 relativePath = os.path.join(os.path.dirname(__file__), "mock_data")
 absolutePath = os.path.abspath(relativePath)
-mock_file_path = os.path.join(absolutePath, "mock_chunks.json")
+mock_file_path = os.path.join(absolutePath, "mock_chunk_18_04_2026.json")
 baseDelay = 0.2 # in seconds
 
 delaysForChunks = {
@@ -34,10 +34,13 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 
     with open(mock_file_path, "r") as f:
         mock_chunks = json.load(f)
-        
-    for chunk in mock_chunks:
+    
+    last_chunk = mock_chunks[-1]    
+    for chunk in mock_chunks[:-1]:
         await asyncio.sleep(delaysForChunks[chunk["type"]])
         yield chunk
+    await asyncio.sleep(5)
+    yield last_chunk
 
 # from typing import AsyncGenerator, Dict, Any, Literal, Optional, Callable, Awaitable
 # import asyncio
@@ -58,13 +61,13 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 # with open(AUTONOMOUS_PROMPT_PATH, "r", encoding="utf-8") as f:
 #     AUTONOMOUS_PROMPT = f.read()
 
-# COLLABORATIVE_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "collaborativePlannerPrompt.md")
-# with open(COLLABORATIVE_PROMPT_PATH, "r", encoding="utf-8") as f:
-#     COLLABORATIVE_PROMPT = f.read()
+# # COLLABORATIVE_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "collaborativePlannerPrompt.md")
+# # with open(COLLABORATIVE_PROMPT_PATH, "r", encoding="utf-8") as f:
+# #     COLLABORATIVE_PROMPT = f.read()
 
-# EDITING_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "editingPlannerPrompt.md")
-# with open(EDITING_PROMPT_PATH, "r", encoding="utf-8") as f:
-#     EDITING_PROMPT = f.read()
+# # EDITING_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "editingPlannerPrompt.md")
+# # with open(EDITING_PROMPT_PATH, "r", encoding="utf-8") as f:
+# #     EDITING_PROMPT = f.read()
 
 # planner_model = settings.PLANNER_AGENT_MODEL
 
@@ -223,12 +226,8 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 
 #         config = types.GenerateContentConfig(
 #             tools=[planner_tool_block],
-#             system_instruction=(
-#                 AUTONOMOUS_PROMPT if mode == "autonomous"
-#                 else COLLABORATIVE_PROMPT if mode == "collaborative"
-#                 else EDITING_PROMPT
-#             ),
-#             temperature=0.6,
+#             system_instruction=AUTONOMOUS_PROMPT,
+#             temperature=0.4, # Low temperature for deterministic output for maintaining JSON structure and creative enough for itinerary generation
 #             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
 #         )
 
@@ -383,7 +382,7 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 
 #                 except Exception as e:
 #                     err_str = str(e)
-#                     is_retryable = ("503" in err_str) or ("429" in err_str)
+#                     is_retryable = ("503" in err_str) or ("429" in err_str) or ("500" in err_str)
 
 #                     if is_retryable and attempt < max_retries - 1:
 #                         yield {
@@ -443,16 +442,42 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 #             is_malformed = "MALFORMED" in finish_reason_str
 
 #             if not active_tool_calls:
-#                 if is_stop and is_complete:
+#                 # END already emitted — any termination here is terminal for
+#                 # the planner. finish_reason == STOP is the happy path;
+#                 # MAX_TOKENS / OTHER / SAFETY while streaming the final summary
+#                 # is a benign cutoff (we already have a valid itinerary) and
+#                 # must not retry (empty current_message would loop forever).
+#                 if is_complete:
+#                     if not is_stop:
+#                         print(
+#                             f"[SOLO_PLANNER] Post-END turn ended with "
+#                             f"finish_reason={finish_reason}; treating as success.",
+#                             flush=True,
+#                         )
 #                     return
-#                 if not is_complete and is_malformed:
-#                     # Rule B — retry path.
+
+#                 # From here: END was never emitted.
+
+#                 if is_stop:
+#                     # Rule C — clean stop without END, unrecoverable.
+#                     yield {
+#                         "type": "error",
+#                         "content": (
+#                             f"Agent stopped cleanly but never emitted an END "
+#                             f"event (finish_reason={finish_reason})."
+#                         ),
+#                     }
+#                     return
+
+#                 if is_malformed:
+#                     # Rule B — retry path, capped.
 #                     if turn_retries >= max_turn_retries:
 #                         yield {
 #                             "type": "error",
 #                             "content": (
 #                                 f"Agent turn ended with finish_reason={finish_reason} "
-#                                 f"{turn_retries + 1} times in a row without emitting END; giving up."
+#                                 f"{turn_retries + 1} times in a row without emitting END; "
+#                                 "giving up."
 #                             ),
 #                         }
 #                         return
@@ -482,7 +507,8 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 #                         yield {
 #                             "type": "error",
 #                             "content": (
-#                                 f"Failed to rebuild chat after bad turn termination: {rebuild_err}"
+#                                 f"Failed to rebuild chat after bad turn termination: "
+#                                 f"{rebuild_err}"
 #                             ),
 #                         }
 #                         return
@@ -496,17 +522,17 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 #                     )
 #                     continue
 
-#                 # Rule C — clean STOP but no END and no tool calls: genuine
-#                 # failure the model won't recover from on its own.
-#                 elif not is_complete:
-#                     yield {
-#                         "type": "error",
-#                         "content": (
-#                             "Agent stopped cleanly but never emitted an END event "
-#                             f"(finish_reason={finish_reason})."
-#                         ),
-#                     }
-#                     return
+#                 # Any other non-STOP / non-MALFORMED reason without END
+#                 # (MAX_TOKENS mid-plan, OTHER, SAFETY, RECITATION, etc.) —
+#                 # error out; retrying here has historically not helped.
+#                 yield {
+#                     "type": "error",
+#                     "content": (
+#                         f"Agent turn ended with finish_reason={finish_reason} "
+#                         "without emitting END; giving up."
+#                     ),
+#                 }
+#                 return
 
 #             # Turn produced at least one tool call — real progress. Reset the
 #             # consecutive-bad-turn counter so only runs of pure failures count
@@ -529,16 +555,21 @@ async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous"
 #                                 f"shape. Validation error: {validation_error}"
 #                             )
 #                         }
-#                     return call_id, fc, {
-#                         "status": "success",
-#                         "message": "Event added to timeline.",
-#                     }
+                            
+#                     result = {"status": "success", "message": "Event successfully added to the timeline!"}
+#                     return call_id, fc, result
+
+#                 # Remote Tool Execution via MCP
 #                 try:
-#                     mcp_result = await session.call_tool(fc.name, fc.args)
+#                     # Provide a generic safety timeout to prevent permanent hangs
+#                     mcp_result = await asyncio.wait_for(session.call_tool(fc.name, fc.args), timeout=45.0)
 #                     output = "".join(
 #                         [c.text for c in mcp_result.content if hasattr(c, "text")]
 #                     ) or "Task completed."
 #                     result = {"output": output}
+#                 except asyncio.TimeoutError:
+#                     print(f"[SOLO_PLANNER] Timeout executing tool: {fc.name}", flush=True)
+#                     result = {"error": f"Tool {fc.name} timed out after 45 seconds."}
 #                 except asyncio.CancelledError:
 #                     print(
 #                         f"[SOLO_PLANNER] Aborting in-flight tool: {fc.name}",

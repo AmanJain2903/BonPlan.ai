@@ -113,8 +113,7 @@ async def get_route_leg(leg: dict) -> dict:
         "durationWithTraffic": {
             "logicalValueSeconds": int(leg["duration"].rstrip('s')) if leg.get("duration", None) else None,
             "humanReadableValue": leg.get("localizedValues", {}).get("duration", {}).get("text", ""),
-        },
-        "polyline": leg.get("polyline", {}),
+        }
     }
 
     try:
@@ -242,7 +241,6 @@ async def get_route(
                 "warnings": route.get("warnings", []),
                 "travelAdvisory": route.get("travelAdvisory", {}),
                 "optimizedIntermediateWaypointIndex": route.get("optimizedIntermediateWaypointIndex", []),
-                "polyline" : route.get("polyline", {}),
                 "routeToken": route.get("routeToken", None),
                 "mapsUrl" : generate_maps_app_url(origin_google, destination_google, [])
             }

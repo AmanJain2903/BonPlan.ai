@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { api, Plan, TripItinerary } from '../../apis/plan';
-import { Bot, Minimize2, Scroll } from 'lucide-react';
+import { Bot, Minimize2 } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
 import { ItineraryState, ChatTurn, ChatMode, PageState, GenerationSession } from './types';

@@ -7,7 +7,7 @@ GoogleFieldMasks = {
         "placeInfo": "id,photos,displayName,formattedAddress,location,googleMapsUri,iconBackgroundColor,iconMaskBaseUri,businessStatus,primaryTypeDisplayName,primaryType,types,accessibilityOptions,currentOpeningHours,currentSecondaryOpeningHours,internationalPhoneNumber,priceLevel,priceRange,rating,regularOpeningHours,regularSecondaryOpeningHours,userRatingCount,websiteUri",
     },
     "routes": {
-        "computeRoutes": "routes.routeToken,routes.routeLabels,routes.distanceMeters,routes.duration,routes.staticDuration,routes.description,routes.warnings,routes.travelAdvisory,routes.localizedValues,routes.polyline.encodedPolyline,routes.optimized_intermediate_waypoint_index,routes.legs",
+        "computeRoutes": "routes.routeToken,routes.routeLabels,routes.distanceMeters,routes.duration,routes.staticDuration,routes.description,routes.warnings,routes.travelAdvisory,routes.localizedValues,routes.optimized_intermediate_waypoint_index,routes.legs",
         "computeRouteMatrix": "status,condition,distanceMeters,duration,staticDuration,travelAdvisory,localizedValues,originIndex,destinationIndex,fallbackInfo",
     },
 

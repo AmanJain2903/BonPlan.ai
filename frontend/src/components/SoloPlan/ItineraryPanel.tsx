@@ -1,9 +1,22 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Info, ArrowRight, ArrowDown, AlertTriangle, OctagonX, RefreshCw, Play } from 'lucide-react';
-import { EASE_OUT_EXPO, SHIMMER_WIDTHS } from './constants';
+import {
+  Sparkles,
+  Info,
+  AlertTriangle,
+  OctagonX,
+  RefreshCw,
+  Play,
+  Map as MapIcon,
+  Activity,
+} from 'lucide-react';
+import { EASE_OUT_EXPO, SHIMMER_WIDTHS, eventKey } from './constants';
 import { ItineraryState } from './types';
 import DayCard from './DayCard';
+import ExpandedDayCardBody from './ExpandedDayCard';
+import DayMapViewBody from './DayMapView';
+import ExpandedFrame from './ExpandedFrame';
+import GoogleMapsApiLoader from '../shared/GoogleMapsApiLoader.tsx';
 
 interface ItineraryPanelProps {
   isChatMinimized: boolean;
@@ -23,6 +36,38 @@ export default function ItineraryPanel({
   const [showTips, setShowTips] = useState(false);
   const tipsRef = useRef<HTMLDivElement>(null);
 
+  // Expanded day + map overlay state
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'expanded' | 'map'>('expanded');
+  const [highlightedEventKey, setHighlightedEventKey] = useState<string | null>(null);
+  const [navDirection, setNavDirection] = useState<1 | -1>(1);
+
+  // Pre-warm Google Maps libraries so the first Map toggle feels instant.
+  useEffect(() => {
+    const load = async () => {
+      const g = (window as any).google;
+      if (!g?.maps?.importLibrary) return;
+      try {
+        await Promise.all([
+          g.maps.importLibrary('maps'),
+          g.maps.importLibrary('marker'),
+          g.maps.importLibrary('geometry'),
+        ]);
+      } catch {
+        /* swallow */
+      }
+    };
+    load();
+    const id = setInterval(() => {
+      const g = (window as any).google;
+      if (g?.maps?.importLibrary) {
+        clearInterval(id);
+        load();
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     if (!showTips) return;
     const handler = (e: MouseEvent) => {
@@ -38,6 +83,78 @@ export default function ItineraryPanel({
   const hasStarted = itineraryState.hasStarted && itineraryState.days.length > 0;
   const hasDayCards = hasStarted && itineraryState.days.some((d) => d.events.length > 0);
 
+  const selectedDayData =
+    selectedDay != null ? itineraryState.days.find((d) => d.dayNumber === selectedDay) || null : null;
+
+  const handleCloseOverlay = useCallback(() => {
+    setSelectedDay(null);
+    setViewMode('expanded');
+    setHighlightedEventKey(null);
+  }, []);
+
+  const handleNavigate = useCallback(
+    (delta: -1 | 1) => {
+      if (selectedDay == null) return;
+      const idx = itineraryState.days.findIndex((d) => d.dayNumber === selectedDay);
+      const next = idx + delta;
+      if (next < 0 || next >= itineraryState.days.length) return;
+      setNavDirection(delta);
+      setSelectedDay(itineraryState.days[next].dayNumber);
+      setHighlightedEventKey(null);
+    },
+    [selectedDay, itineraryState.days],
+  );
+
+  const handleOpenMap = useCallback((highlight?: string) => {
+    setViewMode('map');
+    setHighlightedEventKey(highlight ?? null);
+  }, []);
+
+  const handleBackToCard = useCallback(() => {
+    setViewMode('expanded');
+    setHighlightedEventKey(null);
+  }, []);
+
+  const handleViewOnMap = useCallback((event: any) => {
+    setViewMode('map');
+    setHighlightedEventKey(eventKey(event));
+  }, []);
+
+  /** Navigate to a different day while staying in map view (triggered by context marker clicks). */
+  const handleNavigateToDay = useCallback(
+    (dayNumber: number) => {
+      const targetDay = itineraryState.days.find((d) => d.dayNumber === dayNumber);
+      if (!targetDay) return;
+      const curIdx = itineraryState.days.findIndex((d) => d.dayNumber === selectedDay);
+      const newIdx = itineraryState.days.findIndex((d) => d.dayNumber === dayNumber);
+      setNavDirection(newIdx > curIdx ? 1 : -1);
+      setSelectedDay(dayNumber);
+      setHighlightedEventKey(null);
+      // Stay in map view
+    },
+    [itineraryState.days, selectedDay],
+  );
+
+  // Keyboard: Esc + arrow navigation while overlay is open
+  useEffect(() => {
+    if (selectedDay == null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (viewMode === 'map') {
+          handleBackToCard();
+        } else {
+          handleCloseOverlay();
+        }
+      } else if (e.key === 'ArrowLeft') {
+        handleNavigate(-1);
+      } else if (e.key === 'ArrowRight') {
+        handleNavigate(1);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedDay, viewMode, handleBackToCard, handleCloseOverlay, handleNavigate]);
+
   return (
     <motion.div
       key="itinerary-panel"
@@ -48,23 +165,24 @@ export default function ItineraryPanel({
         width: isChatMinimized ? '100%' : '70%',
         x: 0,
       }}
-      exit={{ opacity: 0, transition: { duration: 0.3  } }}
+      exit={{ opacity: 0, transition: { duration: 0.3 } }}
       transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
       className="flex-shrink-0 flex flex-col bg-carbon/40 border border-white/[0.06] rounded-3xl overflow-hidden"
     >
+      {/* Google Maps API preload (hidden, script-only). Keeps the Map toggle feeling instant. */}
+      <GoogleMapsApiLoader solutionChannel="GMP_BonPlan_soloPlan" />
+
       <div
-        className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full overflow-y-auto ${
-          (!hasStarted || (errorType && !hasDayCards)) ? 'justify-center' : 'justify-start'
-        }`}
+        className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full ${selectedDay == null ? 'overflow-y-auto' : 'overflow-hidden'
+          } ${(!hasStarted || (errorType && !hasDayCards)) ? 'justify-center' : 'justify-start'}`}
       >
-        {/* Trip tips button */}
+        {/* Trip tips button (always visible, overlay or not). */}
         {hasStarted && itineraryState.tripTips && itineraryState.tripTips.length > 0 && (
-          <div ref={tipsRef} className="absolute top-4 right-4 z-40 flex flex-col items-end">
+          <div ref={tipsRef} className="absolute top-4 right-4 z-50 flex flex-col items-end">
             <button
               onClick={() => setShowTips(!showTips)}
-              className={`p-2 rounded-full transition-colors group ${
-                showTips ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'
-              }`}
+              className={`p-2 rounded-full transition-colors group ${showTips ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'
+                }`}
               title="Trip Tips"
             >
               <Info className="w-5 h-5" />
@@ -195,39 +313,99 @@ export default function ItineraryPanel({
             </div>
           </>
         ) : (
-          /* Day cards grid */
-          <div
-            className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-y-12 gap-x-12 relative pb-10 pt-4 max-w-5xl mx-auto"
-          >
-            {itineraryState.days.map((day, index) => (
-              <div key={day.dayNumber} className={`relative flex flex-col h-full z-10 w-full ${(index === itineraryState.days.length - 1 && itineraryState.days.length % 2 !== 0) || itineraryState.days.length === 1 ? 'md:col-span-2 md:w-1/2 md:mx-auto' : ''}`}>
-                <DayCard day={day} index={index} />
-
-                {/* {index < itineraryState.days.length - 1 && index % 2 === 0 && itineraryState.days.length > 1 && (
-                  <div className="hidden md:flex absolute top-1/2 -right-10 transform -translate-y-1/2 z-0 text-cyan/20">
-                    <ArrowRight className="w-8 h-8" />
-                  </div>
-                )}
-
-                {index < itineraryState.days.length - 1 && index % 2 !== 0 && itineraryState.days.length > 1 && (
-                  <div className="hidden md:flex absolute -bottom-10 -left-10 z-0 text-cyan/20 w-10 h-10">
-                    <svg
-                      viewBox="0 0 100 100"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="w-full h-full"
+          /* Grid vs frame: replace day-cards grid with the centered frame when a day is selected. */
+          <div className="w-full h-full flex-1 relative">
+            <AnimatePresence mode="wait">
+              {selectedDay == null ? (
+                <motion.div
+                  key="grid"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.22 } }}
+                  transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+                  className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-y-12 gap-x-12 pb-10 pt-4 max-w-5xl mx-auto"
+                >
+                  {itineraryState.days.map((day, index) => (
+                    <div
+                      key={day.dayNumber}
+                      className={`relative flex flex-col h-full z-10 w-full ${(index === itineraryState.days.length - 1 && itineraryState.days.length % 2 !== 0) ||
+                        itineraryState.days.length === 1
+                        ? 'md:col-span-2 md:w-1/2 md:mx-auto'
+                        : ''
+                        }`}
                     >
-                      <line x1="100" y1="0" x2="0" y2="100" />
-                      <polyline points="50 100 0 100 0 50" />
-                    </svg>
-                  </div>
-                )} */}
+                      <DayCard
+                        day={day}
+                        index={index}
+                        onSelect={(n) => {
+                          setNavDirection(1);
+                          setSelectedDay(n);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </motion.div>
+              ) : selectedDayData ? (
+                <motion.div
+                  key="overlay"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                  transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+                  className="absolute inset-0 flex items-stretch justify-center w-full h-full max-w-5xl mx-auto px-1 py-4"
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) handleCloseOverlay();
+                  }}
+                >
+                  {/* Frame stays mounted across day navigation; only its body content animates. */}
+                  <ExpandedFrame
+                    day={selectedDayData}
+                    allDays={itineraryState.days}
+                    onClose={handleCloseOverlay}
+                    onNavigate={handleNavigate}
+                    bodyKey={viewMode}
+                    actionButton={
 
-              </div>
-            ))}
+                      viewMode === 'expanded' ? (
+                        <button
+                          onClick={() => handleOpenMap()}
+                          className="flex items-center gap-1.5 px-3 py-2 text-cyan text-xs font-bold uppercase tracking-wider hover:scale-110 transition-all w-[6rem] justify-center"
+                          title="View on map"
+                        >
+                          <MapIcon className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Map</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleBackToCard}
+                          className="flex items-center gap-1.5 px-3 py-2 text-cyan text-xs font-bold uppercase tracking-wider hover:scale-110 transition-all w-[6rem] justify-center"
+                          title="Back to card"
+                        >
+                          <Activity className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Events</span>
+                        </button>
+                      )
+                    }
+                  >
+                    {viewMode === 'expanded' ? (
+                      <ExpandedDayCardBody
+                        day={selectedDayData}
+                        onViewOnMap={handleViewOnMap}
+                        navDirection={navDirection}
+                      />
+                    ) : (
+                      <DayMapViewBody
+                        day={selectedDayData}
+                        allDays={itineraryState.days}
+                        highlightedEventKey={highlightedEventKey}
+                        onNavigateToDay={handleNavigateToDay}
+                        isGenerating={isGenerating}
+                      />
+                    )}
+                  </ExpandedFrame>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
         )}
       </div>

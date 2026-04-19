@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { MapPin, PlaneTakeoff, Navigation, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTrip, type Place } from '../../../context/TripContext';
-import { GOOGLE_MAPS_API_KEY } from '../../../apis/config';
-import { APILoader, PlacePicker } from '@googlemaps/extended-component-library/react';
+import { PlacePicker } from '@googlemaps/extended-component-library/react';
+import GoogleMapsApiLoader from '../../shared/GoogleMapsApiLoader.tsx';
 
 // Route building blocks (used for multi-hop connected lines)
 import '@googlemaps/extended-component-library/route_building_blocks/route_data_provider.js';
@@ -183,7 +183,7 @@ function Step3SingleHub({ onNext, registerCommit }: Step3Props) {
 
   return (
     <>
-      <APILoader apiKey={GOOGLE_MAPS_API_KEY} solutionChannel="GMP_GE_placepicker_v2" />
+      <GoogleMapsApiLoader solutionChannel="GMP_GE_placepicker_v2" />
 
       <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 animate-[fade-in_400ms_ease-out]">
         {/* Origin Card */}
@@ -345,7 +345,7 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
 
   return (
     <>
-      <APILoader apiKey={GOOGLE_MAPS_API_KEY} solutionChannel="GMP_GE_placepicker_v2" />
+      <GoogleMapsApiLoader solutionChannel="GMP_GE_placepicker_v2" />
 
       <div className={`w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 animate-[fade-in_400ms_ease-out] ${canContinue ? 'pb-24' : ''}`}>
 

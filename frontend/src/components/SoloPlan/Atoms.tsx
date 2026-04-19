@@ -11,6 +11,11 @@ export function BotAvatar({ icon: Icon = Bot, className = '' }: { icon?: typeof 
   );
 }
 
+/** Small visible rounded dot used as an inline separator between labels. */
+export function Dot({ className = '' }: { className?: string }) {
+  return <span className={`inline-block w-1 h-1 rounded-full bg-white/50 shrink-0 ${className}`} aria-hidden />;
+}
+
 /** Three bouncing dot animation */
 export function BouncingDots() {
   return (

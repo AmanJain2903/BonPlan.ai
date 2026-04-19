@@ -1,7 +1,7 @@
 # get_route
 
 ## Purpose
-Calculates detailed directions, duration, polyline, and distance between one origin and one destination, optionally passing through intermediate waypoints, using Google Routes API.
+Calculates detailed directions, duration, and distance between one origin and one destination, optionally passing through intermediate waypoints, using Google Routes API.
 
 ## When to use
 Use this tool when the user needs turn-by-turn or detailed travel directions, route alternatives, or an optimized driving path across specific locations.
@@ -31,5 +31,5 @@ Never mix them in the same waypoint (e.g. don't send `address` AND `lat`). If yo
 - `optimize_waypoint_order` (bool, optional): Let Google re-order intermediate waypoints for the shortest total trip. Default true. Set false to enforce strict visitation order.
 
 ## Returns
-- **Success**: `{"routes": [...]}` — each route has `distance`, `durationWithTraffic`, `durationWithoutTraffic`, `routeLegs`, `mapsUrl`, `polyline`, `warnings`, `travelAdvisory`, and optionally `optimizedIntermediateWaypointIndex` + `optimizedRoute` if waypoint ordering was adjusted.
+- **Success**: `{"routes": [...]}` — each route has `distance`, `durationWithTraffic`, `durationWithoutTraffic`, `routeLegs`, `mapsUrl`, `warnings`, `travelAdvisory`, and optionally `optimizedIntermediateWaypointIndex` + `optimizedRoute` if waypoint ordering was adjusted.
 - **Error**: A dictionary with `error`, `fix_hint`, and optionally `status_code`. Use the `fix_hint` text to correct your next call.

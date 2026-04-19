@@ -72,7 +72,7 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
                     existing_event_index = i
                     break
             if existing_event_index is None:
-                itinerary.events.append(event)
+                    itinerary.events.append(event)
             else:
                 itinerary.events[existing_event_index] = event
 

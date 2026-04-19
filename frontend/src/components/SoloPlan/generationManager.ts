@@ -78,8 +78,8 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
     default: {
       const dayNum = data.day_number;
       if (typeof dayNum !== 'number' || dayNum <= 0) return prev;
-      const cost = getEventCost(data);
-      const countable = isCountableEvent(data.event_type);
+      const newCost = getEventCost(data);
+      const newCountable = isCountableEvent(data.event_type) ? 1 : 0;
 
       return {
         ...prev,
@@ -87,17 +87,44 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
           if (day.dayNumber < dayNum) {
             return { ...day, isLoading: false };
           }
-          if (day.dayNumber === dayNum) {
+          if (day.dayNumber !== dayNum) return day;
+
+          // Upsert by (day_number, event_number) so regenerated events replace
+          // the prior entry instead of duplicating. Backend already upserts on
+          // the same key (see backend/app/agent/api/v1/endpoints/solo_planner.py).
+          const existingIdx = day.events.findIndex(
+            (e: any) => e.event_number === data.event_number,
+          );
+
+          const timestamp = Date.now();
+          const targetData = { ...data, _updatedAt: timestamp };
+
+          if (existingIdx === -1) {
             return {
               ...day,
-              title: data.day_title || day.title,
-              date: data.date || day.date,
-              events: [...day.events, data],
-              eventsCount: day.eventsCount + (countable ? 1 : 0),
-              cost: day.cost + cost,
+              title: targetData.day_title || day.title,
+              date: targetData.date || day.date,
+              events: [...day.events, targetData],
+              eventsCount: day.eventsCount + newCountable,
+              cost: day.cost + newCost,
+              lastUpdatedAt: timestamp,
             };
           }
-          return day;
+
+          const prevEvent = day.events[existingIdx];
+          const prevCost = getEventCost(prevEvent);
+          const prevCountable = isCountableEvent(prevEvent.event_type) ? 1 : 0;
+          const nextEvents = [...day.events];
+          nextEvents[existingIdx] = targetData;
+          return {
+            ...day,
+            title: targetData.day_title || day.title,
+            date: targetData.date || day.date,
+            events: nextEvents,
+            eventsCount: day.eventsCount - prevCountable + newCountable,
+            cost: day.cost - prevCost + newCost,
+            lastUpdatedAt: timestamp,
+          };
         }),
       };
     }

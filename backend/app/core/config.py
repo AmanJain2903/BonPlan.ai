@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Gemini Models
     SERPER_CONTENT_PARSER_MODEL: str = "gemini-2.5-flash-lite"
-    PLANNER_AGENT_MODEL: str = "gemini-3.1-flash-lite-preview"#"gemma-4-31b-it" #"gemini-3.1-flash-lite-preview" #"gemma-4-26b-a4b-it" #"gemma-4-31b-it"
+    PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"#"gemma-4-31b-it" #"gemini-3.1-flash-lite-preview" #"gemma-4-26b-a4b-it"
     PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
     # Serper API key

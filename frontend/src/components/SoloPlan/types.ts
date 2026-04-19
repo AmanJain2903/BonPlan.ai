@@ -21,6 +21,7 @@ export interface ItineraryDay {
   cost: number;
   isLoading: boolean;
   hasError: boolean;
+  lastUpdatedAt?: number;
 }
 
 export interface ItineraryState {

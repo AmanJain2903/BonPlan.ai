@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ItineraryDay } from './types';
 import { Calendar, DollarSign, Activity, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -11,9 +12,31 @@ const VALUE_SWAP = {
   transition: { duration: 0.25 },
 };
 
-export default function DayCard({ day, index = 0 }: { day: ItineraryDay; index?: number }) {
+interface DayCardProps {
+  day: ItineraryDay;
+  index?: number;
+  onSelect?: (dayNumber: number) => void;
+  hidden?: boolean;
+}
+
+export default function DayCard({ day, index = 0, onSelect, hidden = false }: DayCardProps) {
   const isDefaultTitle = typeof day.title === 'string' && day.title.trim().toLowerCase() === `day ${day.dayNumber}`;
   const displayTitle = day.title && !isDefaultTitle ? `${day.title}` : `Day ${day.dayNumber}`;
+
+  // Track which lastUpdatedAt we have already "seen" so we only pulse for NEW updates.
+  // The ref is updated in useEffect (after commit) — never during render — to avoid
+  // Strict-Mode / concurrent-rendering issues where a second render call would
+  // see the ref already updated and suppress the pulse.
+  const seenUpdateRef = useRef<number | undefined>(day.lastUpdatedAt);
+  const isNewUpdate = day.lastUpdatedAt != null
+    && !day.isLoading
+    && day.lastUpdatedAt !== seenUpdateRef.current;
+
+  useEffect(() => {
+    if (isNewUpdate) {
+      seenUpdateRef.current = day.lastUpdatedAt;
+    }
+  }, [isNewUpdate, day.lastUpdatedAt]);
 
   const borderClass = day.hasError
     ? 'bg-black/60 border border-red-500/40 shadow-[0_0_30px_rgba(239,68,68,0.15)]'
@@ -23,13 +46,27 @@ export default function DayCard({ day, index = 0 }: { day: ItineraryDay; index?:
 
   const statusKey = day.hasError ? 'error' : day.isLoading ? 'loading' : 'done';
 
+  const handleClick = () => {
+    if (onSelect) onSelect(day.dayNumber);
+  };
+
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 0, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.5, delay: index * 0.1, ease: EASE_OUT_EXPO }}
-      className={`relative flex flex-col gap-5 p-6 h-full overflow-hidden rounded-3xl backdrop-blur-md transition-all duration-300 ${borderClass}`}
+      animate={{ opacity: hidden ? 0 : 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.5, delay: index * 0.06, ease: EASE_OUT_EXPO }}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : -1}
+      onClick={handleClick}
+      onKeyDown={(e) => {
+        if (!onSelect) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+      className={`relative flex flex-col gap-5 p-6 h-full overflow-hidden rounded-3xl backdrop-blur-md transition-all duration-300 ${onSelect ? 'cursor-pointer hover:scale-[1.015]' : ''
+        } ${hidden ? 'pointer-events-none' : ''} ${borderClass}`}
     >
       {day.isLoading && !day.hasError && (
         <motion.div
@@ -112,6 +149,23 @@ export default function DayCard({ day, index = 0 }: { day: ItineraryDay; index?:
       </div>
 
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-cyan/5 via-transparent to-transparent pointer-events-none" />
+
+      {/* Pulse animation: only fires for genuinely new / re-emitted updates */}
+      <AnimatePresence>
+        {isNewUpdate && (
+          <motion.div
+            key={`pulse-${day.lastUpdatedAt}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.8, ease: EASE_OUT_EXPO }}
+            className="absolute inset-0 rounded-3xl pointer-events-none z-50 glow-cyan bg-gradient-to-br from-cyan/20 via-cyan/10 to-cyan/20"
+            style={{
+              boxShadow: '0 0 0 4px rgba(102, 252, 241, 0.5), 0 0 24px rgba(102, 252, 241, 0.25)',
+            }}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
