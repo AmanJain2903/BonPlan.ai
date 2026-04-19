@@ -1089,11 +1089,36 @@ export default function DayMapViewBody({
         }
       }
 
-      // Animate travel marker position and camera
+      // Animate travel marker position and smoothly follow with camera
       if (step.type === 'travel' && step.path) {
         const pos = interpolateAlongPath(step.path, progress);
         travelMarker.setPosition(pos);
-        map.setCenter(pos);
+
+        // Only pan when the marker is near the viewport edge (25% inset).
+        // This avoids jittery setCenter calls every frame while still
+        // ensuring the marker never goes off-screen.
+        const bounds = map.getBounds();
+        if (bounds) {
+          const ne = bounds.getNorthEast();
+          const sw = bounds.getSouthWest();
+          const latSpan = ne.lat() - sw.lat();
+          const lngSpan = ne.lng() - sw.lng();
+          const inset = 0.25; // trigger when within 25% of the edge
+          const innerNorth = ne.lat() - latSpan * inset;
+          const innerSouth = sw.lat() + latSpan * inset;
+          const innerEast = ne.lng() - lngSpan * inset;
+          const innerWest = sw.lng() + lngSpan * inset;
+
+          if (
+            pos.lat > innerNorth || pos.lat < innerSouth ||
+            pos.lng > innerEast || pos.lng < innerWest
+          ) {
+            map.panTo(pos);
+          }
+        } else {
+          // Fallback: no bounds available yet, just center
+          map.panTo(pos);
+        }
       }
 
       anim.rafId = requestAnimationFrame(onFrame);
@@ -1145,7 +1170,7 @@ export default function DayMapViewBody({
           {!isTouring ? (
             <button
               onClick={startTour}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-black bg-cyan/90 hover:bg-cyan text-black text-xs font-bold uppercase tracking-wider shadow-lg shadow-cyan/20 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-cyan/90 bg-carbon/80 hover:bg-carbon/90 text-cyan text-xs font-bold uppercase tracking-wider shadow-lg shadow-cyan/20 transition-all hover:scale-105 active:scale-95"
             >
               <Play className="w-3.5 h-3.5" />
               Start Tour
@@ -1153,7 +1178,7 @@ export default function DayMapViewBody({
           ) : (
             <button
               onClick={stopTour}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white bg-red-500/90 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-red-500/20 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white bg-red-500/80 hover:bg-red-500/90 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-red-500/20 transition-all hover:scale-105 active:scale-95"
             >
               <Square className="w-3.5 h-3.5" />
               Stop Tour
@@ -1185,7 +1210,7 @@ export default function DayMapViewBody({
 
       {/* Mode legend (bottom-left) */}
       {(commutes.length > 0 || flightRoutes.length > 0) && !isTouring && (
-        <div className="absolute bottom-4 left-4 z-20 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl px-3 py-2 flex flex-wrap items-center gap-3 pointer-events-none">
+        <div className="absolute bottom-4 left-4 z-20 bg-carbon/80 border border-cyan/90 rounded-xl px-3 py-2 flex flex-wrap items-center gap-3 pointer-events-none">
           {Array.from(new Set(commutes.map((c) => c.travel_mode))).map((mode) => {
             const Icon =
               mode === 'WALK' ? Footprints
@@ -1196,7 +1221,7 @@ export default function DayMapViewBody({
               <div key={mode} className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider">
                 <div className="w-4 h-[3px] rounded-full" style={{ background: MODE_COLOR[mode] || '#0891b2' }} />
                 <Icon className="w-3 h-3 text-white/70" />
-                <span className="text-white/70 font-semibold">{mode.replace('_', ' ')}</span>
+                <span className="text-white font-semibold">{mode.replace('_', ' ')}</span>
               </div>
             );
           })}
@@ -1204,7 +1229,7 @@ export default function DayMapViewBody({
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider">
               <div className="w-4 h-[3px] rounded-full" style={{ background: MODE_COLOR.FLIGHT }} />
               <Plane className="w-3 h-3 text-white/70" />
-              <span className="text-white/70 font-semibold">FLIGHT</span>
+              <span className="text-white font-semibold">FLIGHT</span>
             </div>
           )}
         </div>
