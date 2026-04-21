@@ -92,7 +92,7 @@ export default function ActivityCard({ event, onViewOnMap, contentKey }: Props) 
               <p className="text-xs text-white/75 leading-relaxed">{d.event_description}</p>
             </div>
           )}
-          <TipsSection tips={event.event_tips} />
+          <TipsSection tips={d.event_tips} />
           {(isValidUrl(d.website_url) || isValidUrl(d.google_maps_url)) && (
             <div className="flex items-center gap-4 pt-1">
               {isValidUrl(d.website_url) && (

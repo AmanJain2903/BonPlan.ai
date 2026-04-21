@@ -11,6 +11,8 @@ Use this as a prerequisite step when planning a trip or flight to find the corre
   - Example: `"Los Angeles"`
 - `country_code` (str, optional): The country code to filter the results.
   - Example: `"US"`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 10 seconds.
+  - Example: `15`
 
 ## Returns
 - **Success**: A dictionary mapping airport/place titles to another dictionary containing `airport_code` and `distance`.

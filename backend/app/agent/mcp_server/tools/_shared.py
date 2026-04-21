@@ -32,7 +32,7 @@ class Waypoint(BaseModel):
     address: Optional[str] = Field(
         default=None,
         description=(
-            "Freeform address or place name, e.g. '1600 Amphitheatre Pkwy, "
+            "(Optional) Freeform address or place name, e.g. '1600 Amphitheatre Pkwy, "
             "Mountain View, CA' or 'Taj Mahal'. Google will geocode it."
         ),
     )
@@ -40,24 +40,24 @@ class Waypoint(BaseModel):
         default=None,
         ge=-90.0,
         le=90.0,
-        description="Latitude in decimal degrees. Provide together with `lng`.",
+        description="(Optional) Latitude in decimal degrees. Provide together with `lng`.",
     )
     lng: Optional[float] = Field(
         default=None,
         ge=-180.0,
         le=180.0,
-        description="Longitude in decimal degrees. Provide together with `lat`.",
+        description="(Optional) Longitude in decimal degrees. Provide together with `lat`.",
     )
     place_id: Optional[str] = Field(
         default=None,
         description=(
-            "Google Place ID (from search_places / search_places_nearby). "
+            "(Optional) Google Place ID (from search_places / search_places_nearby). "
             "Mutually exclusive with address/lat/lng."
         ),
     )
 
 
-def normalize_waypoint(w: Union["Waypoint", dict]) -> dict:
+async def normalize_waypoint(w: Union["Waypoint", dict]) -> dict:
     """
     Convert a ``Waypoint`` (or a dict in the flat shape) into the Google
     Routes API's expected waypoint body shape:
@@ -96,7 +96,7 @@ def normalize_waypoint(w: Union["Waypoint", dict]) -> dict:
     )
 
 
-def waypoint_validation_error(field_name: str, received: dict) -> dict:
+async def waypoint_validation_error(field_name: str, received: dict) -> dict:
     """
     Uniform actionable error returned when a waypoint is unusable. The
     agent runtime surfaces this verbatim to the model's next turn, so the
@@ -112,3 +112,22 @@ def waypoint_validation_error(field_name: str, received: dict) -> dict:
         ),
         "received": received,
     }
+
+async def parse_mcp_location(loc: dict) -> tuple[str, str]:
+    """
+    Parses a Google-shaped waypoint dict (produced by `normalize_waypoint`)
+    into a (String_Query, Place_ID) tuple for building maps URLs.
+    Google Maps URLs require a string query even if you provide a Place ID.
+    """
+    if "address" in loc:
+        return loc["address"], ""
+
+    elif "location" in loc:
+        lat = loc["location"]["latLng"]["latitude"]
+        lng = loc["location"]["latLng"]["longitude"]
+        return f"{lat},{lng}", ""
+
+    elif "placeId" in loc:
+        return "Saved Location", loc["placeId"]
+
+    return "", ""

@@ -5,12 +5,15 @@ from app.utils.http import get_http_client
 from app.agent.mcp_server.tools._errors import tool_error
 from datetime import datetime, timezone, timedelta
 import pathlib
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
 # Air Quality API
 async def get_current_air_quality(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
-                            lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")]) -> Dict:
+                            lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
+                            timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase this if a previous call failed due to timeout.", default=TIMEOUTS['get_current_air_quality'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -32,7 +35,7 @@ async def get_current_air_quality(lat: Annotated[float, Field(ge=-90.0, le=90.0,
 
     try:
         client = get_http_client()
-        response = await client.post(url, json=body, headers=headers, timeout=5)
+        response = await client.post(url, json=body, headers=headers, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Air Quality API request failed.",
@@ -57,6 +60,11 @@ async def get_current_air_quality(lat: Annotated[float, Field(ge=-90.0, le=90.0,
             "health_recommendations": data.get("healthRecommendations", None),
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Air Quality API raised an unexpected error.",
@@ -66,7 +74,8 @@ async def get_current_air_quality(lat: Annotated[float, Field(ge=-90.0, le=90.0,
 
 async def get_air_quality_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                              lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
-                             point_in_time: Annotated[Optional[str], Field(description="The optional precise UTC datetime to forecast the air quality at in ISO 8601 format YYYY-MM-DDTHH:MM:SSZ.", default=None)]) -> Dict:
+                             point_in_time: Annotated[Optional[str], Field(description="(Optional) The precise UTC datetime to forecast the air quality at in ISO 8601 format YYYY-MM-DDTHH:MM:SSZ.", default=None)],
+                             timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase this if a previous call failed due to timeout.", default=TIMEOUTS['get_air_quality_forecast'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -115,7 +124,7 @@ async def get_air_quality_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0
     }
     try:
         client = get_http_client()
-        response = await client.post(url, json=body, headers=headers, timeout=5)
+        response = await client.post(url, json=body, headers=headers, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Air Quality forecast request failed.",
@@ -144,6 +153,11 @@ async def get_air_quality_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0
             "health_recommendations": first_hour.get("healthRecommendations", None),
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Air Quality forecast raised an unexpected error.",

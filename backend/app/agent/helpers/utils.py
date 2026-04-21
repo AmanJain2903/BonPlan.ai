@@ -1,3 +1,4 @@
+import os
 from google.genai import types
 from app.agent.schemas.structuredOutput import AddItineraryEvent
 
@@ -50,10 +51,17 @@ def fix_schema_for_gemini(schema: dict) -> dict:
         return node
     return process_node(schema)
 
+def _load_add_event_description() -> str:
+    path = os.path.join(os.path.dirname(__file__), "add_event.md")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return "Call this tool to commit a specific event (Flight, Hotel, etc.) to the user's itinerary. The agent must call this multiple times to build a full trip. Be mindful for the format you are passing in the arguments. It is a nested JSON object with the keys and values as per the schema."
+
 ADD_EVENT_TOOL = types.FunctionDeclaration(
     name="add_itinerary_event",
-    description="Call this tool to commit a specific event (Flight, Hotel, etc.) to the user's itinerary. "
-                "The agent must call this multiple times to build a full trip. Be mindful for the format you are passing in the arguments. It is a nested JSON object with the keys and values as per the schema.",
+    description=_load_add_event_description(),
     # This ensures Gemini treats the arguments as a strictly structured JSON object
     parameters=fix_schema_for_gemini(AddItineraryEvent.model_json_schema())
 )

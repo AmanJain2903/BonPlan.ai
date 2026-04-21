@@ -8,6 +8,8 @@ from app.utils.http import get_http_client
 from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 from app.agent.mcp_server.tools._errors import tool_error
 from google import genai
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 serper_api_key = settings.SERPER_API_KEY
 gemini_api_key_serper_content_parser = settings.SERPER_CONTENT_PARSER_API_KEY
@@ -71,7 +73,8 @@ async def pre_process_content(content):
         }
 
 # Get content from URL using Jina and pre-process the content using Gemini API
-async def get_content_from_url(url: Annotated[str, Field(description="The URL to get the content from.")]) -> Dict:
+async def get_content_from_url(url: Annotated[str, Field(description="The URL to get the content from.")],
+                               timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_content_from_url'])]) -> Dict:
     cache_key = generate_cache_key("get_content", {"url": url})
     cache_value = await retrieve_api_cache(cache_key, expires_in=7)
     if cache_value:
@@ -84,7 +87,12 @@ async def get_content_from_url(url: Annotated[str, Field(description="The URL to
             "X-No-Layout": "true",
         }
         http_client = get_http_client()
-        content = await http_client.get(jina_url, headers=headers, timeout=15)
+        content = await http_client.get(jina_url, headers=headers, timeout=timeout_seconds)
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             f"Could not fetch content from {url}.",
@@ -112,9 +120,10 @@ async def get_content_from_url(url: Annotated[str, Field(description="The URL to
 
 # Web Search API - Serper
 async def search_web(query: Annotated[str, Field(description="The query to search the web for. Maximum 250 characters.")],
-               site: Annotated[Optional[WebSearchSites], Field(description="The site to search the web for. If not provided, all sites will be searched.", default=None)],
-               max_results: Annotated[int, Field(ge=1, le=100, description="The maximum number of results to return (min 1, max 100).", default=5)],
-               search_index: Annotated[int, Field(description="The index of the result to return.", default=0)]) -> Dict:
+               site: Annotated[Optional[WebSearchSites], Field(description="(Optional) The site to search the web for. If not provided, all sites will be searched.", default=None)],
+               max_results: Annotated[int, Field(ge=1, le=20, description="The maximum number of results to return (min 1, max 20).", default=5)],
+               search_index: Annotated[int, Field(description="The index of the result to return.", default=0)],
+               timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['search_web'])]) -> Dict:
 
     if not serper_api_key:
         return tool_error(
@@ -152,7 +161,7 @@ async def search_web(query: Annotated[str, Field(description="The query to searc
 
     try:
         http_client = get_http_client()
-        response = await http_client.post(url, headers=headers, json=payload, timeout=15)
+        response = await http_client.post(url, headers=headers, json=payload, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Web search failed upstream.",
@@ -176,7 +185,7 @@ async def search_web(query: Annotated[str, Field(description="The query to searc
                 extra={"page_length": page_length},
             )
         result = organic_results[search_index]
-        content = await get_content_from_url(result.get("link"))
+        content = await get_content_from_url(result.get("link"), timeout_seconds=TIMEOUTS['get_content_from_url'])
         return {
             "pageTitle": content.get("title", result.get("title")),
             "pageLink": result.get("link"),
@@ -188,6 +197,11 @@ async def search_web(query: Annotated[str, Field(description="The query to searc
             "nextIndex": search_index + 1 if page_length > search_index + 1 else None,
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Web search raised an unexpected error.",

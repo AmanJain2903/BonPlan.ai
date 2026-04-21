@@ -3,9 +3,9 @@ import os
 from app.agent.schemas.structuredOutput import AddItineraryEvent
 from app.agent.schemas.structuredInput import TripInput
 
-from app.agent.utils import fix_schema_for_gemini, convert_mcp_to_gemini
-from app.agent.runtime import agent_runtime_context
-from app.agent.runtime import runtime
+from app.agent.helpers.utils import fix_schema_for_gemini, convert_mcp_to_gemini
+from app.agent.core.runtime import agent_runtime_context
+from app.agent.core.runtime import runtime
 import asyncio
 
 inputSchema = TripInput.model_json_schema()

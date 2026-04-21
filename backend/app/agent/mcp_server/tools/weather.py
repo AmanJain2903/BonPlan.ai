@@ -3,20 +3,21 @@ from pydantic import Field
 from app.core.config import settings
 from app.utils.http import get_http_client
 from app.agent.mcp_server.tools._errors import tool_error
-from datetime import datetime, timezone, timedelta
 import pathlib
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
 
-def _weather_key_missing_error() -> Dict:
+async def _weather_key_missing_error() -> Dict:
     return tool_error(
         "Google Maps API key is not configured on the server.",
         fix_hint="This is a server-side configuration issue — do not retry. Proceed without weather data.",
     )
 
 
-def _weather_upstream_error(response) -> Dict:
+async def _weather_upstream_error(response) -> Dict:
     return tool_error(
         "Weather API request failed.",
         fix_hint="Verify lat/lng are within valid ranges. 5xx is transient — retry once; 4xx usually means invalid parameters.",
@@ -25,7 +26,7 @@ def _weather_upstream_error(response) -> Dict:
     )
 
 
-def _weather_unexpected_error(e: Exception) -> Dict:
+async def _weather_unexpected_error(e: Exception) -> Dict:
     return tool_error(
         "Weather API raised an unexpected error.",
         fix_hint="Retry once with the same arguments. If it fails again, proceed without weather data.",
@@ -35,17 +36,18 @@ def _weather_unexpected_error(e: Exception) -> Dict:
 # Weather API
 async def get_current_weather(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                         lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
-                        units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")]) -> Dict:
+                        units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")],
+                        timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_current_weather'])]) -> Dict:
     if not api_key:
-        return _weather_key_missing_error()
+        return await _weather_key_missing_error()
 
     url = f"https://weather.googleapis.com/v1/currentConditions:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}"
 
     try:
         client = get_http_client()
-        response = await client.get(url, timeout=5)
+        response = await client.get(url, timeout=timeout_seconds)
         if response.status_code >= 400:
-            return _weather_upstream_error(response)
+            return await _weather_upstream_error(response)
         data = response.json()
 
         return {
@@ -82,23 +84,29 @@ async def get_current_weather(lat: Annotated[float, Field(ge=-90.0, le=90.0, des
             },
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
-        return _weather_unexpected_error(e)
+        return await _weather_unexpected_error(e)
 
 async def get_daily_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                        lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
                        units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")],
-                       days: Annotated[int, Field(ge=1, le=10, description="The number of days to forecast.", default=10)]) -> Dict:
+                       days: Annotated[int, Field(ge=1, le=10, description="The number of days to forecast.", default=10)],
+                       timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_daily_forecast'])]) -> Dict:
     if not api_key:
-        return _weather_key_missing_error()
+        return await _weather_key_missing_error()
 
     url = f"https://weather.googleapis.com/v1/forecast/days:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}&days={days}&pageSize=10"
 
     try:
         client = get_http_client()
-        response = await client.get(url, timeout=5)
+        response = await client.get(url, timeout=timeout_seconds)
         if response.status_code >= 400:
-            return _weather_upstream_error(response)
+            return await _weather_upstream_error(response)
         data = response.json()
 
         output = {
@@ -154,23 +162,29 @@ async def get_daily_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, desc
             "forecastDays": output,
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
-        return _weather_unexpected_error(e)
+        return await _weather_unexpected_error(e)
 
 async def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")], 
                         lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")], 
                         units_system: Annotated[Literal["IMPERIAL", "METRIC"], Field(description="The preferred units system for the weather data.", default="IMPERIAL")], 
-                        hours: Annotated[int, Field(ge=1, le=24, description="The total number of hours to forecast (max 24).", default=24)]) -> Dict:
+                        hours: Annotated[int, Field(ge=1, le=24, description="The total number of hours to forecast (max 24).", default=24)],
+                        timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_hourly_forecast'])]) -> Dict:
     if not api_key:
-        return _weather_key_missing_error()
+        return await _weather_key_missing_error()
 
     url = f"https://weather.googleapis.com/v1/forecast/hours:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}&hours={hours}"
 
     try:
         client = get_http_client()
-        response = await client.get(url, timeout=5)
+        response = await client.get(url, timeout=timeout_seconds)
         if response.status_code >= 400:
-            return _weather_upstream_error(response)
+            return await _weather_upstream_error(response)
         data = response.json()
 
         output = {
@@ -209,8 +223,13 @@ async def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, des
             "forecastHours": output,
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
-        return _weather_unexpected_error(e)
+        return await _weather_unexpected_error(e)
 
 # FOR FUTURE USE
 # def get_weather_alerts(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The latitude of the location")],

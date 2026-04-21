@@ -50,13 +50,13 @@ export default function OtherCard({ event, onViewOnMap, contentKey }: Props) {
       viewOnMapButton={<ViewOnMapButton onClick={onViewOnMap} />}
       collapsedContent={
         <>
-          <LogoOrIcon url={d.logo_url} name={d.location} />
+          <LogoOrIcon url={d.logo_url} name={d.place_name} />
           <div className="flex flex-col min-w-0 flex-1">
             <span className="text-sm font-bold text-white/90 truncate" title={d.event_name}>
               {d.event_name}
             </span>
-            {d.location && (
-              <span className="text-[11px] text-white/50 truncate">{d.location}</span>
+            {d.place_name && (
+              <span className="text-[11px] text-white/50 truncate">{d.place_name}</span>
             )}
             <div className="flex items-center gap-2 text-[11px] text-white/60 mt-0.5">
               <span>{formatClockTime(d.start_time)} {duration && `– ${formatClockTime(d.end_time)}`}</span>

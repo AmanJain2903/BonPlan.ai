@@ -11,6 +11,8 @@ Use this tool when the user asks for the current air quality at a specific place
   - Example: `37.7749`
 - `lng` (float): The precise longitude of the location.
   - Example: `-122.4194`
+- `timeout_seconds` (int, optional): Timeout in seconds for the tool execution. Only increase this if a previous call failed due to timeout. Default is `5`.
+  - Example: `10`
 
 ## Returns
 - **Success**: A dictionary containing:

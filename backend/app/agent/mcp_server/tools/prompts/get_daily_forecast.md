@@ -15,6 +15,8 @@ Use this tool to provide a multi-day forecast to aid in trip planning or weekend
   - Example: `"IMPERIAL"`
 - `days` (int, optional): The number of forecast days (1 to 10). Default is 10.
   - Example: `5`
+- `timeout_seconds` (int, optional): Timeout in seconds. Only increase if previous call timed out. Default `10`.
+  - Example: `15`
 
 ## Returns
 - **Success**: A dictionary containing the target `timeZone` and `forecastDays`. Each day acts as a key for an object holding `maxTemperature`, `minTemperature`, `feelsLikeMaxTemperature`, `feelsLikeMinTemperature`, `dayTimeForecast`, and `nightTimeForecast`.

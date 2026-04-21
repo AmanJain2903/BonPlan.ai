@@ -7,10 +7,12 @@ from datetime import datetime, timezone, timedelta
 import time
 from zoneinfo import ZoneInfo
 import pathlib
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
-def get_current_timestamp() -> Dict:
+async def get_current_timestamp() -> Dict:
     try:
         current_time = int(time.time())
         return {
@@ -24,7 +26,7 @@ def get_current_timestamp() -> Dict:
             extra={"exception": str(e)},
         )
 
-def convert_utc_string_to_timestamp(
+async def convert_utc_string_to_timestamp(
     utc_string: Annotated[str, Field(description="The strict ISO 8601 UTC time string (e.g., '2026-04-05T18:30:00Z'). Must end with Z or valid UTC offset.")]) -> Dict:
     try:
         clean_string = utc_string.replace('Z', '+00:00')
@@ -46,7 +48,7 @@ def convert_utc_string_to_timestamp(
             extra={"exception": str(e), "received": utc_string},
         )
 
-def convert_timestamp_to_utc_string(
+async def convert_timestamp_to_utc_string(
     timestamp: Annotated[int, Field(description="The strict absolute Unix timestamp in seconds, not milliseconds.")]) -> Dict:
     try:
         dt_object = datetime.fromtimestamp(timestamp, tz=timezone.utc)
@@ -61,7 +63,7 @@ def convert_timestamp_to_utc_string(
             extra={"exception": str(e), "received": timestamp},
         )
 
-def convert_target_local_time_to_utc(
+async def convert_target_local_time_to_utc(
     local_time_string: Annotated[str, Field(description="The local time string explicitly without a 'Z' in format 'YYYY-MM-DDTHH:MM:SS' (e.g., '2026-04-25T20:00:00').")],
     timezone_id: Annotated[str, Field(description="The valid target timezone ID (e.g., 'Asia/Kolkata' or 'Europe/Paris').")]) -> Dict:
     try:
@@ -86,7 +88,8 @@ def convert_target_local_time_to_utc(
 # Timezone API
 async def get_timezone(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
                 lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
-                timestamp: Annotated[Optional[int], Field(description="The reference current or future timestamp to get the timezone at, in seconds since the Unix epoch. If not provided, only timezone name and id will be returned.", default=None)]) -> Dict:
+                timestamp: Annotated[Optional[int], Field(description="(Optional) The reference current or future timestamp to get the timezone at, in seconds since the Unix epoch. If not provided, only timezone name and id will be returned.", default=None)],
+                timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_timezone'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -103,7 +106,7 @@ async def get_timezone(lat: Annotated[float, Field(ge=-90.0, le=90.0, descriptio
         
     try:
         client = get_http_client()
-        response = await client.get(url, timeout=5)
+        response = await client.get(url, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Timezone API request failed.",
@@ -151,6 +154,11 @@ async def get_timezone(lat: Annotated[float, Field(ge=-90.0, le=90.0, descriptio
             "localDateTimeString": localDateTimeString
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Timezone API raised an unexpected error.",

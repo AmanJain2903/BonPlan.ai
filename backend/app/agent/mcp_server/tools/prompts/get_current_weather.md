@@ -13,6 +13,8 @@ Use this tool when you need to know what the weather is like right now at a spec
   - Example: `-74.0060`
 - `units_system` (Literal, optional): Distance output unit ("IMPERIAL" or "METRIC"). Default is "IMPERIAL".
   - Example: `"IMPERIAL"`
+- `timeout_seconds` (int, optional): Timeout in seconds. Only increase if previous call timed out. Default `5`.
+  - Example: `10`
 
 ## Returns
 - **Success**: A dictionary containing `isDaytime`, `weatherCondition`, `currentTemperature`, `maxTemperature`, `minTemperature`, `feelsLike`, `precipitation`, `thunderstormProbability`, and `visibility`.

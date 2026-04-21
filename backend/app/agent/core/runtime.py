@@ -31,7 +31,7 @@ from mcp.client.stdio import stdio_client
 from app.core.config import settings
 
 from app.agent.schemas.structuredOutput import AddItineraryEvent
-from app.agent.utils import fix_schema_for_gemini, convert_mcp_to_gemini, ADD_EVENT_TOOL
+from app.agent.helpers.utils import convert_mcp_to_gemini, ADD_EVENT_TOOL
 
 
 class AgentRuntime:

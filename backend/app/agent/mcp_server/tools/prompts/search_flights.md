@@ -23,7 +23,9 @@ Use this tool to find flight options, prices, airlines, and itineraries for a st
   - Example: `"cheap"`
 - `return_type` (Literal, optional): Which flights to return ('topFlights', 'otherFlights', or 'all'). Default is 'topFlights'.
   - Example: `"topFlights"`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 20 seconds.
+  - Example: `25`
 
 ## Returns
-- **Success**: A dictionary separating `topFlights` and `otherFlights`. Each flight contains `departureTime`, `arrivalTime`, `duration`, `priceInUSD`, `baggageOptions`, `flightItinerary`, `layovers`, and a `bookingToken` which is strictly necessary to finalize the booking. For round-trips, a global `nextToken` may be returned in the base dictionary and is required as input to the `get_next_flights` tool to fetch the matching return flight details.
+- **Success**: A dictionary separating `topFlights` and `otherFlights`. Each flight contains `departureTime`, `arrivalTime`, `durationInMinutes`, `priceInUSD`, `flightItinerary`, `layovers` and `flight_type`. For one-way flights, each flight will have a `bookingToken`, which you use to call `get_flight_booking_details`. For round-trip returns, the flights will NOT have a `bookingToken`. Instead, there will be a `nextToken` on each flight. You MUST use the `nextToken` to call `get_next_flights` to fetch the next leg. **DO NOT pass a `nextToken` to `get_flight_booking_details`, it will fail.** The `priceInUSD` here shows the minimum you can get for a round trip if you chose this as the first outbound leg.
 - **Error**: A dictionary containing an `error` key.

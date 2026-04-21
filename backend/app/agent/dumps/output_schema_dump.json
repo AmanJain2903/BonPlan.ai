@@ -17,7 +17,7 @@
       "type": "integer"
     },
     "event_type": {
-      "description": "The specific type of the event. Must be START first, then others, and strictly END as the final event.",
+      "description": "The specific type of the event. Must be START first for the trip, then regular chronologically ordered events, and strictly END as the absolute final event. Failure to follow this will break the itinerary.",
       "enum": [
         "START",
         "FLIGHT_TAKEOFF",
@@ -35,22 +35,14 @@
       "type": "string"
     },
     "start_details": {
-      "description": "Populate this only if event_type is START. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is START. Never populate for any other event type.",
       "properties": {
         "number_of_days": {
           "description": "Total number of days in the trip. Calculate this based on the user's input for start date and end date, both inclusive.",
           "type": "integer"
         },
-        "start_date": {
-          "description": "Start date of the trip as per origin local time in format YYYY-MM-DD. Based on user's chosen start date.",
-          "type": "string"
-        },
-        "end_date": {
-          "description": "End date of the trip as per destination local time in format YYYY-MM-DD. Based on user's chosen end date.",
-          "type": "string"
-        },
         "journey": {
-          "description": "List of all destinations in the trip in order of travel. Use get_optimal_route tool if needed for this. For single destination just place that destination here. This list will not have the origin at first or last index, just the destinations in between. Only use city names or place names, not along with state, country, addresses or coordinates here.",
+          "description": "List of all destinations in the trip in order of travel. Use `get_optimal_route` tool if needed for this. For single destination just place that destination here. This list will not have the origin at first or last index, just the destinations in between. Only use city names or place names, not along with state, country, addresses or coordinates here.",
           "items": {
             "type": "string"
           },
@@ -67,8 +59,6 @@
       },
       "required": [
         "number_of_days",
-        "start_date",
-        "end_date",
         "journey",
         "trip_title",
         "trip_cost_estimate"
@@ -76,30 +66,30 @@
       "type": "object"
     },
     "flight_takeoff_details": {
-      "description": "Populate this only if event_type is FLIGHT_TAKEOFF. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is FLIGHT_TAKEOFF. Never populate for any other event type.",
       "properties": {
         "airline": {
-          "description": "Airline name. Must be a valid airline name returned from search_flights tool.",
+          "description": "Airline name. Must be a valid airline name returned from search_flights or similar tools.",
           "type": "string"
         },
         "airline_logo_url": {
-          "description": "Logo URL of the airline. Must be a valid logo URL returned from search_flights tool.",
+          "description": "Logo URL of the airline. Must be a valid logo URL returned from search_flights or similar tools.",
           "type": "string"
         },
         "flight_number": {
-          "description": "Flight number. Must be a valid flight number returned from search_flights tool.",
+          "description": "Flight number. Must be a valid flight number returned from search_flights or similar tools.",
           "type": "string"
         },
         "departure_airport_name": {
-          "description": "Departure airport name. Must be a valid airport name returned from search_flights tool.",
+          "description": "Departure airport name. Must be a valid airport name returned from search_flights or similar tools.",
           "type": "string"
         },
         "departure_airport_code": {
-          "description": "Departure airport code. Must be a valid airport code returned from search_flights tool.",
+          "description": "Departure airport code. Must be a valid airport code returned from search_flights or similar tools.",
           "type": "string"
         },
         "departure_coordinates": {
-          "description": "Coordinates of the departure airport. Must be a valid coordinates returned from search_flights tool or from get_coordinates tool.",
+          "description": "Coordinates of the departure airport. Must be a valid coordinates returned from search_flights or similar tools or from get_coordinates tool.",
           "properties": {
             "latitude": {
               "description": "Latitude of the location. Must be a valid latitude between -90 and 90 degrees returned from any of the tools.",
@@ -121,19 +111,19 @@
           "type": "object"
         },
         "departure_time": {
-          "description": "Departure time as per local time of the departure airport in format YYYY-MM-DDTHH:MM:SS. Must be a valid departure time returned from search_flights tool or generated by you based on the departure_time returned from search_flights tool.",
+          "description": "Departure time as per local time of the departure airport in format YYYY-MM-DDTHH:MM:SS. Must be a valid departure time returned from search_flights or similar tools or generated by you based on the departure_time returned from search_flights or similar tools.",
           "type": "string"
         },
         "arrival_airport_name": {
-          "description": "Arrival airport name of this flight leg. Must match the arrival_airport_name of the corresponding FLIGHT_LAND event and be a valid airport name returned from search_flights tool.",
+          "description": "Arrival airport name of this flight leg. Must match the arrival_airport_name of the corresponding FLIGHT_LAND event and be a valid airport name returned from search_flights or similar tools.",
           "type": "string"
         },
         "arrival_airport_code": {
-          "description": "Arrival airport code of this flight leg. Must match the arrival_airport_code of the corresponding FLIGHT_LAND event and be a valid airport code returned from search_flights tool.",
+          "description": "Arrival airport code of this flight leg. Must match the arrival_airport_code of the corresponding FLIGHT_LAND event and be a valid airport code returned from search_flights or similar tools.",
           "type": "string"
         },
         "arrival_coordinates": {
-          "description": "Coordinates of the arrival airport. Must match the arrival_coordinates of the corresponding FLIGHT_LAND event and be valid coordinates returned from search_flights tool or from get_coordinates tool.",
+          "description": "Coordinates of the arrival airport. Must match the arrival_coordinates of the corresponding FLIGHT_LAND event and be valid coordinates returned from search_flights or similar tools or from get_coordinates tool.",
           "properties": {
             "latitude": {
               "description": "Latitude of the location. Must be a valid latitude between -90 and 90 degrees returned from any of the tools.",
@@ -159,31 +149,31 @@
           "type": "string"
         },
         "durationMinutes": {
-          "description": "Duration of the flight in minutes. Must be a valid duration in minutes returned from search_flights tool.",
+          "description": "Duration of the flight in minutes. Must be a valid duration in minutes returned from search_flights or similar tools.",
           "type": "number"
         },
         "cost": {
-          "description": "Cost of the flight in USD. Must be a valid price in USD returned from search_flights tool. Cost returned is for the number of travellers you searched for in the search_flights tool.",
+          "description": "Cost of the flight in USD. Must be a valid price in USD for the flight you choose and returned from get_flight_booking_details tool. Cost returned is for the number of travellers you searched for in the search_flights or similar tool. Also for round trip or multi-city flights, you must output the cost only for the first flight takeoff event based on this search, because the cost is for the entire flight and not for each leg, for other events for the same flight itinerary output the cost as 0, but do include the booking url and include this in the tips that cost is included elsewhere. But if you choose to search for different flights separately, that is without using search_multi_city_flights tool or search_next_flight tool, you must output the cost for each flight separately.",
           "type": "number"
         },
         "takeoff_tips": {
-          "description": "Tips for the flight takeoff. Must be generated by you based on the airline name and flight number and the departure airport name and code and the departure time and any results you get from search_web tool. Or generated by you based on the departure_time returned from search_flights tool.",
+          "description": "Tips for the flight takeoff. Must be generated by you based on the airline name and flight number and the departure airport name and code and the departure time and any results you get from search_web tool. Or generated by you based on the departure_time returned from search_flights or similar tools. IMPORTANT: If this is a subsequent leg of a round-trip or multi-city itinerary where the cost is 0, you MUST explicitly state in these tips that the cost for this flight was included in the initial outbound booking.",
           "type": "string"
         },
         "layovers": {
-          "description": "List of layovers, if any. Must be a valid list of layovers returned from search_flights tool.",
+          "description": "List of layovers, if any. Must be a valid list of layovers returned from search_flights or similar tools.",
           "items": {
             "properties": {
               "airport_code": {
-                "description": "Layover airport code. Must be a valid airport code returned from search_flights tool.",
+                "description": "Layover airport code. Must be a valid airport code returned from search_flights or similar tools.",
                 "type": "string"
               },
               "airport_name": {
-                "description": "Layover airport name. Must be a valid airport name returned from search_flights tool.",
+                "description": "Layover airport name. Must be a valid airport name returned from search_flights or similar tools.",
                 "type": "string"
               },
               "airport_coordinates": {
-                "description": "Layover airport coordinates. Must be a valid coordinates returned from search_flights tool or from get_coordinates tool.",
+                "description": "Layover airport coordinates. Must be a valid coordinates returned from search_flights or similar tools or from get_coordinates tool.",
                 "properties": {
                   "latitude": {
                     "description": "Latitude of the location. Must be a valid latitude between -90 and 90 degrees returned from any of the tools.",
@@ -205,7 +195,7 @@
                 "type": "object"
               },
               "durationMinutes": {
-                "description": "Duration of layover in minutes. Must be a valid duration in minutes returned from search_flights tool.",
+                "description": "Duration of layover in minutes. Must be a valid duration in minutes returned from search_flights or similar tools.",
                 "type": "number"
               }
             },
@@ -219,13 +209,14 @@
           },
           "type": "array"
         },
-        "booking_token": {
-          "description": "Flight booking token. Must be a valid booking token returned from search_flights tool.",
+        "booking_url": {
+          "description": "Flight booking URL. Must be a valid booking URL returned from get_flight_booking_url tool. You must call this tool using the token for the flight you chose to book returned from get_flight_booking_details tool which you called using the booking_token from search_flights tool or similar tools. For round trip or multi-city flights, you can output the same booking URL for all the flight takeoff events based on this search, because the booking URL is for the entire flight and not for each leg. But if you choose to search for different flights separately, that is without using search_multi_city_flights tool or search_next_flight tool, you must output the booking URL for each flight which will be unique for each flight. In case the booking url is not available, use website returned else output an empty string.",
           "type": "string"
         }
       },
       "required": [
         "airline",
+        "airline_logo_url",
         "flight_number",
         "departure_airport_name",
         "departure_airport_code",
@@ -238,35 +229,35 @@
         "durationMinutes",
         "cost",
         "takeoff_tips",
-        "booking_token"
+        "booking_url"
       ],
       "type": "object"
     },
     "flight_land_details": {
-      "description": "Populate this only if event_type is FLIGHT_LAND. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is FLIGHT_LAND. Never populate for any other event type.",
       "properties": {
         "airline": {
-          "description": "Airline name. Must be a valid airline name returned from search_flights tool.",
+          "description": "Airline name. Must be a valid airline name returned from search_flights or similar tools.",
           "type": "string"
         },
         "airline_logo_url": {
-          "description": "Logo URL of the airline. Must be a valid logo URL returned from search_flights tool.",
+          "description": "Logo URL of the airline. Must be a valid logo URL returned from search_flights or similar tools.",
           "type": "string"
         },
         "flight_number": {
-          "description": "Flight number. Must be a valid flight number returned from search_flights tool.",
+          "description": "Flight number. Must be a valid flight number returned from search_flights or similar tools.",
           "type": "string"
         },
         "arrival_airport_name": {
-          "description": "Arrival airport name. Must be a valid airport name returned from search_flights tool.",
+          "description": "Arrival airport name. Must be a valid airport name returned from search_flights or similar tools.",
           "type": "string"
         },
         "arrival_airport_code": {
-          "description": "Arrival airport code. Must be a valid airport code returned from search_flights tool.",
+          "description": "Arrival airport code. Must be a valid airport code returned from search_flights or similar tools.",
           "type": "string"
         },
         "arrival_coordinates": {
-          "description": "Coordinates of the arrival airport. Must be a valid coordinates returned from search_flights tool or from get_coordinates tool.",
+          "description": "Coordinates of the arrival airport. Must be a valid coordinates returned from search_flights or similar tools or from get_coordinates tool.",
           "properties": {
             "latitude": {
               "description": "Latitude of the location. Must be a valid latitude between -90 and 90 degrees returned from any of the tools.",
@@ -288,16 +279,17 @@
           "type": "object"
         },
         "arrival_time": {
-          "description": "Arrival time as per local time of the arrival airport in format YYYY-MM-DDTHH:MM:SS. Must be a valid arrival time returned from search_flights tool or generated by you based on the arrival_time returned from search_flights tool.",
+          "description": "Arrival time as per local time of the arrival airport in format YYYY-MM-DDTHH:MM:SS. Must be a valid arrival time returned from search_flights or similar tools or generated by you based on the arrival_time returned from search_flights or similar tools.",
           "type": "string"
         },
         "landing_tips": {
-          "description": "Tips for the flight landing. Must be generated by you based on the airline name and flight number and the arrival airport name and code and the arrival time and any results you get from search_web tool. Or generated by you based on the arrival_time returned from search_flights tool.",
+          "description": "Tips for the flight landing. Must be generated by you based on the airline name and flight number and the arrival airport name and code and the arrival time and any results you get from search_web tool. Or generated by you based on the arrival_time returned from search_flights or similar tools.",
           "type": "string"
         }
       },
       "required": [
         "airline",
+        "airline_logo_url",
         "flight_number",
         "arrival_airport_name",
         "arrival_airport_code",
@@ -308,14 +300,14 @@
       "type": "object"
     },
     "hotel_checkin_details": {
-      "description": "Populate this only if event_type is HOTEL_CHECKIN. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is HOTEL_CHECKIN. Never populate for any other event type.",
       "properties": {
-        "hotel_name": {
-          "description": "Name of the hotel. Must be a valid property name returned from search_hotels tool.",
-          "type": "string"
-        },
         "hotel_id": {
           "description": "Property ID. Must be a valid property ID returned from search_hotels tool.",
+          "type": "string"
+        },
+        "hotel_name": {
+          "description": "Name of the hotel. Must be a valid property name returned from search_hotels tool.",
           "type": "string"
         },
         "address": {
@@ -387,11 +379,15 @@
         "reviews_summary": {
           "description": "Reviews summary of the hotel. Must be a valid reviews summary returned from search_hotels tool or generated by you based on the hotel name and type of the hotel and the location and any results you get from search_web tool.",
           "type": "string"
+        },
+        "booking_url": {
+          "description": "Hotel booking URL. Must be a valid booking URL returned from get_hotel_booking_url tool. You must call this tool using the hotel_id for the hotel you chose to book returned from search_hotels tool.",
+          "type": "string"
         }
       },
       "required": [
-        "hotel_name",
         "hotel_id",
+        "hotel_name",
         "address",
         "hotel_coordinates",
         "checkin_time",
@@ -402,19 +398,18 @@
         "stayLengthInDays",
         "cost",
         "checkin_tips",
-        "starRating"
+        "starRating",
+        "rating",
+        "reviews_summary",
+        "booking_url"
       ],
       "type": "object"
     },
     "hotel_checkout_details": {
-      "description": "Populate this only if event_type is HOTEL_CHECKOUT. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is HOTEL_CHECKOUT. Never populate for any other event type.",
       "properties": {
         "hotel_name": {
           "description": "Name of the hotel. Must be a valid property name returned from search_hotels tool.",
-          "type": "string"
-        },
-        "hotel_id": {
-          "description": "Property ID. Must be a valid property ID returned from search_hotels tool.",
           "type": "string"
         },
         "address": {
@@ -422,7 +417,7 @@
           "type": "string"
         },
         "hotel_coordinates": {
-          "description": "Coordinates of the hotel. Must be a valid coordinates returned from search_hotels tool or from get_coordinates tool.",
+          "description": "Coordinates of the hotel. Must be valid coordinates returned from search_hotels tool or from get_coordinates tool.",
           "properties": {
             "latitude": {
               "description": "Latitude of the location. Must be a valid latitude between -90 and 90 degrees returned from any of the tools.",
@@ -458,7 +453,6 @@
       },
       "required": [
         "hotel_name",
-        "hotel_id",
         "address",
         "hotel_coordinates",
         "checkout_time",
@@ -468,7 +462,7 @@
       "type": "object"
     },
     "car_pickup_details": {
-      "description": "Populate this only if event_type is CAR_PICKUP. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is CAR_PICKUP. Never populate for any other event type.",
       "properties": {
         "rental_company_name": {
           "description": "Name of the rental car company. Must be a valid supplier name returned from search_car_rental tool.",
@@ -480,10 +474,6 @@
         },
         "pickup_instructions": {
           "description": "Instructions for pickup. Must be a valid pickup instructions returned from search_car_rental tool.",
-          "type": "string"
-        },
-        "pickup_location_id": {
-          "description": "Pickup location ID. Must be a valid pickup location ID returned from search_car_rental tool.",
           "type": "string"
         },
         "pickup_location_name": {
@@ -533,10 +523,6 @@
             },
             "vehicle_name": {
               "description": "Model/Name of the vehicle. Must be a valid vehicle name returned from search_car_rental tool.",
-              "type": "string"
-            },
-            "vehicle_image_url": {
-              "description": "Image URL of the vehicle. Must be a valid vehicle image URL returned from search_car_rental tool.",
               "type": "string"
             },
             "vehicle_transmission": {
@@ -597,8 +583,8 @@
       },
       "required": [
         "rental_company_name",
+        "rental_company_logo_url",
         "pickup_instructions",
-        "pickup_location_id",
         "pickup_location_name",
         "pickup_location_address",
         "pickup_location_coordinates",
@@ -611,7 +597,7 @@
       "type": "object"
     },
     "car_dropoff_details": {
-      "description": "Populate this only if event_type is CAR_DROPOFF. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is CAR_DROPOFF. Never populate for any other event type.",
       "properties": {
         "rental_company_name": {
           "description": "Name of the rental car company. Must be a valid supplier name returned from search_car_rental tool.",
@@ -623,10 +609,6 @@
         },
         "dropoff_instructions": {
           "description": "Instructions for dropoff. Must be a valid dropoff instructions returned from search_car_rental tool.",
-          "type": "string"
-        },
-        "dropoff_location_id": {
-          "description": "Dropoff location ID. Must be a valid dropoff location ID returned from search_car_rental tool.",
           "type": "string"
         },
         "dropoff_location_name": {
@@ -670,8 +652,8 @@
       },
       "required": [
         "rental_company_name",
+        "rental_company_logo_url",
         "dropoff_instructions",
-        "dropoff_location_id",
         "dropoff_location_name",
         "dropoff_location_address",
         "dropoff_location_coordinates",
@@ -681,7 +663,7 @@
       "type": "object"
     },
     "place_details": {
-      "description": "Populate this only if event_type is DINING or ACTIVITY. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is DINING or ACTIVITY. Never populate for any other event type.",
       "properties": {
         "event_name": {
           "description": "Give a name to the event. Must be generated by you based on the place name and type of the place and activity you are planning.",
@@ -737,10 +719,6 @@
           "description": "Rating of the place. Must be a valid rating returned from search_places or search_places_nearby tool.",
           "type": "number"
         },
-        "price_level": {
-          "description": "Price level string. Must be a valid price level string returned from search_places or search_places_nearby tool.",
-          "type": "string"
-        },
         "cost": {
           "description": "Cost of the activity in USD. Must be a valid cost estimate based on priceRange and priceLevel returned from search_places or search_places_nearby tool. The cost estimate must be returned taking in account the number of travellers and the duration of the activity.",
           "type": "number"
@@ -754,7 +732,7 @@
           "type": "string"
         },
         "durationMinutes": {
-          "description": "Duration of the activity in minutes.",
+          "description": "Duration of the activity in minutes. Be sure to calculate this correctly based on the start time and end time.",
           "type": "number"
         },
         "google_maps_url": {
@@ -762,7 +740,7 @@
           "type": "string"
         },
         "website_url": {
-          "description": "Website URL of the place. Must be a valid website URL returned from search_places or search_places_nearby tool.",
+          "description": "Website URL of the place. Must be a valid website URL returned from search_places or search_places_nearby tool or from search_web tool.",
           "type": "string"
         }
       },
@@ -775,7 +753,7 @@
         "address",
         "coordinates",
         "summary",
-        "price_level",
+        "rating",
         "cost",
         "start_time",
         "end_time",
@@ -786,7 +764,7 @@
       "type": "object"
     },
     "commute_details": {
-      "description": "Populate this only if event_type is COMMUTE. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is COMMUTE. Never populate for any other event type.",
       "properties": {
         "originName": {
           "description": "Commute origin address/location. Must be a valid address or place name returned from search_places or search_places_nearby tool.",
@@ -864,12 +842,8 @@
           "type": "string"
         },
         "transit_fare": {
-          "description": "Fare cost if travel mode is TRANSIT. Must be a valid fare cost returned from get_route or get_route_matrix tool. The cost returned is for 1 traveller, so if you are planning for multiple travellers, you need to multiply the cost by the number of travellers.",
+          "description": "Fare cost if travel mode is TRANSIT. Must be a valid fare cost returned from get_route or get_route_matrix tool. The cost returned is for 1 traveller, so if you are planning for multiple travellers, you need to multiply the cost by the number of travellers. For other travel modes, output 0.0 for this cost.",
           "type": "number"
-        },
-        "polyline": {
-          "description": "Polyline of the route. Must be a valid polyline returned from get_route or get_route_matrix tool. Must not be a placeholder polyline or normal text. If the polyline is not available, return an empty string.",
-          "type": "string"
         },
         "maps_url": {
           "description": "Google Maps route URL. Must be a valid Google Maps route URL returned from get_route or get_route_matrix tool.",
@@ -885,13 +859,13 @@
         "distanceMeters",
         "durationSeconds",
         "commute_tips",
-        "polyline",
+        "transit_fare",
         "maps_url"
       ],
       "type": "object"
     },
     "other_details": {
-      "description": "Populate this only if event_type is OTHER. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is OTHER. Never populate for any other event type.",
       "properties": {
         "event_name": {
           "description": "Give a name to the event. Must be generated by you based on the place name and type of the place and activity you are planning.",
@@ -952,7 +926,7 @@
           "type": "string"
         },
         "durationMinutes": {
-          "description": "Duration of the activity in minutes.",
+          "description": "Duration of the activity in minutes. Be sure to calculate this correctly based on the start time and end time.",
           "type": "number"
         },
         "google_maps_url": {
@@ -960,7 +934,7 @@
           "type": "string"
         },
         "website_url": {
-          "description": "Website URL of the place. Must be a valid website URL returned from search_places or search_places_nearby tool.",
+          "description": "Website URL of the place. Must be a valid website URL returned from search_places or search_places_nearby tool or from search_web tool.",
           "type": "string"
         }
       },
@@ -982,7 +956,7 @@
       "type": "object"
     },
     "end_details": {
-      "description": "Populate this only if event_type is END. Never populate for any other event type.",
+      "description": "(Optional) Populate this only if event_type is END. Never populate for any other event type.",
       "properties": {
         "trip_title": {
           "description": "Regenerate the trip title based on the results from all the tools, trip planned and time of the trip. Must not include indicators like, start, complete, etc. Just a title to give to the trip you give after generating all the events and days for the trip.",

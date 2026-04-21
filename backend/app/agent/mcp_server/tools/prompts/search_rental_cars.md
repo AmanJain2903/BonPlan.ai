@@ -27,6 +27,8 @@ Use this tool when finding available car rentals for a trip. It can return a lis
   - Example: `15`
 - `page` (int, optional): 1-based page number. Default `1`.
   - Example: `1`
+- `timeout_seconds` (int, optional): Timeout in seconds for the tool execution. Only increase this if a previous call failed due to timeout. Default is `15`.
+  - Example: `20`
 
 ## Pagination semantics
 One call fetches up to `resultsPerPage` cars from the full result set starting at `(page - 1) * resultsPerPage`. To walk more cars for the same query, re-call with the same arguments but `page = nextPage` from the previous response, until `hasMorePages` is `false`.

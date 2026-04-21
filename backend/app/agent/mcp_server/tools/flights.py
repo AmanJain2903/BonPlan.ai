@@ -10,42 +10,11 @@ from app.agent.mcp_server.tools.geocoding import get_coordinates
 from app.agent.mcp_server.tools._errors import tool_error
 import time
 from datetime import datetime
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+import traceback
 
 rapid_api_key = settings.RAPID_API_KEY
-
-
-def _assemble_flight_results(
-    top_flights: list, other_flights: list, return_type: Optional[str]
-) -> Dict:
-    """
-    Build the tool's return dict and promote any per-flight `nextToken` to
-    a single root-level `nextToken` so the agent can call get_next_flights
-    with a predictable shape. Once promoted, the per-flight copy is
-    stripped so the model isn't confused by duplicates.
-    """
-    return_data: Dict = {}
-    next_token = None
-    for flight in (*top_flights, *other_flights):
-        if next_token is None and isinstance(flight, dict) and flight.get("nextToken"):
-            next_token = flight["nextToken"]
-        if isinstance(flight, dict):
-            flight.pop("nextToken", None)
-
-    if return_type == "topFlights":
-        if top_flights:
-            return_data["topFlights"] = top_flights
-        else:
-            return_data["note"] = "No top flights found. Returning other flights instead."
-            return_data["otherFlights"] = other_flights
-    elif return_type == "otherFlights":
-        return_data["otherFlights"] = other_flights
-    elif return_type == "all":
-        return_data["topFlights"] = top_flights
-        return_data["otherFlights"] = other_flights
-
-    if next_token is not None:
-        return_data["nextToken"] = next_token
-    return return_data
 
 class Passengers(BaseModel):
     adults: Annotated[int, Field(description="The number of adults (12 years or older) to search the flights for.", default=1)]
@@ -65,23 +34,17 @@ async def format_date_time(date_time: str, airport_name: str) -> Dict:
             "utc_string": None,
             "utc_timestamp": None,
         }
-    coordinates = await get_coordinates(airport_name)
-    timezone = await get_timezone(coordinates.get("lat"), coordinates.get("lng"), timestamp=None)
+    coordinates = await get_coordinates(airport_name, timeout_seconds=TIMEOUTS['get_coordinates'])
+    timezone = await get_timezone(coordinates.get("lat"), coordinates.get("lng"), timestamp=None, timeout_seconds=TIMEOUTS['get_timezone'])
     dateTime = date_time.split(" ")
     date = dateTime[0].split("-")
     time = dateTime[1].split(":")
     dateTimeString = f"{date[0]}-{date[1].zfill(2)}-{date[2].zfill(2)}T{time[0].zfill(2)}:{time[1].zfill(2)}:00"
     return convert_target_local_time_to_utc(dateTimeString, timezone.get("timeZoneId").get("value"))
 
-
-async def format_flight_data(data: Dict) -> Dict:
+async def format_flight_data(data: Dict, flight_type: str) -> Dict:
     departureTime = None
     arrivalTime = None
-    duration = {
-        "durationInMinutes": data.get("duration", {}).get("raw", None),
-        "humanReadableDuration": data.get("duration", {}).get("text", None),
-    }
-
     flightItinerary = []
     layovers = []
 
@@ -119,18 +82,13 @@ async def format_flight_data(data: Dict) -> Dict:
             "departureTime": departureTimeObject,
             "arrivalTime": arrivalTimeObject,
             "duration": {
-                "durationInMinutes": flight.get("duration", {}).get("raw", None),
-                "humanReadableDuration": flight.get("duration", {}).get("text", None),
+                "durationInMinutes": flight.get("duration", {}).get("raw", None)
             },
             "airline": {
                 "airlineName": flight.get("airline", None),
                 "airlineLogo": flight.get("airline_logo", None),
-                "flightNumber": flight.get("flight_number", None),
-                "aircraft": flight.get("aircraft", None),
-                "seat": flight.get("seat", None),
-                "legroom": flight.get("legroom", None),
-            },
-            "extraInfo": flight.get("extensions", None),
+                "flightNumber": flight.get("flight_number", None)
+            }
         })
     
     if data.get("layovers", None):
@@ -140,28 +98,74 @@ async def format_flight_data(data: Dict) -> Dict:
                 "airportName": stop.get("airport_name", None),
                 "cityName": stop.get("city", None),
                 "duration": {
-                    "durationInMinutes": stop.get("duration", None),
-                    "humanReadableDuration": stop.get("duration_label", None),
+                    "durationInMinutes": stop.get("duration", None)
                 }
             })
 
     returnData = {
         "departureTime": departureTime,
         "arrivalTime": arrivalTime,
-        "duration": duration,
+        "durationInMinutes": data.get("duration", {}).get("raw", None),
         "priceInUSD": data.get("price", None),
-        "baggageOptions": data.get("bags", None),
         "flightItinerary": flightItinerary,
-        "layovers": layovers
+        "layovers": layovers,
+        "flight_type": flight_type
     }
     if data.get("booking_token", None):
-        returnData["bookingToken"] = data.get("booking_token", None)
+        cache_key = generate_cache_key("booking_token", {"booking_token": data.get("booking_token", None)})
+        cache_value = await retrieve_api_cache(cache_key, expires_in=365)
+        if not cache_value:
+            await insert_api_cache(cache_key, {"booking_token": data.get("booking_token", None)})
+        returnData["bookingToken"] = cache_key
     if data.get("next_token", None):
-        returnData["nextToken"] = data.get("next_token", None)
+        cache_key = generate_cache_key("next_token", {"next_token": data.get("next_token", None)})
+        cache_value = await retrieve_api_cache(cache_key, expires_in=365)
+        if not cache_value:
+            await insert_api_cache(cache_key, {"next_token": data.get("next_token", None)})
+        returnData["nextToken"] = cache_key
     return returnData
 
+async def _assemble_flight_results(
+    itineraries: Dict, flight_type: str, return_type: Optional[str] = "topFlights"
+) -> Dict:
+
+    return_data: Dict = {}
+    topFlights = []
+    otherFlights = []
+    if return_type == "topFlights":
+        if itineraries.get("topFlights", []):
+            for flight in itineraries.get("topFlights", []):
+                topFlights.append(await format_flight_data(flight, flight_type))
+            return_data["topFlights"] = topFlights
+        else:
+            for flight in itineraries.get("otherFlights", []):
+                otherFlights.append(await format_flight_data(flight, flight_type))
+            return_data["note"] = "No top flights found. Returning other flights instead." if otherFlights else "No flights found."
+            return_data["otherFlights"] = otherFlights
+    elif return_type == "otherFlights":
+        if itineraries.get("otherFlights", []):
+            for flight in itineraries.get("otherFlights", []):
+                otherFlights.append(await format_flight_data(flight, flight_type))
+            return_data["otherFlights"] = otherFlights
+        else:
+            return_data["note"] = "No other flights found."
+            return_data["otherFlights"] = otherFlights
+    else:
+        if itineraries.get("topFlights", []):
+            for flight in itineraries.get("topFlights", []):
+                topFlights.append(await format_flight_data(flight, flight_type))
+            return_data["topFlights"] = topFlights
+        if itineraries.get("otherFlights", []):
+            for flight in itineraries.get("otherFlights", []):
+                otherFlights.append(await format_flight_data(flight, flight_type))
+            return_data["otherFlights"] = otherFlights
+        if not topFlights and not otherFlights:
+            return_data["note"] = "No flights found."
+    return return_data
+
 # RapidAPI Google Flights API
-async def get_country_code(country_name: Annotated[str, Field(description="The name of the country to get the code for. Just the country name, no other text like 'country' or 'code' or 'state' etc.")]) -> Dict:
+async def get_country_code(country_name: Annotated[str, Field(description="The name of the country to get the code for. Just the country name, no other text like 'country' or 'code' or 'state' etc.")],
+                           timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_country_code'])]) -> Dict:
     if not country_name:
         return tool_error(
             "`country_name` is required.",
@@ -186,7 +190,7 @@ async def get_country_code(country_name: Annotated[str, Field(description="The n
     else:
         try:
             client = get_http_client()
-            response = await client.get(url, headers=headers, timeout=15)
+            response = await client.get(url, headers=headers, timeout=timeout_seconds)
             if response.status_code >= 400:
                 return tool_error(
                     "Failed to fetch country-code table.",
@@ -206,6 +210,11 @@ async def get_country_code(country_name: Annotated[str, Field(description="The n
                 country_codes[raw_country_code.get("country_name", "").lower().strip()] = raw_country_code.get("country_code", "")
             if country_codes:
                 await insert_api_cache(cache_key, country_codes)
+        except httpx.TimeoutException:
+            return tool_error(
+                f"Tool timeout after {timeout_seconds} seconds.",
+                fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+            )
         except Exception as e:
             return tool_error(
                 "Unexpected error while fetching country codes.",
@@ -221,7 +230,8 @@ async def get_country_code(country_name: Annotated[str, Field(description="The n
     return {"country_code": country_code}
 
 async def get_airports_and_codes(query: Annotated[str, Field(description="The query to search the airports for. Can be airport name, place name, city name, etc. Preferably use the airport name as the query.")],
-                     country_code: Annotated[Optional[str], Field(description="Optional. The country code to search the airports for. If not provided, all airports will be searched.", default=None)]) -> Dict:
+                     country_code: Annotated[Optional[str], Field(description="Optional. The country code to search the airports for. If not provided, all airports will be searched.", default=None)],
+                     timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_airports_and_codes'])]) -> Dict:
     if not query:
         return tool_error(
             "`query` is required.",
@@ -233,10 +243,6 @@ async def get_airports_and_codes(query: Annotated[str, Field(description="The qu
             fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
         )
     query = query.lower().strip()
-    cache_key = generate_cache_key("get_airports_and_codes", {"query": query, "country_code": country_code})
-    cache_value = await retrieve_api_cache(cache_key, expires_in=365)
-    if cache_value:
-        return cache_value
     url = f"https://google-flights2.p.rapidapi.com/api/v1/searchAirport"
     headers = {
         "Content-Type": "application/json",
@@ -248,9 +254,13 @@ async def get_airports_and_codes(query: Annotated[str, Field(description="The qu
     }
     if country_code:
         params["country_code"] = country_code
+    cache_key = generate_cache_key("get_airports_and_codes", params)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=365)
+    if cache_value:
+        return cache_value
     try:
         client = get_http_client()
-        response = await client.get(url, headers=headers, params=params, timeout=15)
+        response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Airport search failed upstream.",
@@ -282,6 +292,11 @@ async def get_airports_and_codes(query: Annotated[str, Field(description="The qu
                 "No airports found for this query.",
                 fix_hint="Retry with a broader query (e.g. the nearest major city name instead of a precise airport name), or remove the `country_code` filter.",
             )
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Airport search raised an unexpected error.",
@@ -293,10 +308,14 @@ async def search_flights(departure_id: Annotated[str, Field(description="The dep
                    arrival_id: Annotated[str, Field(description="The arrival airport code to search the flights for.")],
                    outbound_date: Annotated[str, Field(description="The departure date to search the flights for. According to the timezone of the departure airport. Think of it as the wall clock time of the departure airport. In format YYYY-MM-DD")],
                    passengers: Annotated[Passengers, Field(description="The passengers to search the flights for. Default is 1 adult.")],
-                   return_date: Annotated[Optional[str], Field(description="The return date to search the flights for. According to the timezone of the arrival airport. Think of it as the wall clock time of the arrival airport. In format YYYY-MM-DD", default=None)],
-                   travel_class: Annotated[Optional[Literal["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]], Field(description="The travel class to search the flights for.", default="ECONOMY")],
-                   search_type: Annotated[Optional[Literal["best", "cheap"]], Field(description="The type of flight search to perform.", default=None)],
-                   return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="The type of flights to return.", default="topFlights")]) -> Dict:
+                   return_date: Annotated[Optional[str], Field(description="(Optional) The return date to search the flights for. According to the timezone of the arrival airport. Think of it as the wall clock time of the arrival airport. In format YYYY-MM-DD", default=None)],
+                   travel_class: Annotated[Optional[Literal["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]], Field(description="(Optional) The travel class to search the flights for.", default="ECONOMY")],
+                   search_type: Annotated[Optional[Literal["best", "cheap"]], Field(description="(Optional) The type of flight search to perform.", default=None)],
+                   return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="(Optional) The type of flights to return.", default="topFlights")],
+                   timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['search_flights'])]) -> Dict:
+
+    flight_type = "ONE_WAY"
+
     if not departure_id or not arrival_id or not outbound_date:
         return tool_error(
             "Required parameters are missing.",
@@ -328,11 +347,12 @@ async def search_flights(departure_id: Annotated[str, Field(description="The dep
     }
     if return_date:
         params["return_date"] = return_date
+        flight_type = "ROUND_TRIP"
     if search_type:
         params["search_type"] = search_type
     try:
         client = get_http_client()
-        response = await client.get(url, headers=headers, params=params, timeout=45)
+        response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Flight search failed upstream.",
@@ -344,11 +364,12 @@ async def search_flights(departure_id: Annotated[str, Field(description="The dep
         topFlights = []
         otherFlights = []
         itineraries = data.get("data", {}).get("itineraries", {})
-        for flight in itineraries.get("topFlights", []):
-            topFlights.append(await format_flight_data(flight))
-        for flight in itineraries.get("otherFlights", []):
-            otherFlights.append(await format_flight_data(flight))
-        return _assemble_flight_results(topFlights, otherFlights, return_type)
+        return await _assemble_flight_results(itineraries, flight_type, return_type)
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Flight search raised an unexpected error.",
@@ -358,9 +379,11 @@ async def search_flights(departure_id: Annotated[str, Field(description="The dep
 
 async def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(description="The list of flight legs to search the flights for.")],
                                passengers: Annotated[Passengers, Field(description="The passengers to search the flights for. Default is 1 adult.")],
-                               travel_class: Annotated[Optional[Literal["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]], Field(description="The travel class to search the flights for.", default="ECONOMY")],
-                               search_type: Annotated[Optional[Literal["best", "cheap"]], Field(description="The type of flight search to perform.", default=None)],
-                               return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="The type of flights to return.", default="topFlights")]) -> Dict:
+                               travel_class: Annotated[Optional[Literal["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]], Field(description="(Optional) The travel class to search the flights for.", default="ECONOMY")],
+                               search_type: Annotated[Optional[Literal["best", "cheap"]], Field(description="(Optional) The type of flight search to perform.", default=None)],
+                               return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="(Optional) The type of flights to return.", default="topFlights")],
+                               timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['search_multi_city_flights'])]) -> Dict:
+    flight_type = "MULTI_CITY"
     if not legs:
         return tool_error(
             "At least one flight leg is required.",
@@ -391,7 +414,7 @@ async def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(descr
         body["search_type"] = search_type
     try:
         client = get_http_client()
-        response = await client.post(url, headers=headers, json=body, timeout=45)
+        response = await client.post(url, headers=headers, json=body, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Multi-city flight search failed upstream.",
@@ -403,11 +426,12 @@ async def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(descr
         topFlights = []
         otherFlights = []
         itineraries = data.get("data", {}).get("itineraries", {})
-        for flight in itineraries.get("topFlights", []):
-            topFlights.append(await format_flight_data(flight))
-        for flight in itineraries.get("otherFlights", []):
-            otherFlights.append(await format_flight_data(flight))
-        return _assemble_flight_results(topFlights, otherFlights, return_type)
+        return await _assemble_flight_results(itineraries, flight_type, return_type)
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Multi-city flight search raised an unexpected error.",
@@ -415,13 +439,22 @@ async def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(descr
             extra={"exception": str(e)},
         )
 
-async def get_next_flights(next_token: Annotated[str, Field(description="The next token to get the next flights for. Used to get the return leg of the flights if search_flights is called with return_date. Only pass this if you have received a nextToken from a previous call to search_flights.")],
-                     return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="The type of flights to return.", default="topFlights")]) -> Dict:
+async def get_next_flights(next_token: Annotated[str, Field(description="The next token to get the next flights for. Used to get the subsequent leg of round-trip or multi-city flights. Only pass this if you have received a nextToken from a previous call to search_flights, search_multi_city_flights, or get_next_flights.")],
+                     return_type: Annotated[Optional[Literal["topFlights", "otherFlights", "all"]], Field(description="(Optional) The type of flights to return.", default="topFlights")],
+                     timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_next_flights'])]) -> Dict:
+    flight_type = "This tool is only used for round trip or multi-city flights. So the flight type is always ROUND_TRIP or MULTI_CITY. Use the flight type returned from the previous call to search_flights or search_multi_city_flights tool to determine the flight type."
     if not next_token:
         return tool_error(
             "`next_token` is required.",
             fix_hint="Only call get_next_flights after search_flights / search_multi_city_flights returns a `nextToken`. Pass that exact token as `next_token`.",
         )
+    next_token_data = await retrieve_api_cache(next_token)
+    if not next_token_data or not next_token_data.get("next_token", None):
+        return tool_error(
+            "`next_token` is invalid or expired.",
+            fix_hint="Retry with a fresh `next_token` by re-running the previous call to search_flights or search_multi_city_flights tool. The tokens are very short lived and will expire after a few minutes so call this tool immediately after getting the next token.",
+        )
+    next_token = next_token_data.get("next_token", None)
     if not rapid_api_key:
         return tool_error(
             "Flights provider is not configured on the server.",
@@ -438,7 +471,7 @@ async def get_next_flights(next_token: Annotated[str, Field(description="The nex
     }
     try:
         client = get_http_client()
-        response = await client.get(url, headers=headers, params=params, timeout=45)
+        response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
         if response.status_code >= 400:
             return tool_error(
                 "Next-flights lookup failed upstream.",
@@ -447,18 +480,180 @@ async def get_next_flights(next_token: Annotated[str, Field(description="The nex
                 extra={"upstream": response.text[:300]},
             )
         data = response.json()
+        if not data.get("data", {}):
+            return tool_error(
+                "No results returned from the upstream.",
+                fix_hint="The `next_token` may have expired or the upstream is temporarily unavailable. Retry once; by getting a fresh next token by re-running the previous call to search_flights or search_multi_city_flights tool. The tokens are very short lived and will expire after a few minutes so call this tool immediately after getting the next token.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
         topFlights = []
         otherFlights = []
         itineraries = data.get("data", {}).get("itineraries", {})
-        for flight in itineraries.get("topFlights", []):
-            topFlights.append(await format_flight_data(flight))
-        for flight in itineraries.get("otherFlights", []):
-            otherFlights.append(await format_flight_data(flight))
-        return _assemble_flight_results(topFlights, otherFlights, return_type)
+        return await _assemble_flight_results(itineraries, flight_type, return_type)
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Next-flights lookup raised an unexpected error.",
             fix_hint="Retry once with the same token. If it fails again, do a fresh search_flights call to obtain a new nextToken.",
+            extra={"exception": str(e)},
+        )
+
+async def get_flight_booking_details(booking_token: Annotated[str, Field(description="The booking token to get the booking URL for. Must be a valid booking token returned from search_flights or search_multi_city_flights or get_next_flights tool.")],
+                                     timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_flight_booking_details'])]) -> Dict:
+    if not booking_token:
+        return tool_error(
+            "`booking_token` is required.",
+            fix_hint="Only call get_flight_booking_url after search_flights or search_multi_city_flights or get_next_flights returns a `booking_token`. Pass that exact token as `booking_token`.",
+        )
+    booking_token_data = await retrieve_api_cache(booking_token)
+    if not booking_token_data or not booking_token_data.get("booking_token", None):
+        return tool_error(
+            "`booking_token` is invalid or expired.",
+            fix_hint="Retry with a fresh `booking_token` by re-running the previous call to search_flights or search_multi_city_flights or get_next_flights tool. The tokens are very short lived and will expire after a few minutes so call this tool immediately after getting the booking token.",
+        )
+    booking_token = booking_token_data.get("booking_token", None)
+    if not rapid_api_key:
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
+    url = "https://google-flights2.p.rapidapi.com/api/v1/getBookingDetails"
+    headers = {
+        "Content-Type": "application/json",
+        "x-rapidapi-host": "google-flights2.p.rapidapi.com",
+        "x-rapidapi-key": rapid_api_key
+    }
+    params = {
+        "booking_token": booking_token
+    }
+    try:
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
+        if response.status_code >= 400:
+            return tool_error(
+                "Booking details lookup failed upstream.",
+                fix_hint="The `booking_token` may have expired or the upstream is temporarily unavailable. Retry once; if it still fails, do a fresh search_flights call to obtain a new booking token. If still fails, proceed without the booking URL.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
+        data = response.json()
+        if not data or not data.get("data", []):
+            return tool_error(
+                "No results returned from the upstream.",
+                fix_hint="The `booking_token` may have expired or the upstream is temporarily unavailable. Retry once; by getting a fresh booking token by re-running the previous call to search_flights or search_multi_city_flights or get_next_flights tool. The tokens are very short lived and will expire after a few minutes so call this tool immediately after getting the booking token.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
+        packages = []
+        for package in data.get("data", []):
+            cache_key = generate_cache_key("token", {"token": package.get("token", None)})
+            await insert_api_cache(cache_key, {"token": package.get("token", None)})
+            token = cache_key
+            packages.append({
+                "cabin": package.get("cabin", ""),
+                "website": package.get("website", ""),
+                "priceInUSD": package.get("price", ""),
+                "baggageOptions": (package.get("meta") or {}).get("baggage", []),
+                "fareType": (package.get("meta") or {}).get("fare_type", ""),
+                "token": token
+            })
+        return {
+            "booking_options": packages
+        }
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
+    except httpx.RequestError as e:
+        return tool_error(
+            "Transient network error while communicating with the upstream.",
+            fix_hint="Network errors are commonly transient. Retry calling this tool exactly ONCE more. If it fails again, proceed without the booking data.",
+            extra={"exception_type": str(type(e)), "exception": str(e)}
+        )
+    except Exception as e:
+        return tool_error(
+            "Booking details lookup raised an unexpected error.",
+            fix_hint="Retry once with the same token. If it fails again, do a fresh search_flights call to obtain a new booking token. If still fails, proceed without the booking URL.",
+            extra={"exception": str(e)},
+        )
+
+async def get_flight_booking_url(token: Annotated[str, Field(description="The token to get the booking URL for. Must be a valid token returned from get_flight_booking_details tool.")],
+                                 timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_flight_booking_url'])]) -> Dict:
+    if not token:
+        return tool_error(
+            "`token` is required.",
+            fix_hint="Only call get_flight_booking_url after get_flight_booking_details returns a `token`. Pass that exact token as `token`.",
+        )
+    token_data = await retrieve_api_cache(token)
+    if not token_data or not token_data.get("token", None):
+        return tool_error(
+            "`token` is invalid or expired.",
+            fix_hint="Retry with a fresh `token` by re-running the previous call to get_flight_booking_details tool. The tokens are very short lived and will expire after a few minutes so call this tool immediately after getting the token.",
+        )
+    token = token_data.get("token", None)
+    if not rapid_api_key:
+        return tool_error(
+            "Flights provider is not configured on the server.",
+            fix_hint="This is a server-side configuration issue — do not retry. Proceed without flight data.",
+        )
+    url = "https://google-flights2.p.rapidapi.com/api/v1/getBookingURL"
+    headers = {
+        "Content-Type": "application/json",
+        "x-rapidapi-host": "google-flights2.p.rapidapi.com",
+        "x-rapidapi-key": rapid_api_key
+    }
+    params = {
+        "token": token
+    }
+    cache_key = generate_cache_key("get_flight_booking_url", params)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=365)
+    if cache_value:
+        return {
+            "booking_url": cache_value.get("booking_url", "")
+        }
+    try:
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
+        if response.status_code >= 400:
+            return tool_error(
+                "Booking URL lookup failed upstream.",
+                fix_hint="The `token` may have expired or the upstream is temporarily unavailable. Retry once; if it still fails, do a fresh get_flight_booking_details call to obtain a new token. If still fails, proceed without the booking URL.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
+        data = response.json()
+        if not data:
+            return tool_error(
+                "No results returned from the upstream.",
+                fix_hint="The `token` may have expired or the upstream is temporarily unavailable. Retry once; by getting a fresh token by re-running the previous call to get_flight_booking_details tool. The tokens are very short lived and will expire after a few minutes so call this tool immediately after getting the token.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
+        await insert_api_cache(cache_key, {"booking_url": data.get("data", "")})
+        return {
+            "booking_url": data.get("data", "")
+        }
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
+    except httpx.RequestError as e:
+        return tool_error(
+            "Transient network error while communicating with the upstream.",
+            fix_hint="Network errors are commonly transient. Retry calling this tool exactly ONCE more. If it fails again, proceed without the booking URL.",
+            extra={"exception_type": str(type(e)), "exception": str(e)}
+        )
+    except Exception as e:
+        return tool_error(
+            "Booking URL lookup raised an unexpected error.",
+            fix_hint="Retry once with the same token. If it fails again, do a fresh get_flight_booking_details call to obtain a new token. If still fails, proceed without the booking URL.",
             extra={"exception": str(e)},
         )
 
@@ -469,5 +664,8 @@ get_airports_and_codes.__doc__ = (PROMPTS_DIR / "get_airports_and_codes.md").rea
 search_flights.__doc__ = (PROMPTS_DIR / "search_flights.md").read_text()
 search_multi_city_flights.__doc__ = (PROMPTS_DIR / "search_multi_city_flights.md").read_text()
 get_next_flights.__doc__ = (PROMPTS_DIR / "get_next_flights.md").read_text()
+get_flight_booking_details.__doc__ = (PROMPTS_DIR / "get_flight_booking_details.md").read_text()
+get_flight_booking_url.__doc__ = (PROMPTS_DIR / "get_flight_booking_url.md").read_text()
+
 
 

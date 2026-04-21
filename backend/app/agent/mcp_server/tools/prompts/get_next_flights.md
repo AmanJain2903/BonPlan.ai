@@ -11,7 +11,9 @@ Use this tool specifically after calling `search_flights` with a `return_date`. 
   - Example: `"GgZDR0gSJ..."`
 - `return_type` (Literal, optional): Which flights to return ('topFlights', 'otherFlights', or 'all'). Default is 'topFlights'.
   - Example: `"topFlights"`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 30 seconds.
+  - Example: `35`
 
 ## Returns
-- **Success**: A dictionary of the return flights grouped by `topFlights` and `otherFlights`. Each flight option similarly contains a `bookingToken` to finalize the combined booking itinerary, or a `nextToken` to fetch further legs using the `get_next_flights` tool again.
+- **Success**: A dictionary of the return flights grouped by `topFlights` and `otherFlights`. If this is the final leg of the flight itinerary, each flight option will contain a `bookingToken` to fetch booking information by calling `get_flight_booking_details`. If there are still more legs, it will contain a `nextToken` instead, which you must use to fetch further legs using the `get_next_flights` tool again.
 - **Error**: A dictionary containing an `error` key.

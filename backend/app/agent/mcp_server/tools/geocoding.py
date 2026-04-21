@@ -7,15 +7,17 @@ import pathlib
 from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 import math
 import itertools
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
 class Location(BaseModel):
     addressOrName: Annotated[str, Field(description="The address or name of the location.")]
-    lat: Annotated[Optional[float], Field(description="The latitude of the location.", default=None)]
-    lng: Annotated[Optional[float], Field(description="The longitude of the location.", default=None)]
+    lat: Annotated[Optional[float], Field(description="(Optional) The latitude of the location.", default=None)]
+    lng: Annotated[Optional[float], Field(description="(Optional) The longitude of the location.", default=None)]
 
-def haversineDistance(point1: Tuple[float, float], point2: Tuple[float, float]) -> float:
+async def haversineDistance(point1: Tuple[float, float], point2: Tuple[float, float]) -> float:
     lat1, lon1 = point1
     lat2, lon2 = point2
     R = 6371 # Earth's radius in kilometers
@@ -26,7 +28,8 @@ def haversineDistance(point1: Tuple[float, float], point2: Tuple[float, float]) 
     return R * c
 
 # Geocoding API
-async def get_coordinates(address: Annotated[str, Field(description="The formal physical address or general city name to convert to absolute lat/lng coordinates.")]) -> Dict:
+async def get_coordinates(address: Annotated[str, Field(description="The formal physical address or general city name to convert to absolute lat/lng coordinates.")],
+                          timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_coordinates'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -53,7 +56,7 @@ async def get_coordinates(address: Annotated[str, Field(description="The formal 
             data = cache_value
         else:
             client = get_http_client()
-            response = await client.get(url, params=params, timeout=5)
+            response = await client.get(url, params=params, timeout=timeout_seconds)
             if response.status_code >= 400:
                 return tool_error(
                     "Geocoding failed upstream.",
@@ -86,6 +89,11 @@ async def get_coordinates(address: Annotated[str, Field(description="The formal 
             "place_id": result.get("place_id", None)
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Geocoding raised an unexpected error.",
@@ -94,7 +102,8 @@ async def get_coordinates(address: Annotated[str, Field(description="The formal 
         )
 
 async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],
-                lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")]) -> Dict:
+                lng: Annotated[float, Field(ge=-180.0, le=180.0, description="The precise longitude of the location as a float.")],
+                timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_address'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -122,7 +131,7 @@ async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description
             data = cache_value
         else:
             client = get_http_client()
-            response = await client.get(url, params=params, timeout=5)
+            response = await client.get(url, params=params, timeout=timeout_seconds)
             if response.status_code >= 400:
                 return tool_error(
                     "Reverse-geocoding failed upstream.",
@@ -147,6 +156,11 @@ async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description
             )
         return {"address": results[0].get("formatted_address", "")}
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Reverse-geocoding raised an unexpected error.",
@@ -154,7 +168,8 @@ async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description
             extra={"exception": str(e)},
         )
 
-async def get_optimal_route(origin: Annotated[Location, Field(description="The origin location.")], destinations: Annotated[List[Location], Field(description="The list of destinations.")]) -> Dict:
+async def get_optimal_route(origin: Annotated[Location, Field(description="The origin location.")], destinations: Annotated[List[Location], Field(description="The list of destinations.")],
+                            timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_optimal_route'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -174,7 +189,7 @@ async def get_optimal_route(origin: Annotated[Location, Field(description="The o
         )
 
     if origin.lat is None or origin.lng is None:
-        originCoordinates = await get_coordinates(origin.addressOrName)
+        originCoordinates = await get_coordinates(origin.addressOrName, timeout_seconds)
         if "error" in originCoordinates:
             return tool_error(
                 f"Could not geocode origin '{origin.addressOrName}'.",
@@ -186,7 +201,7 @@ async def get_optimal_route(origin: Annotated[Location, Field(description="The o
 
     for idx, destination in enumerate(destinations):
         if destination.lat is None or destination.lng is None:
-            destinationCoordinates = await get_coordinates(destination.addressOrName)
+            destinationCoordinates = await get_coordinates(destination.addressOrName, timeout_seconds)
             if "error" in destinationCoordinates:
                 return tool_error(
                     f"Could not geocode destinations[{idx}] '{destination.addressOrName}'.",
@@ -212,7 +227,7 @@ async def get_optimal_route(origin: Annotated[Location, Field(description="The o
         for i in range(len(current_path) - 1):
             p1 = (current_path[i].lat, current_path[i].lng)
             p2 = (current_path[i+1].lat, current_path[i+1].lng)
-            current_distance += haversineDistance(p1, p2)
+            current_distance += await haversineDistance(p1, p2)
 
         if current_distance < min_total_distance:
             min_total_distance = current_distance
@@ -222,10 +237,7 @@ async def get_optimal_route(origin: Annotated[Location, Field(description="The o
 
     returnData = {
         "optimalSequence": [loc.model_dump() for loc in best_sequence],
-        "totalDistanceKm": round(min_total_distance, 2),
-        "totalDistanceMiles": round(min_total_distance * 0.621371, 2),
-        "sequenceSummary": " -> ".join(route_names),
-        "explanation": f"The most efficient route to start at {origin.addressOrName} and visit all {len(destinations)} cities and return to {origin.addressOrName} covers approximately {round(min_total_distance)} km."
+        "totalDistanceMiles": round(min_total_distance * 0.621371, 2)
     }
     await insert_api_cache(cache_key, returnData)
     return returnData

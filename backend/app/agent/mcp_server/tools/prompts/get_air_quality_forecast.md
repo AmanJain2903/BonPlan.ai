@@ -13,6 +13,8 @@ Use this tool to provide future air quality predictions for outdoor planning. No
   - Example: `-118.2437`
 - `point_in_time` (str, optional): The specific UTC datetime to forecast in ISO 8601 format. If omitted, defaults to 1 hour from current UTC time.
   - Example: `"2026-04-15T18:00:00Z"`
+- `timeout_seconds` (int, optional): Timeout in seconds for the tool execution. Only increase this if a previous call failed due to timeout. Default is `10`.
+  - Example: `10`
 
 ## Returns
 - **Success**: A dictionary containing:

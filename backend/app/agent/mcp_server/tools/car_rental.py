@@ -4,12 +4,9 @@ import pathlib
 from app.agent.mcp_server.tools.constants import WebSearchSites, SERPER_CONTENT_PARSER_PROMPT
 from app.core.config import settings
 from app.utils.http import get_http_client
-from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
-from app.agent.mcp_server.tools.timezone import convert_target_local_time_to_utc, get_timezone
-from app.agent.mcp_server.tools.geocoding import get_coordinates
 from app.agent.mcp_server.tools._errors import tool_error
-import time
-from datetime import datetime
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 rapid_api_key = settings.RAPID_API_KEY
 
@@ -23,7 +20,7 @@ class DateTime(BaseModel):
 
 carTypes = Literal["small", "medium", "large", "estate", "premium", "carriers", "suvs"]
 
-def format_rental_cars(data: Dict) -> Dict:
+async def format_rental_cars(data: Dict, searchKey: str) -> Dict:
     supplierInfo = {
         "name": data.get("supplier_info", {}).get("name", ""),
         "logoUrl": data.get("supplier_info", {}).get("logo_url", ""),
@@ -33,7 +30,6 @@ def format_rental_cars(data: Dict) -> Dict:
     vehicleInfo = {
         "vehicleId": data.get("vehicle_info", {}).get("v_id", ""),
         "vehicleName": data.get("vehicle_info", {}).get("v_name", ""),
-        "vehicleImageUrl": data.get("vehicle_info", {}).get("image_url", ""),
         "vehicleTransmission": data.get("vehicle_info", {}).get("transmission", ""),
         "vehicleSeats": data.get("vehicle_info", {}).get("seats", ""),
         "vehicleDoors": data.get("vehicle_info", {}).get("doors", ""),
@@ -44,7 +40,6 @@ def format_rental_cars(data: Dict) -> Dict:
         "group": data.get("vehicle_info", {}).get("group", ""),
     }
     pickupInfo = {
-        "locationId": data.get("route_info", {}).get("pickup", {}).get("location_id", ""),
         "name": data.get("route_info", {}).get("pickup", {}).get("name", ""),
         "address": data.get("route_info", {}).get("pickup", {}).get("address", ""),
         "coordinates": {
@@ -53,7 +48,6 @@ def format_rental_cars(data: Dict) -> Dict:
         },
     }
     dropOffInfo = {
-        "locationId": data.get("route_info", {}).get("dropoff", {}).get("location_id", ""),
         "name": data.get("route_info", {}).get("dropoff", {}).get("name", ""),
         "address": data.get("route_info", {}).get("dropoff", {}).get("address", ""),
         "coordinates": {
@@ -67,8 +61,7 @@ def format_rental_cars(data: Dict) -> Dict:
     }
     ratingInfo = data.get("rating_info", {})
     pricingInfo = {
-        "price": data.get("pricing_info", {}).get("drive_away_price", ""),
-        "currency": data.get("pricing_info", {}).get("currency", ""),
+        "priceInUSD": data.get("pricing_info", {}).get("drive_away_price", ""),
         "description": data.get("pay_when_text", ""),
     }
     return {
@@ -77,20 +70,21 @@ def format_rental_cars(data: Dict) -> Dict:
         "routeInfo": routeInfo,
         "ratingInfo": ratingInfo,
         "pricingInfo": pricingInfo,
-        "bookingUrl": data.get("forward_url", ""),
+        "bookingUrl": f"https://cars.booking.com/package/deal/{searchKey}/{data.get('vehicle_info', {}).get('v_id', '')}",
     }
 
 # RapidAPI Booking.com API
 async def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(description="The coordinates of the pickup location.")],
                        pickupDateTime: Annotated[DateTime, Field(description="The date and time of the pickup according to the wall clock time of the pickup location.")],
                        dropOffDateTime: Annotated[DateTime, Field(description="The date and time of the dropoff according to the wall clock time of the dropoff location.")],
-                       dropOffCoordinates: Annotated[Optional[Coordinates], Field(description="The coordinates of the dropoff location.", default=None)],
-                       sortBy: Annotated[Optional[Literal["recommended", "price_low_to_high"]], Field(description="The field to sort the results by. Either recommended or lowest price first. Default is recommended.", default="recommended")],
-                       carTypes: Annotated[Optional[List[carTypes]], Field(description="The types of cars to search for.", default=None)],
-                       driverAge: Annotated[Optional[int], Field(description="The age of the driver.", default=None)],
-                       units: Annotated[Optional[Literal["METRIC", "IMPERIAL"]], Field(description="The units to use for the results.", default="IMPERIAL")],
-                       resultsPerPage: Annotated[Optional[int], Field(ge=5, le=50, description="The number of results to return per page (min 5, max 50).", default=10)],
-                       page: Annotated[Optional[int], Field(ge=1, description="The page number to return (1-based).", default=1)]) -> Dict:
+                       dropOffCoordinates: Annotated[Optional[Coordinates], Field(description="(Optional) The coordinates of the dropoff location.", default=None)],
+                       sortBy: Annotated[Optional[Literal["recommended", "price_low_to_high"]], Field(description="(Optional) The field to sort the results by. Either recommended or lowest price first. Default is recommended.", default="recommended")],
+                       carTypes: Annotated[Optional[List[carTypes]], Field(description="(Optional) The types of cars to search for.", default=None)],
+                       driverAge: Annotated[Optional[int], Field(description="(Optional) The age of the driver.", default=None)],
+                       units: Annotated[Optional[Literal["METRIC", "IMPERIAL"]], Field(description="(Optional) The units to use for the results.", default="IMPERIAL")],
+                       resultsPerPage: Annotated[Optional[int], Field(ge=5, le=50, description="(Optional) The number of results to return per page (min 5, max 50).", default=10)],
+                       page: Annotated[Optional[int], Field(ge=1, description="(Optional) The page number to return (1-based).", default=1)],
+                       timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['search_rental_cars'])]) -> Dict:
 
     if not rapid_api_key:
         return tool_error(
@@ -125,24 +119,19 @@ async def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(des
     if carTypes:
         carType = ",".join("carCategory::" + car for car in carTypes)
         params["carType"] = carType
-    cache_key = generate_cache_key("search_rental_cars", params)
-    cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     try:
-        if cache_value:
-            data = cache_value
-        else:
-            client = get_http_client()
-            response = await client.get(url, headers=headers, params=params, timeout=45)
-            if response.status_code >= 400:
-                return tool_error(
-                    "Rental-car search failed upstream.",
-                    fix_hint="Verify pickup < dropoff, dates in the future, valid coordinates, and retry. 5xx responses are transient — try once more; 4xx usually means invalid args.",
-                    status_code=response.status_code,
-                    extra={"upstream": response.text[:300]},
-                )
-            data = response.json()
-            await insert_api_cache(cache_key, data)
+        client = get_http_client()
+        response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
+        if response.status_code >= 400:
+            return tool_error(
+                "Rental-car search failed upstream.",
+                fix_hint="Verify pickup < dropoff, dates in the future, valid coordinates, and retry. 5xx responses are transient — try once more; 4xx usually means invalid args.",
+                status_code=response.status_code,
+                extra={"upstream": response.text[:300]},
+            )
+        data = response.json()
         data = data.get("data", {})
+        searchKey = data.get("search_key", "")
         rentalCars = data.get("search_results", [])
         totalResults = data.get("count", len(rentalCars))
         totalPages = max(1, (totalResults + resultsPerPage - 1) // resultsPerPage) if resultsPerPage else 1
@@ -164,12 +153,16 @@ async def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(des
         result["totalResults"] = totalResults
         result["totalPages"] = totalPages
         result["page"] = page
-        result["searchContext"] = data.get("search_context", {})
-        result["rentalCarOptions"] = [format_rental_cars(rentalCar) for rentalCar in rentalCars]
+        result["rentalCarOptions"] = [await format_rental_cars(rentalCar, searchKey) for rentalCar in rentalCars]
         result["hasMorePages"] = totalResults > endIndex
         result["nextPage"] = page + 1 if result["hasMorePages"] else None
         return result
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Rental-car search raised an unexpected error.",

@@ -5,6 +5,7 @@ import ViewOnMapButton from './common/ViewOnMapButton';
 import FlightRouteLine, { FlightStop } from './common/FlightRouteLine';
 import { Dot } from '../Atoms';
 import { EVENT_ACCENT, EVENT_ICON, EVENT_LABEL, formatClockTime, isValidUrl } from '../constants';
+import { ExternalLink } from 'lucide-react';
 
 interface Props {
   event: any;
@@ -106,7 +107,7 @@ export default function FlightTakeoffCard({ event, onViewOnMap, contentKey }: Pr
         </>
       }
       expandedContent={
-        <div className="pt-3">
+        <div className="pt-3 space-y-4">
           <FlightRouteLine stops={stops} />
           <div className="flex items-center gap-2 text-xs text-white/60 justify-center mt-1">
             <span className="font-semibold text-white/80">{d.airline}</span>
@@ -114,6 +115,18 @@ export default function FlightTakeoffCard({ event, onViewOnMap, contentKey }: Pr
             <span className="font-mono tracking-wider">{d.flight_number}</span>
           </div>
           <TipsSection title="Takeoff Tips" tips={d.takeoff_tips} />
+          {isValidUrl(d.booking_url) && (
+            <a
+              href={d.booking_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan hover:text-cyan-200 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Book Flight
+            </a>
+          )}
         </div>
       }
     />

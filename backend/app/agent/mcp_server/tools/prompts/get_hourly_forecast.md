@@ -15,6 +15,8 @@ Use this tool for granular, short-term weather planning, such as finding a rain-
   - Example: `"IMPERIAL"`
 - `hours` (int, optional): The number of hours to forecast (1 to 24). Default is 24.
   - Example: `12`
+- `timeout_seconds` (int, optional): Timeout in seconds. Only increase if previous call timed out. Default `10`.
+  - Example: `15`
 
 ## Returns
 - **Success**: A dictionary containing the `timeZone` and `forecastHours`, mapped by datetime string keys carrying `isDaytime`, `temperature`, `feelsLike`, `weatherCondition`, `precipitation`, `thunderstormProbability`, and `visibility`.

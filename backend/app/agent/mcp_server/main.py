@@ -42,12 +42,15 @@ from app.agent.mcp_server.tools.flights import get_airports_and_codes
 from app.agent.mcp_server.tools.flights import search_flights
 from app.agent.mcp_server.tools.flights import search_multi_city_flights
 from app.agent.mcp_server.tools.flights import get_next_flights
+from app.agent.mcp_server.tools.flights import get_flight_booking_details
+from app.agent.mcp_server.tools.flights import get_flight_booking_url
 
 # Ground Transportation Tools
 from app.agent.mcp_server.tools.car_rental import search_rental_cars
 
 # Accommodations Tools    
 from app.agent.mcp_server.tools.accommodations import search_hotels
+from app.agent.mcp_server.tools.accommodations import get_hotel_booking_url
 
 
 # This name will be visible to the LLM/Agent
@@ -211,6 +214,18 @@ get_next_flights_tool = Tool.from_function(
 )
 mcp.add_tool(get_next_flights_tool)
 
+get_flight_booking_details_tool = Tool.from_function(
+    get_flight_booking_details,
+    name="get_flight_booking_details"
+)
+mcp.add_tool(get_flight_booking_details_tool)
+
+get_flight_booking_url_tool = Tool.from_function(
+    get_flight_booking_url,
+    name="get_flight_booking_url"
+)
+mcp.add_tool(get_flight_booking_url_tool)
+
 # Ground Transportation Tools
 search_rental_cars_tool = Tool.from_function(
     search_rental_cars,
@@ -224,6 +239,12 @@ search_hotels_tool = Tool.from_function(
     name="search_hotels"
 )
 mcp.add_tool(search_hotels_tool)
+
+get_hotel_booking_url_tool = Tool.from_function(
+    get_hotel_booking_url,
+    name="get_hotel_booking_url"
+)
+mcp.add_tool(get_hotel_booking_url_tool)
 
 
 if __name__ == "__main__":

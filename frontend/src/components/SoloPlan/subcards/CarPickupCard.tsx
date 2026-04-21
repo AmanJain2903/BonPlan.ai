@@ -83,12 +83,12 @@ export default function CarPickupCard({ event, onViewOnMap, contentKey }: Props)
             <div className="text-[10px] uppercase tracking-wider text-white/40 mb-2">Vehicle</div>
             <div className="text-sm font-semibold text-white/85 mb-2">{v.vehicle_name}</div>
             <div className="flex flex-wrap items-center gap-2">
-              {v.vehicle_transmission && <Chip>{v.vehicle_transmission}</Chip>}
+              {v.vehicle_transmission && v.vehicle_transmission.toLowerCase() !== 'n/a' && <Chip>{v.vehicle_transmission}</Chip>}
               {typeof v.vehicle_seats === 'number' && <Chip>{v.vehicle_seats} Seats</Chip>}
               {typeof v.vehicle_doors === 'number' && <Chip>{v.vehicle_doors} Doors</Chip>}
-              {v.fuel_type && <Chip>{v.fuel_type}</Chip>}
-              {v.mileage && <Chip>{v.mileage}</Chip>}
-              {v.group && <Chip>{v.group}</Chip>}
+              {v.fuel_type && v.fuel_type.toLowerCase() !== 'n/a' && <Chip>{v.fuel_type}</Chip>}
+              {v.mileage && v.mileage.toLowerCase() !== 'n/a' && <Chip>{v.mileage}</Chip>}
+              {v.group && v.group.toLowerCase() !== 'n/a' && <Chip>{v.group}</Chip>}
               {typeof v.airbags === 'boolean' && v.airbags === true && <Chip>Airbags</Chip>}
               {typeof v.free_cancellation === 'boolean' && v.free_cancellation === true && <Chip>Free Cancellation</Chip>}
             </div>

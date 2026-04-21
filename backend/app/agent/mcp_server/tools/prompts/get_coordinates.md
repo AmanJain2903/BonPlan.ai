@@ -9,6 +9,8 @@ Use this tool whenever a user provides a location name, and you need numerical c
 ## Arguments
 - `address` (str): The address or city to geocode.
   - Example: `"1600 Amphitheatre Parkway, Mountain View, CA"` or `"Paris, France"`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 5 seconds.
+  - Example: `10`
 
 ## Returns
 - **Success**: A dictionary containing `address` (the formal address), `lat`, `lng`, and `place_id`.

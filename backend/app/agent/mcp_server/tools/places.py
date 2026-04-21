@@ -6,6 +6,8 @@ from app.agent.mcp_server.tools.constants import GoogleFieldMasks, GooglePlaceTy
 from app.agent.mcp_server.tools._errors import tool_error
 import pathlib
 from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+import httpx
+from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
 
@@ -58,7 +60,8 @@ _PLACE_TYPE_SAMPLE: list[str] = sorted({
 async def search_places(query: Annotated[str, Field(description="The general or specific text query string to search for real-world places.")], 
                   max_results: Annotated[int, Field(ge=1, le=10, description="The maximum number of results to fetch for the current page (min 1, max 10).", default=5)],
                   next_page_token: Annotated[Optional[str], Field(description="The next page token to continue the search from and get the next page of results. Optional. If provided, the search will continue from the next page.", default=None)],
-                  place_index: Annotated[Optional[int], Field(description="The index of the place to return from the search results for the current page.", default=0)]) -> Dict:
+                  place_index: Annotated[Optional[int], Field(description="(Optional) The index of the place to return from the search results for the current page.", default=0)],
+                  timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['search_places'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -66,7 +69,7 @@ async def search_places(query: Annotated[str, Field(description="The general or 
         )
 
     cache_key = generate_cache_key("search_places", {"query": query.lower().strip(), "max_results": max_results, "next_page_token": next_page_token})
-    cache_value = await retrieve_api_cache(cache_key)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     
     url = "https://places.googleapis.com/v1/places:searchText"
     body = {
@@ -86,7 +89,7 @@ async def search_places(query: Annotated[str, Field(description="The general or 
             data = cache_value.get("places", [])
         else:
             client = get_http_client()
-            response = await client.post(url, json=body, headers=headers, timeout=5)
+            response = await client.post(url, json=body, headers=headers, timeout=timeout_seconds)
             if response.status_code >= 400:
                 return tool_error(
                     "Text place search failed upstream.",
@@ -114,37 +117,22 @@ async def search_places(query: Annotated[str, Field(description="The general or 
         placeOutput = {
                 "id": place.get("id"),
                 "name": place.get("displayName", {}).get("text", ""),
-                "type": {
-                    "primaryType": place.get("primaryType", ""),
-                    "primaryTypeName": place.get("primaryTypeDisplayName", {}).get("text", ""),
-                    "types": place.get("types", []),
-                },
-                "placeSummaries": {
-                    "editorialSummary": place.get("editorialSummary", {}).get("text", ""),
-                    "generativeSummary": place.get("generativeSummary", {}).get("overview", {}).get("text", ""),
-                    "neighborhoodSummary": place.get("neighborhoodSummary", {}).get("overview", {}).get("content", {}).get("text", ""),
-                },
+                "type": place.get("primaryTypeDisplayName", {}).get("text", ""),
+                "placeSummary": place.get("editorialSummary", {}).get("text", ""),
                 "location": {
                     "address": place.get("formattedAddress", ""),
                     "latitude": place.get("location", {}).get("latitude", None),
                     "longitude": place.get("location", {}).get("longitude", None),
                 },
-                "phoneNumber": place.get("internationalPhoneNumber", ""),
+                "urls": {
+                    "googleMapsUrl": place.get("googleMapsUri", ""),
+                    "websiteUrl": place.get("websiteUri", ""),
+                },
                 "reviews": {
                     "rating": place.get("rating", None),
-                    "userRatingCount": place.get("userRatingCount", None),
                     "reviewSummary": place.get("reviewSummary", {}).get("text", {}).get("text", ""),
                 },
-                "urls" : {
-                    "googleMaps": place.get("googleMapsUri", ""),
-                    "website": place.get("websiteUri", ""),
-                },
-                "icon": {
-                    "backgroundColor": place.get("iconBackgroundColor", None),
-                    "maskBaseUri": place.get("iconMaskBaseUri", ""),
-                },
                 "accessibilityOptions": place.get("accessibilityOptions", {}),
-                "photos": place.get("photos", []),
                 "businessStatus": place.get("businessStatus", ""),
                 "openingHours": {
                     "current": {
@@ -192,7 +180,6 @@ async def search_places(query: Annotated[str, Field(description="The general or 
                     "servesLunch": place.get("servesLunch", None),
                     "servesVegetarianFood": place.get("servesVegetarianFood", None),
                     "servesWine": place.get("servesWine", None),
-                    "takeout": place.get("takeout", None),
                 },
             }
         
@@ -203,6 +190,11 @@ async def search_places(query: Annotated[str, Field(description="The general or 
             "nextIndex": place_index + 1 if len(data.get("places", [])) > place_index + 1 else None,
         }
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Text place search raised an unexpected error.",
@@ -217,7 +209,8 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
                         max_results: Annotated[int, Field(ge=10, le=20, description="The maximum number of results to fetch for the search (min 10, max 20).", default=20)],
                         rank_preference: Annotated[Literal["POPULARITY", "DISTANCE"], Field(description="The preference determining how the returned places are ranked.", default="POPULARITY")],
                         excluded_types: Annotated[Optional[List[str]], Field(description="Optional list of Google Places API v1 primary types to explicitly exclude. Same allowed values as `included_types`.", default=None)],
-                        place_index: Annotated[int, Field(description="The index of the place to return from the search results fetched.", default=0)]) -> Dict:
+                        place_index: Annotated[int, Field(description="The index of the place to return from the search results fetched.", default=0)],
+                        timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['search_places_nearby'])]) -> Dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -244,7 +237,7 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
         }
 
     cache_key = generate_cache_key("search_places_nearby", {"lat": lat, "lng": lng, "included_types": included_types, "radius": radius, "max_results": max_results, "rank_preference": rank_preference, "excluded_types": excluded_types})
-    cache_value = await retrieve_api_cache(cache_key)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     
     url = "https://places.googleapis.com/v1/places:searchNearby"
     body = {
@@ -272,7 +265,7 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
             data = cache_value.get("places", [])
         else:
             client = get_http_client()
-            response = await client.post(url, json=body, headers=headers, timeout=5)
+            response = await client.post(url, json=body, headers=headers, timeout=timeout_seconds)
             if response.status_code >= 400:
                 return tool_error(
                     "Nearby place search failed upstream.",
@@ -301,37 +294,22 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
             "place": {
                 "id": place.get("id"),
                 "name": place.get("displayName", {}).get("text", ""),
-                "type": {
-                    "primaryType": place.get("primaryType", ""),
-                    "primaryTypeName": place.get("primaryTypeDisplayName", {}).get("text", ""),
-                    "types": place.get("types", []),
-                },
-                "placeSummaries": {
-                    "editorialSummary": place.get("editorialSummary", {}).get("text", ""),
-                    "generativeSummary": place.get("generativeSummary", {}).get("overview", {}).get("text", ""),
-                    "neighborhoodSummary": place.get("neighborhoodSummary", {}).get("overview", {}).get("content", {}).get("text", ""),
-                },
+                "type": place.get("primaryTypeDisplayName", {}).get("text", ""),
+                "placeSummary": place.get("editorialSummary", {}).get("text", ""),
                 "location": {
                     "address": place.get("formattedAddress", ""),
                     "latitude": place.get("location", {}).get("latitude", None),
                     "longitude": place.get("location", {}).get("longitude", None),
                 },
-                "phoneNumber": place.get("internationalPhoneNumber", ""),
+                "urls": {
+                    "googleMapsUrl": place.get("googleMapsUri", ""),
+                    "websiteUrl": place.get("websiteUri", ""),
+                },
                 "reviews": {
                     "rating": place.get("rating", None),
-                    "userRatingCount": place.get("userRatingCount", None),
                     "reviewSummary": place.get("reviewSummary", {}).get("text", {}).get("text", ""),
                 },
-                "urls" : {
-                    "googleMaps": place.get("googleMapsUri", ""),
-                    "website": place.get("websiteUri", ""),
-                },
-                "icon": {
-                    "backgroundColor": place.get("iconBackgroundColor", None),
-                    "maskBaseUri": place.get("iconMaskBaseUri", ""),
-                },
                 "accessibilityOptions": place.get("accessibilityOptions", {}),
-                "photos": place.get("photos", []),
                 "businessStatus": place.get("businessStatus", ""),
                 "openingHours": {
                     "current": {
@@ -379,14 +357,18 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
                     "servesLunch": place.get("servesLunch", None),
                     "servesVegetarianFood": place.get("servesVegetarianFood", None),
                     "servesWine": place.get("servesWine", None),
-                    "takeout": place.get("takeout", None),
-                    },
+                },
             },
             "hasNext": len(data.get("places", [])) > place_index + 1,
             "nextIndex": place_index + 1 if len(data.get("places", [])) > place_index + 1 else None,
             }
      
 
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Nearby place search raised an unexpected error.",
@@ -394,7 +376,8 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
             extra={"exception": str(e)},
         )
 
-async def get_place_info(place_id: Annotated[str, Field(description="The Google Place ID of the place to get information about. Must come from a previous search_places / search_places_nearby result.")]) -> dict:
+async def get_place_info(place_id: Annotated[str, Field(description="The Google Place ID of the place to get information about. Must come from a previous search_places / search_places_nearby result.")],
+                         timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_place_info'])]) -> dict:
     if not api_key:
         return tool_error(
             "Google Maps API key is not configured on the server.",
@@ -402,7 +385,7 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
         )
 
     cache_key = generate_cache_key("get_place_info", {"place_id": place_id})
-    cache_value = await retrieve_api_cache(cache_key)
+    cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     
     url = f"https://places.googleapis.com/v1/places/{place_id}"
     headers = {
@@ -415,7 +398,7 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
             data = cache_value.get("place", {})
         else:
             client = get_http_client()
-            response = await client.get(url, headers=headers, timeout=5)
+            response = await client.get(url, headers=headers, timeout=timeout_seconds)
             if response.status_code >= 400:
                 return tool_error(
                     "Place info lookup failed upstream.",
@@ -441,6 +424,11 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
                     "primaryTypeName": data.get("primaryTypeDisplayName", {}).get("text", ""),
                     "types": data.get("types", []),
                 },
+                "placeSummaries": {
+                    "editorialSummary": data.get("editorialSummary", {}).get("text", ""),
+                    "generativeSummary": data.get("generativeSummary", {}).get("overview", {}).get("text", ""),
+                    "neighborhoodSummary": data.get("neighborhoodSummary", {}).get("overview", {}).get("content", {}).get("text", ""),
+                },
                 "location": {
                     "address": data.get("formattedAddress", ""),
                     "latitude": data.get("location", {}).get("latitude", None),
@@ -449,18 +437,14 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
                 "phoneNumber": data.get("internationalPhoneNumber", ""),
                 "reviews": {
                     "rating": data.get("rating", None),
-                    "userRatingCount": data.get("userRatingCount", None)
+                    "userRatingCount": data.get("userRatingCount", None),
+                    "reviewSummary": data.get("reviewSummary", {}).get("text", {}).get("text", ""),
                 },
                 "urls" : {
-                    "googleMaps": data.get("googleMapsUri", ""),
-                    "website": data.get("websiteUri", ""),
-                },
-                "icon": {
-                    "backgroundColor": data.get("iconBackgroundColor", None),
-                    "maskBaseUri": data.get("iconMaskBaseUri", None),
+                    "googleMapsUrl": data.get("googleMapsUri", ""),
+                    "websiteUrl": data.get("websiteUri", ""),
                 },
                 "accessibilityOptions": data.get("accessibilityOptions", {}),
-                "photos": data.get("photos", []),
                 "businessStatus": data.get("businessStatus", ""),
                 "openingHours": {
                     "current": {
@@ -479,9 +463,43 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
                     "regularSecondary": data.get("regularSecondaryOpeningHours", {}),
                 },
                 "priceRange": data.get("priceRange", None),
-                "priceLevel": data.get("priceLevel", None)
+                "priceLevel": data.get("priceLevel", None),
+                "parkingOptions": data.get("parkingOptions", None),
+                "paymentOptions": data.get("paymentOptions", None),
+                "fuelOptions": data.get("fuelOptions", None),
+                "evChargeOptions": data.get("evChargeOptions", None),
+                "otherOptions": {
+                    "allowsDogs": data.get("allowsDogs", None),
+                    "curbsidePickup": data.get("curbsidePickup", None),
+                    "delivery": data.get("delivery", None),
+                    "dineIn": data.get("dineIn", None),
+                    "takeout": data.get("takeout", None),
+                    "goodForChildren": data.get("goodForChildren", None),
+                    "goodForGroups": data.get("goodForGroups", None),
+                    "goodForWatchingSports": data.get("goodForWatchingSports", None),
+                    "liveMusic": data.get("liveMusic", None),
+                    "menuForChildren": data.get("menuForChildren", None),
+                    "outdoorSeating": data.get("outdoorSeating", None),
+                    "reservable": data.get("reservable", None),
+                    "restroom": data.get("restroom", None),
+                    "servesBeer": data.get("servesBeer", None),
+                    "servesBreakfast": data.get("servesBreakfast", None),
+                    "servesBrunch": data.get("servesBrunch", None),
+                    "servesCocktails": data.get("servesCocktails", None),
+                    "servesCoffee": data.get("servesCoffee", None),
+                    "servesDessert": data.get("servesDessert", None),
+                    "servesDinner": data.get("servesDinner", None),
+                    "servesLunch": data.get("servesLunch", None),
+                    "servesVegetarianFood": data.get("servesVegetarianFood", None),
+                    "servesWine": data.get("servesWine", None),
+                },
             }
         }
+    except httpx.TimeoutException:
+        return tool_error(
+            f"Tool timeout after {timeout_seconds} seconds.",
+            fix_hint="Try calling this tool exactly ONCE more with a slightly greater timeout_seconds parameter (e.g. +15 seconds). If it fails again, skip calling it and gracefully continue."
+        )
     except Exception as e:
         return tool_error(
             "Place info lookup raised an unexpected error.",

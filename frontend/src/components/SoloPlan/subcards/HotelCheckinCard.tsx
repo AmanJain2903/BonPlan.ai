@@ -1,4 +1,4 @@
-import { DollarSign, Star, MapPin, BedDouble } from 'lucide-react';
+import { DollarSign, Star, MapPin, BedDouble, ExternalLink } from 'lucide-react';
 import SubCardShell from './common/SubCardShell';
 import TipsSection from './common/TipsSection';
 import ViewOnMapButton from './common/ViewOnMapButton';
@@ -74,7 +74,7 @@ export default function HotelCheckinCard({ event, onViewOnMap, contentKey }: Pro
         </>
       }
       expandedContent={
-        <div className="pt-3 space-y-3">
+        <div className="pt-3 space-y-4">
           {typeof d.rating === 'number' && d.rating > 0 && (
             <p className="text-xs text-white/75 leading-relaxed">Rating: {d.rating.toFixed(1)}/10</p>
           )}
@@ -113,6 +113,18 @@ export default function HotelCheckinCard({ event, onViewOnMap, contentKey }: Pro
             </div>
           )}
           <TipsSection title="Check-in Tips" tips={d.checkin_tips} />
+          {isValidUrl(d.booking_url) && (
+            <a
+              href={d.booking_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan hover:text-cyan-200 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Book Hotel
+            </a>
+          )}
         </div>
       }
     />

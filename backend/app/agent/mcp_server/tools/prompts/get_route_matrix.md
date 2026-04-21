@@ -25,6 +25,8 @@ Never mix fields inside one waypoint. Call `get_coordinates` first if you only h
 - `routing_preference` (Literal, optional): "TRAFFIC_AWARE", "TRAFFIC_UNAWARE", or "TRAFFIC_AWARE_OPTIMAL". Default "TRAFFIC_AWARE". Only applies for DRIVE / TWO_WHEELER.
 - `departure_time` (str, optional): Future UTC ISO 8601 departure time, e.g. `"2026-04-15T08:00:00Z"`.
 - `units_system` (Literal, optional): "IMPERIAL" or "METRIC". Default "IMPERIAL".
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 10 seconds.
+  - Example: `15`
 
 ## Returns
 - **Success**: `{"routeMatrix": [...]}`. Each entry has `originIndex`, `destinationIndex` (back-references into the input lists), `origin`, `destination`, `distance`, `durationWithTraffic`, `durationWithoutTraffic`, `mapsUrl`, `routeCondition`, and advisories. Note: the matrix is flat — one entry per reachable pair.

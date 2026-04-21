@@ -9,6 +9,8 @@ Use this tool when you have a country's name but need its standard ISO 3166-1 al
 ## Arguments
 - `country_name` (str): The name of the country. Just the country name, with no additional text.
   - Example: `"France"`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 5 seconds.
+  - Example: `10`
 
 ## Returns
 - **Success**: A dictionary containing `country_code` (e.g., "FR" for France).

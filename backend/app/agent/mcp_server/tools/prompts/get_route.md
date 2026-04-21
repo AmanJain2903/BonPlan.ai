@@ -29,7 +29,9 @@ Never mix them in the same waypoint (e.g. don't send `address` AND `lat`). If yo
 - `units_system` (Literal, optional): "IMPERIAL" or "METRIC". Default "IMPERIAL".
 - `compute_alternative_routes` (bool, optional): Return multiple route variations. Default true.
 - `optimize_waypoint_order` (bool, optional): Let Google re-order intermediate waypoints for the shortest total trip. Default true. Set false to enforce strict visitation order.
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 5 seconds.
+  - Example: `10`
 
 ## Returns
-- **Success**: `{"routes": [...]}` — each route has `distance`, `durationWithTraffic`, `durationWithoutTraffic`, `routeLegs`, `mapsUrl`, `warnings`, `travelAdvisory`, and optionally `optimizedIntermediateWaypointIndex` + `optimizedRoute` if waypoint ordering was adjusted.
+- **Success**: `{"routes": [...]}` — each route has `distance`, `durationWithTraffic`, `durationWithoutTraffic`, `routeLegs`, `mapsUrl`, `warnings`, `travelAdvisory`, and `optimizedRoute` if waypoint ordering was adjusted.
 - **Error**: A dictionary with `error`, `fix_hint`, and optionally `status_code`. Use the `fix_hint` text to correct your next call.

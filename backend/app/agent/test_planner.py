@@ -1,8 +1,10 @@
 import asyncio
 import json
 from app.agent.solo_planner import generate_trip_itinerary
-from app.agent.runtime import agent_runtime_context
+from app.agent.core.runtime import agent_runtime_context
 import os
+from datetime import datetime
+import time
 
 relativePath = "app/agent/mock_data/"
 absolutePath = os.path.abspath(relativePath)
@@ -22,8 +24,8 @@ test_trip_payload = {
     "routing_style": "SINGLE_HUB",
     "destinations": [
         {
-            "lat": 37.7749295,
-            "lng": -122.4194155,
+            "lat": 37.774929,
+            "lng": -122.419416,
             "city": "San Francisco",
             "state": "CA",
             "country": "United States"
@@ -75,8 +77,10 @@ async def run_test():
     print("Testing the BonPlan Planner Agent...")
     print("-------------------------------------")
     try:
+        start_time = time.time()
         chunks_log = []
-        mock_file_path = os.path.join(absolutePath, "mock_chunk_18_04_2026.json")
+        mock_file_name = f"mock_chunk_{datetime.now().strftime('%d_%m_%Y_%H_%M_%S')}.json"
+        mock_file_path = os.path.join(absolutePath, mock_file_name)
         # the function returns an async generator
         async with agent_runtime_context():
             async for chunk in generate_trip_itinerary(test_trip_payload, mode="autonomous", owner_id="98c1837d-b37d-42aa-b3d0-5d185fe9d843", trip_id="1b3df3fa-b334-4754-8213-c2b84f07372c"):
@@ -101,7 +105,7 @@ async def run_test():
                     print(json.dumps(chunk.get("data", {}), indent=2))
                     print(f"=============================================\n")
                 elif chunk_type == "system":
-                    print(f"\n[SYSTEM] {chunk.get('content')}")
+                    print(f"\n[SYSTEM] {chunk.get('content')} \n {chunk.get('error')}")
                 elif chunk_type == "error":
                     print(f"\n[ERROR] {chunk.get('content')}")
                 else:
@@ -109,6 +113,23 @@ async def run_test():
                 
     except Exception as e:
         print(f"\n[CRITICAL ERROR] Failed to run test: {e}")
+    finally:
+        end_time = time.time()
+        time_taken = end_time - start_time
+        formatted_time = time.strftime("%H:%M:%S", time.gmtime(time_taken))
+        print(f"\n[TEST COMPLETED] Time taken: {formatted_time}")
+        testResults = {
+            mock_file_name: formatted_time
+        }
+        testResultFileName = f"test_results.json"
+        testResults = {}
+        testResultFilePath = os.path.join(absolutePath, testResultFileName)
+        if os.path.exists(testResultFilePath):
+            with open(testResultFilePath, "r") as f:
+                testResults = json.load(f)
+        testResults[mock_file_name] = formatted_time
+        with open(testResultFilePath, "w") as f:
+            json.dump(testResults, f, indent=2)
 
 if __name__ == "__main__":
     asyncio.run(run_test())

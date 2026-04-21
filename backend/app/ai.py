@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.api.router import router
-from app.agent.runtime import agent_runtime_context
+from app.agent.core.runtime import agent_runtime_context
 from app.core.config import settings
 from app.utils.http import close_http_client
 

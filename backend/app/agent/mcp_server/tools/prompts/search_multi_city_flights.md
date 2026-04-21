@@ -17,7 +17,9 @@ Use this tool when a user is planning a trip that visits multiple destinations s
   - Example: `"best"`
 - `return_type` (Literal, optional): Which flights to return ('topFlights', 'otherFlights', or 'all'). Default is 'topFlights'.
   - Example: `"topFlights"`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 20 seconds.
+  - Example: `25`
 
 ## Returns
-- **Success**: Similar to regular flight search, returning `topFlights` and/or `otherFlights`, where the `flightItinerary` array spans the requested legs. Each flight option also contains a `bookingToken`, which is necessary for finalizing bookings. In some extended multi-city cases, a `nextToken` may also be provided on the root level to fetch further legs using the `get_next_flights` tool.
+- **Success**: Similar to regular flight search, returning `topFlights` and/or `otherFlights`, where the `flightItinerary` array spans the requested legs. Each flight option contains a `nextToken`. You MUST use this `nextToken` to fetch further legs using the `get_next_flights` tool. **DO NOT pass a `nextToken` to `get_flight_booking_details`, it will fail.** Repeat this process pulling the next leg with `get_next_flights` until you get a final leg with a `bookingToken`, which you then use to call `get_flight_booking_details`.
 - **Error**: A dictionary containing an `error` key.

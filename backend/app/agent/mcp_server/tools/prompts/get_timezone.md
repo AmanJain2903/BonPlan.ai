@@ -13,6 +13,8 @@ Use this tool when you know the coordinates of a location and need to determine 
   - Example: `2.3522`
 - `timestamp` (int, optional): An epoch time in seconds. If omitted, uses current time and skips returning offset details.
   - Example: `1700000000`
+- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 10 seconds.
+  - Example: `15`
 
 ## Returns
 - **Success**: A dictionary containing `timeZoneId`, `timeZoneName`, and (optionally) `dstOffset`, `rawOffset`, and `localDateTimeString`.
