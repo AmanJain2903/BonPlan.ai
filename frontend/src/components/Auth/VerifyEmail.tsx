@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { api } from '../../api';
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
@@ -25,7 +26,7 @@ export default function VerifyEmail() {
         setStatus('error');
         const detail =
           err && typeof err === 'object' && 'response' in err &&
-          typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === 'string'
+            typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === 'string'
             ? (err as { response: { data: { detail: string } } }).response.data.detail
             : 'Could not reach the server. Please try again.';
         setMessage(detail);
@@ -35,9 +36,14 @@ export default function VerifyEmail() {
   }, [token]);
 
   return (
-    <div className="min-h-screen bg-midnight flex items-center justify-center px-4 py-12 sm:py-24">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 sm:py-24">
       <div className="pointer-events-none fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-cyan/[0.03] blur-[120px]" />
-      <div className="relative w-full max-w-md text-center">
+      <motion.div
+        initial={{ opacity: 0, y: 30, filter: 'blur(8px)', willChange: 'transform, opacity, filter' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-md text-center"
+      >
         <Link to="/" className="inline-flex items-center gap-1.5 text-2xl font-bold text-white mb-8">
           <img src="/logo.png" alt="BonPlan.ai" className="h-15 w-15 object-contain" />
         </Link>
@@ -84,7 +90,7 @@ export default function VerifyEmail() {
             </>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

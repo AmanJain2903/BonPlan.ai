@@ -1,0 +1,369 @@
+{
+  "properties": {
+    "hasMultipleDestinations": {
+      "description": "Whether the trip has multiple destinations (more than 1) or not",
+      "type": "boolean"
+    },
+    "origin": {
+      "description": "The starting location of the trip",
+      "properties": {
+        "lat": {
+          "description": "Latitude of the location",
+          "maximum": 90,
+          "minimum": -90,
+          "type": "number"
+        },
+        "lng": {
+          "description": "Longitude of the location",
+          "maximum": 180,
+          "minimum": -180,
+          "type": "number"
+        },
+        "city": {
+          "description": "City name",
+          "type": "string"
+        },
+        "state": {
+          "description": "State name",
+          "type": "string"
+        },
+        "country": {
+          "description": "Country name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lat",
+        "lng"
+      ],
+      "type": "object"
+    },
+    "destinations": {
+      "description": "List of destinations to visit during the trip. Has single destination if hasMultipleDestinations is false",
+      "items": {
+        "properties": {
+          "lat": {
+            "description": "Latitude of the location",
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number"
+          },
+          "lng": {
+            "description": "Longitude of the location",
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number"
+          },
+          "city": {
+            "description": "City name",
+            "type": "string"
+          },
+          "state": {
+            "description": "State name",
+            "type": "string"
+          },
+          "country": {
+            "description": "Country name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "start_date": {
+      "description": "Start date of the trip object",
+      "properties": {
+        "day": {
+          "description": "Day of the month in origin timezone",
+          "maximum": 31,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "month": {
+          "description": "Month of the year in origin timezone",
+          "maximum": 12,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "year": {
+          "description": "Year in origin timezone",
+          "type": "integer"
+        },
+        "timezoneId": {
+          "description": "Timezone ID of origin",
+          "type": "string"
+        },
+        "utcTimestamp": {
+          "description": "UTC timestamp for the date time",
+          "type": "integer"
+        },
+        "utcTimeString": {
+          "description": "UTC time string for the date time",
+          "type": "string"
+        },
+        "localTimeString": {
+          "description": "Local time string in origin timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "day",
+        "month",
+        "year",
+        "timezoneId",
+        "utcTimestamp",
+        "utcTimeString",
+        "localTimeString"
+      ],
+      "type": "object"
+    },
+    "end_date": {
+      "description": "End date of the trip object",
+      "properties": {
+        "day": {
+          "description": "Day of the month in origin timezone",
+          "maximum": 31,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "month": {
+          "description": "Month of the year in origin timezone",
+          "maximum": 12,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "year": {
+          "description": "Year in origin timezone",
+          "type": "integer"
+        },
+        "timezoneId": {
+          "description": "Timezone ID of origin",
+          "type": "string"
+        },
+        "utcTimestamp": {
+          "description": "UTC timestamp for the date time",
+          "type": "integer"
+        },
+        "utcTimeString": {
+          "description": "UTC time string for the date time",
+          "type": "string"
+        },
+        "localTimeString": {
+          "description": "Local time string in origin timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "day",
+        "month",
+        "year",
+        "timezoneId",
+        "utcTimestamp",
+        "utcTimeString",
+        "localTimeString"
+      ],
+      "type": "object"
+    },
+    "pace": {
+      "description": "Pace of the trip (e.g. relaxed, medium, fast)",
+      "enum": [
+        "Deep Relax",
+        "Easygoing",
+        "Balanced",
+        "Active Explorer",
+        "Action Packed"
+      ],
+      "type": "string"
+    },
+    "budget": {
+      "description": "Budget scaling for the trip (e.g. budget, moderate, luxury)",
+      "enum": [
+        "Shoestring",
+        "Moderate",
+        "Comfortable",
+        "Premium",
+        "Luxury"
+      ],
+      "type": "string"
+    },
+    "adults": {
+      "description": "Number of adult travelers (12+ years old)",
+      "type": "integer"
+    },
+    "children": {
+      "description": "Number of children travelers (0-11 years old)",
+      "type": "integer"
+    },
+    "preferences": {
+      "description": "User's preferences for the specified trip",
+      "properties": {
+        "dietary_restrictions": {
+          "description": "List of dietary restrictions the user prefers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "accessibility_preferences": {
+          "description": "Accessibility preferences the user prefers",
+          "enum": [
+            "standard",
+            "wheelchair_accessible",
+            "wheelchair_strict",
+            "step_free_preferred"
+          ],
+          "type": "string"
+        },
+        "travel_preferences": {
+          "description": "Travel preferences the user prefers",
+          "properties": {
+            "travel_to_destination": {
+              "description": "Preffered travel mode to from origin to destination (e.g. own car, rental car, flight)",
+              "enum": [
+                "any",
+                "airplane",
+                "own_car",
+                "rental_car",
+                "cab",
+                "motorcycle"
+              ],
+              "type": "string"
+            },
+            "travel_around_destination": {
+              "description": "Preffered travel mode to travel around destination (e.g. public transport, car, walking)",
+              "enum": [
+                "any",
+                "public_transport",
+                "own_car",
+                "rental_car",
+                "cab",
+                "walking",
+                "cycling",
+                "motorcycle"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "travel_to_destination",
+            "travel_around_destination"
+          ],
+          "type": "object"
+        },
+        "schedule_rhythm": {
+          "description": "Schedule rhythm the user prefers",
+          "enum": [
+            "early_bird",
+            "standard",
+            "night_owl"
+          ],
+          "type": "string"
+        },
+        "activity_interests": {
+          "description": "List of activity interests the user prefers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "accommodation_style": {
+          "description": "Accommodation style the user prefers",
+          "enum": [
+            "hotel",
+            "hostel",
+            "lodge",
+            "any"
+          ],
+          "type": "string"
+        },
+        "dining_style": {
+          "description": "Dining style the user prefers",
+          "enum": [
+            "fast_casual_and_street_food",
+            "mid_range_sit_down",
+            "upscale_fine_dining",
+            "groceries_and_cooking",
+            "any"
+          ],
+          "type": "string"
+        },
+        "other_preferences": {
+          "description": "Other preferences the user prefers",
+          "properties": {
+            "pet_friendly": {
+              "description": "Does the user prefer pet friendly accommodations and activities?",
+              "type": "boolean"
+            },
+            "child_friendly": {
+              "description": "Does the user prefer child friendly accommodations and activities?",
+              "type": "boolean"
+            },
+            "toddler_friendly": {
+              "description": "Does the user prefer toddler friendly accommodations and activities?",
+              "type": "boolean"
+            },
+            "smoking_allowed": {
+              "description": "Does the user prefer smoking allowed accommodations and activities?",
+              "type": "boolean"
+            },
+            "alcohol_allowed": {
+              "description": "Does the user prefer alcohol allowed accommodations and activities?",
+              "type": "boolean"
+            },
+            "ev_charging_available": {
+              "description": "Does the user prefer EV charging available accommodations and activities?",
+              "type": "boolean"
+            },
+            "additional_notes": {
+              "description": "Additional notes for the trip given by the user",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pet_friendly",
+            "child_friendly",
+            "toddler_friendly",
+            "smoking_allowed",
+            "alcohol_allowed",
+            "ev_charging_available",
+            "additional_notes"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "dietary_restrictions",
+        "accessibility_preferences",
+        "travel_preferences",
+        "schedule_rhythm",
+        "activity_interests",
+        "accommodation_style",
+        "dining_style",
+        "other_preferences"
+      ],
+      "type": "object"
+    },
+    "textualContext": {
+      "description": "Textual context for the trip to plan",
+      "type": "string"
+    }
+  },
+  "required": [
+    "hasMultipleDestinations",
+    "origin",
+    "destinations",
+    "start_date",
+    "end_date",
+    "pace",
+    "budget",
+    "adults",
+    "children",
+    "preferences"
+  ],
+  "type": "object"
+}

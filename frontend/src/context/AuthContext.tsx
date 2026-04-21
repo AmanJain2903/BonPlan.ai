@@ -5,6 +5,7 @@ type UserInfo = {
   lastName: string;
   email: string;
   authProvider?: 'local' | 'google';
+  preferences?: any;
 };
 
 type AuthState = {
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       lastName: info?.lastName ?? '',
       email: info?.email ?? '',
       authProvider: info?.authProvider,
+      preferences: info?.preferences,
     };
     setUser(userInfo);
     const store = remember ? localStorage : sessionStorage;
@@ -61,6 +63,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       s.removeItem('token');
       s.removeItem(USER_KEY);
     }
+    // remove all the scroll positions
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith('scroll-pos-')) {
+        sessionStorage.removeItem(key); // Delete it!
+      }
+    });
   }, []);
 
   return (

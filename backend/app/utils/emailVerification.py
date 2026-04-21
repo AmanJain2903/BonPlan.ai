@@ -4,28 +4,32 @@
 This file contains the functions for email verification.
 """
 
-from app.core.config import settings
-from email.mime.text import MIMEText
+import asyncio
 import smtplib
-import jwt
-import os
+from email.mime.text import MIMEText
+
+from app.core.config import settings
 
 SMTP_LOGIN_EMAIL = settings.SENDER_EMAIL
 EMAIL_PASSWORD = settings.GMAIL_APP_PASSWORD
 
 DISPLAY_FROM = "BonPlan.ai <no-reply@bonplan.ai>"
 
-def send_email(to_email, subject, body):
+
+async def send_email(to_email, subject, body):
     msg = MIMEText(body, "html")
     msg["Subject"] = subject
     msg["From"] = DISPLAY_FROM
     msg["To"] = to_email
 
-    try:
+    def _blocking_send():
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SMTP_LOGIN_EMAIL, EMAIL_PASSWORD)
             server.sendmail(SMTP_LOGIN_EMAIL, to_email, msg.as_string())
-        print("✅ Email sent successfully")
+
+    try:
+        await asyncio.to_thread(_blocking_send)
+        print("Email sent successfully")
     except Exception as e:
-        print(f"❌ Failed to send email: {e}")
-        raise e
+        print(f"Failed to send email: {e}")
+        raise

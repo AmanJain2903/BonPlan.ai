@@ -6,6 +6,7 @@ This file contains the models for the users table.
 
 from sqlalchemy import Column, Index, String, DateTime, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
 from app.database.database import Base
 from sqlalchemy.sql import func
 import uuid
@@ -21,6 +22,7 @@ class User(Base):
     password_hash = Column(String, nullable=True)
     auth_provider = Column(String, nullable=False, default='local')
     is_verified = Column(Boolean, nullable=False, default=False)
+    is_new_user = Column(Boolean, nullable=False, default=True)
     preferences = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -33,3 +35,6 @@ class User(Base):
             unique=True,
         ),
     )
+
+    trip_memberships = relationship("TripMember", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    owned_trips = relationship("Trip", back_populates="owner", cascade="all, delete-orphan", lazy="selectin")

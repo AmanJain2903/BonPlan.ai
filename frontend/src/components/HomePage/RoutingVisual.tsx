@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plane, MapPin, Utensils, Dices, Coffee } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const nodes = [
   { icon: Plane, label: 'Flight From SFO', time: '12:00 PM', anchor: true },
@@ -29,7 +30,13 @@ export default function RoutingVisual() {
   }, []);
 
   return (
-    <div className="relative rounded-2xl border border-white/[0.06] bg-carbon/60 backdrop-blur-sm p-6 sm:p-8 overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.8, clipPath: 'inset(10% 30% 10% 30% round 16px)', filter: 'blur(8px)', willChange: 'transform, opacity, filter, clip-path' }}
+      whileInView={{ opacity: 1, scale: 1, clipPath: 'inset(0% 0% 0% 0% round 16px)', filter: 'blur(0px)' }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+      className="relative rounded-2xl border border-white/[0.06] bg-carbon/40 p-6 sm:p-8 overflow-hidden"
+    >
       {/* Scanning beam */}
       <div
         className="pointer-events-none absolute top-0 bottom-0 w-24 z-10 transition-none"
@@ -55,7 +62,7 @@ export default function RoutingVisual() {
       </div>
 
       {/* Timeline nodes */}
-      <div className="relative z-20 overflow-x-auto pt-6 pb-6 px-6 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="relative z-20 overflow-x-auto pt-8 pb-2 px-6 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex items-center" style={{ minWidth: `${nodes.length * 120}px` }}>
           {nodes.map((node, i) => {
             const isActive = i === activeIndex;
@@ -79,9 +86,8 @@ export default function RoutingVisual() {
                   >
                     <node.icon
                       size={18}
-                      className={`transition-colors duration-500 ${
-                        node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/40'
-                      }`}
+                      className={`transition-colors duration-500 ${node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/40'
+                        }`}
                     />
                     {node.anchor && (
                       <span className="absolute -top-1 -right-1 flex h-3 w-3">
@@ -96,9 +102,8 @@ export default function RoutingVisual() {
                     )}
                   </div>
                   <div className="text-center w-full">
-                    <p className={`text-[10px] sm:text-xs font-medium truncate transition-colors duration-500 ${
-                      node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/60'
-                    }`}>
+                    <p className={`text-[10px] sm:text-xs font-medium truncate transition-colors duration-500 ${node.anchor || isActive || isPassed ? 'text-cyan' : 'text-white/60'
+                      }`}>
                       {node.label}
                     </p>
                     <p className="text-[9px] sm:text-[10px] text-white/30 tabular-nums">{node.time}</p>
@@ -127,14 +132,10 @@ export default function RoutingVisual() {
           <span className="h-1.5 w-1.5 rounded-full bg-cyan/60" />
           Smart Anchor
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-white/20" />
-          AI Generated
-        </span>
         <span className="ml-auto tabular-nums text-white/20 hidden sm:inline">
           Transit verified via <span className="text-cyan/40">Google Maps API</span>
         </span>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Check, X as XIcon, Trash2, Lock } from 'lucide-react';
 import { api } from '../../api';
@@ -88,16 +88,16 @@ export default function SettingsPanel() {
     'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all duration-200';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-7xl">
       {/* Change Password */}
-      <section className={`flex flex-col ${isGoogle ? 'opacity-50 pointer-events-none select-none' : ''}`}>
+      <section className={`flex flex-col ${isGoogle ? 'pointer-events-none select-none' : ''}`}>
         <div className="flex items-center gap-3 mb-6">
           <div className="h-9 w-9 rounded-lg bg-cyan/10 flex items-center justify-center">
             <Lock size={18} className="text-cyan" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">Change Password</h2>
-            <p className="text-xs text-white/40">
+            <h2 className="text-lg font-extrabold text-white">Change Password</h2>
+            <p className="text-xs text-white/75">
               {isGoogle
                 ? 'Password management is handled by Google for your account'
                 : 'Update your password to keep your account secure'}
@@ -106,7 +106,7 @@ export default function SettingsPanel() {
         </div>
 
         {isGoogle && (
-          <div className="flex-1 rounded-2xl border border-white/[0.06] bg-carbon/30 p-6 flex items-center justify-center min-h-[200px]">
+          <div className="flex-1 rounded-2xl border border-white/[0.06] p-6 flex items-center justify-center min-h-[200px] bg-carbon/40 backdrop-blur-sm">
             <p className="text-sm text-white/30 text-center">
               You signed in with Google. Password change is not available.
             </p>
@@ -119,7 +119,7 @@ export default function SettingsPanel() {
           </div>
         )}
 
-        {!isGoogle && <form onSubmit={handleChangePassword} className="flex-1 rounded-2xl border border-white/[0.06] bg-carbon/30 p-6 space-y-5">
+        {!isGoogle && <form onSubmit={handleChangePassword} className="flex-1 rounded-2xl border border-white/[0.06] p-6 space-y-5 bg-carbon/40 backdrop-blur-sm">
           {/* Current password */}
           <div>
             <label className="block text-xs font-medium text-white/40 mb-1.5">Current password</label>
@@ -173,11 +173,10 @@ export default function SettingsPanel() {
                 value={pwForm.confirm}
                 onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
                 placeholder="Re-enter new password"
-                className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${
-                  passwordMismatch
-                    ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                    : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
-                }`}
+                className={`w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 pr-10 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 ${passwordMismatch
+                  ? 'border-red-400/50 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                  : 'border-white/10 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20'
+                  }`}
               />
               <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan/80 hover:text-cyan transition-colors cursor-pointer">
                 {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -210,12 +209,12 @@ export default function SettingsPanel() {
             <Trash2 size={18} className="text-red-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">Delete Account</h2>
-            <p className="text-xs text-white/40">Permanently remove your account and all associated data</p>
+            <h2 className="text-lg font-extrabold text-white">Delete Account</h2>
+            <p className="text-xs text-white/75">Permanently remove your account and all associated data</p>
           </div>
         </div>
 
-        <div className="flex-1 rounded-2xl border border-red-400/10 bg-red-400/[0.02] p-6">
+        <div className="flex-1 rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-sm p-6">
           <p className="text-sm text-white/50 mb-5">
             Once you delete your account, all your trips, preferences, and personal data will be permanently erased. This action cannot be undone.
           </p>

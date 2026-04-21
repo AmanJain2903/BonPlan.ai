@@ -8,6 +8,7 @@ import {
   Radio,
   SlidersHorizontal,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { ComponentType } from 'react';
 import type { LucideProps } from 'lucide-react';
 import {
@@ -27,63 +28,63 @@ const features: {
   description: string;
   Visual: ComponentType;
 }[] = [
-  {
-    icon: Lock,
-    title: 'Unbreakable Smart Anchors',
-    description:
-      'Feed the AI your pre-booked flights, non-refundable dinner reservations, or scheduled tours. BonPlan locks these anchors in place as immutable constraints — the AI is strictly prohibited from modifying or deleting them. It intelligently routes the rest of your trip around them, ensuring zero logistical conflicts and accounting for real-world friction like transit, baggage claim, and check-in times.',
-    Visual: AnchorsVisual,
-  },
-  {
-    icon: RefreshCw,
-    title: 'Dynamic Auto-Shuffling',
-    description:
-      'Travel plans change. Using an intuitive drag-and-drop timeline, extend, move, or remove any activity and the AI will instantly reshuffle the rest of the day to make the new schedule fit. The time changes are cascaded to subsequent events, transit buffers are recalculated, and the ripple effect is halted right before it collides with any Smart Anchor — prompting you to compress or drop the lowest-priority event.',
-    Visual: ShuffleVisual,
-  },
-  {
-    icon: Crosshair,
-    title: 'Surgical Activity Swaps',
-    description:
-      "Don't like a specific museum suggestion? Highlight that single activity and ask the AI to swap it out for a food tour. The agentic loop isolates that exact time window, checks the geographical distance to surrounding events, queries external APIs for a replacement that fits the precise temporal and spatial boundaries, and patches it in — leaving the rest of your meticulously planned day completely untouched.",
-    Visual: SwapVisual,
-  },
-  {
-    icon: SlidersHorizontal,
-    title: 'Customized Pacing',
-    description:
-      'Whether you want an aggressively efficient sightseeing blitz, a relaxed vacation with long coffee breaks, or a mix of both — set your Pacing Preference and the AI adapts. It directly controls the minimum rest intervals injected between scheduled events, optimizing travel routes and activity density to match your exact desired rhythm. From "Action-Packed" to "Leisurely," every itinerary feels personally calibrated.',
-    Visual: PacingVisual,
-  },
-  {
-    icon: Users,
-    title: 'Multiplayer Collaborative Mode',
-    description:
-      'Planning a group trip is no longer a headache of endless group chat messages and conflicting opinions. Generate a shareable link, invite friends or family to the live canvas, and let them vote on AI-generated activities. The itinerary dynamically updates based on group consensus. Assign Owner, Editor, or Viewer roles so nobody accidentally drags and wrecks the timeline — and even create Split Events for subgroups who want to do different things at the same time.',
-    Visual: MultiplayerVisual,
-  },
-  {
-    icon: MessageSquare,
-    title: 'Conversational Context',
-    description:
-      'Speak to BonPlan exactly how you would speak to a human travel agent. Just describe your vibe — "I\'m going to Tokyo for 5 days, I know nothing, make it a mix of big tourist spots and chill evenings" — and the AI tailors the recommendations to perfectly match the context. No forms, no dropdowns. Your words shape the entire itinerary, including dietary restrictions, accessibility needs, and budget constraints.',
-    Visual: ConversationalVisual,
-  },
-  {
-    icon: Map,
-    title: 'Real-World Grounded',
-    description:
-      'An AI is only as smart as the reality it understands. BonPlan is directly wired into Google Maps, Google Places, and live travel databases. Every recommendation is verified for exact walking, driving, and transit times. Every restaurant is checked for real operating hours. Every landmark is confirmed open on the day you plan to visit. No hallucinations, no "confidently wrong" suggestions — just schedules that are physically executable.',
-    Visual: MapVisual,
-  },
-  {
-    icon: Radio,
-    title: 'Real-Time Travel Concierge',
-    description:
-      "BonPlan doesn't stop working when the itinerary is finalized. Throughout your journey, the agent acts as your live companion — providing a morning summary of today's schedule and weather, real-time traffic routing to your next stop, and instant contingency plans for last-minute disruptions. If your Smart Anchor flight is suddenly delayed by 3 hours, the concierge sends a push notification offering to automatically compress your day to absorb the lost time.",
-    Visual: ConciergeVisual,
-  },
-];
+    {
+      icon: Lock,
+      title: 'Unbreakable Smart Anchors',
+      description:
+        'Feed the AI your pre-booked flights, non-refundable dinner reservations, or scheduled tours. BonPlan locks these anchors in place as immutable constraints — the AI is strictly prohibited from modifying or deleting them. It intelligently routes the rest of your trip around them, ensuring zero logistical conflicts and accounting for real-world friction like transit, baggage claim, and check-in times.',
+      Visual: AnchorsVisual,
+    },
+    {
+      icon: RefreshCw,
+      title: 'Dynamic Auto-Shuffling',
+      description:
+        'Travel plans change. Using an intuitive drag-and-drop timeline, extend, move, or remove any activity and the AI will instantly reshuffle the rest of the day to make the new schedule fit. The time changes are cascaded to subsequent events, transit buffers are recalculated, and the ripple effect is halted right before it collides with any Smart Anchor — prompting you to compress or drop the lowest-priority event.',
+      Visual: ShuffleVisual,
+    },
+    {
+      icon: Crosshair,
+      title: 'Surgical Activity Swaps',
+      description:
+        "Don't like a specific museum suggestion? Highlight that single activity and ask the AI to swap it out for a food tour. The agentic loop isolates that exact time window, checks the geographical distance to surrounding events, queries external APIs for a replacement that fits the precise temporal and spatial boundaries, and patches it in — leaving the rest of your meticulously planned day completely untouched.",
+      Visual: SwapVisual,
+    },
+    {
+      icon: SlidersHorizontal,
+      title: 'Customized Pacing',
+      description:
+        'Whether you want an aggressively efficient sightseeing blitz, a relaxed vacation with long coffee breaks, or a mix of both — set your Pacing Preference and the AI adapts. It directly controls the minimum rest intervals injected between scheduled events, optimizing travel routes and activity density to match your exact desired rhythm. From "Action-Packed" to "Leisurely," every itinerary feels personally calibrated.',
+      Visual: PacingVisual,
+    },
+    {
+      icon: Users,
+      title: 'Multiplayer Collaborative Mode',
+      description:
+        'Planning a group trip is no longer a headache of endless group chat messages and conflicting opinions. Generate a shareable link, invite friends or family to the live canvas, and let them vote on AI-generated activities. The itinerary dynamically updates based on group consensus. Assign Owner, Editor, or Viewer roles so nobody accidentally drags and wrecks the timeline — and even create Split Events for subgroups who want to do different things at the same time.',
+      Visual: MultiplayerVisual,
+    },
+    {
+      icon: MessageSquare,
+      title: 'Conversational Context',
+      description:
+        'Speak to BonPlan exactly how you would speak to a human travel agent. Just describe your vibe — "I\'m going to Tokyo for 5 days, I know nothing, make it a mix of big tourist spots and chill evenings" — and the AI tailors the recommendations to perfectly match the context. No forms, no dropdowns. Your words shape the entire itinerary, including dietary restrictions, accessibility needs, and budget constraints.',
+      Visual: ConversationalVisual,
+    },
+    {
+      icon: Map,
+      title: 'Real-World Grounded',
+      description:
+        'An AI is only as smart as the reality it understands. BonPlan is directly wired into Google Maps, Google Places, and live travel databases. Every recommendation is verified for exact walking, driving, and transit times. Every restaurant is checked for real operating hours. Every landmark is confirmed open on the day you plan to visit. No hallucinations, no "confidently wrong" suggestions — just schedules that are physically executable.',
+      Visual: MapVisual,
+    },
+    {
+      icon: Radio,
+      title: 'Real-Time Travel Concierge',
+      description:
+        "BonPlan doesn't stop working when the itinerary is finalized. Throughout your journey, the agent acts as your live companion — providing a morning summary of today's schedule and weather, real-time traffic routing to your next stop, and instant contingency plans for last-minute disruptions. If your Smart Anchor flight is suddenly delayed by 3 hours, the concierge sends a push notification offering to automatically compress your day to absorb the lost time.",
+      Visual: ConciergeVisual,
+    },
+  ];
 
 export default function Features() {
   return (
@@ -108,7 +109,13 @@ export default function Features() {
             const isEven = i % 2 === 0;
 
             return (
-              <div key={feature.title}>
+              <motion.div
+                key={feature.title}
+                initial={{ opacity: 0, x: isEven ? -50 : 50, filter: 'blur(4px)', willChange: 'transform, opacity, filter' }}
+                whileInView={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+              >
                 {/* Divider line */}
                 {i > 0 && (
                   <div className="h-px bg-gradient-to-r from-white/10 via-cyan to-white/10" />
@@ -138,7 +145,7 @@ export default function Features() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
 

@@ -131,23 +131,21 @@ export default function ProfilePanel() {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-7xl">
       {message && (
-        <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${
-          status === 'success' ? 'text-cyan bg-cyan/5 border border-cyan/20' : 'text-red-400 bg-red-400/5 border border-red-400/20'
-        }`}>
+        <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${status === 'success' ? 'text-cyan bg-cyan/5 border border-cyan/20' : 'text-red-400 bg-red-400/5 border border-red-400/20'
+          }`}>
           {message}
         </div>
       )}
 
-      <form onSubmit={handleSave} className="rounded-2xl border border-white/[0.06] bg-carbon/30 p-6 sm:p-8 space-y-6">
+      <form onSubmit={handleSave} className="rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-sm p-6 sm:p-8 space-y-6">
         {/* Header row: badge + edit button */}
         <div className="flex items-center justify-between">
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-            form.authProvider === 'google'
-              ? 'bg-blue-400/10 text-blue-400 border border-blue-400/20'
-              : 'bg-cyan/10 text-cyan border border-cyan/20'
-          }`}>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${form.authProvider === 'google'
+            ? 'bg-blue-400/10 text-blue-400 border border-blue-400/20'
+            : 'bg-cyan/10 text-cyan border border-cyan/20'
+            }`}>
             <span className={`h-1.5 w-1.5 rounded-full ${form.authProvider === 'google' ? 'bg-blue-400' : 'bg-cyan'}`} />
             {form.authProvider === 'google' ? 'Google Account' : 'Local Account'}
           </span>
