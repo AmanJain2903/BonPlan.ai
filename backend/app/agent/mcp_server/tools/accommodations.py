@@ -8,7 +8,7 @@ from app.agent.mcp_server.tools._errors import tool_error
 import math
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
-from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 
 rapid_api_key = settings.RAPID_API_KEY
 
@@ -193,7 +193,7 @@ async def get_hotel_booking_url(hotel_id: Annotated[str, Field(description="The 
     }
     if children:
         params["children"] = ",".join(str(child) for child in children)
-    cache_key = generate_cache_key("get_hotel_booking_url", params)
+    cache_key = await generate_cache_key("get_hotel_booking_url", params)
     cache_value = await retrieve_api_cache(cache_key, expires_in=7)
     if cache_value:
         return {

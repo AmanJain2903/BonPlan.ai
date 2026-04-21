@@ -10,7 +10,7 @@ import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
-api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
+api_key = settings.GOOGLE_MAPS_API_KEY
 
 async def get_current_timestamp() -> Dict:
     try:

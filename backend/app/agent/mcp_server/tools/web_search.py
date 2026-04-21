@@ -5,7 +5,7 @@ import pathlib
 from app.agent.mcp_server.tools.constants import WebSearchSites, SERPER_CONTENT_PARSER_PROMPT
 from app.core.config import settings
 from app.utils.http import get_http_client
-from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 from app.agent.mcp_server.tools._errors import tool_error
 from google import genai
 import httpx
@@ -75,7 +75,7 @@ async def pre_process_content(content):
 # Get content from URL using Jina and pre-process the content using Gemini API
 async def get_content_from_url(url: Annotated[str, Field(description="The URL to get the content from.")],
                                timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_content_from_url'])]) -> Dict:
-    cache_key = generate_cache_key("get_content", {"url": url})
+    cache_key = await generate_cache_key("get_content", {"url": url})
     cache_value = await retrieve_api_cache(cache_key, expires_in=7)
     if cache_value:
         return cache_value

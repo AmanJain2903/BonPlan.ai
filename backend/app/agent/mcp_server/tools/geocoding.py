@@ -4,13 +4,13 @@ from app.core.config import settings
 from app.utils.http import get_http_client
 from app.agent.mcp_server.tools._errors import tool_error
 import pathlib
-from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 import math
 import itertools
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
-api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
+api_key = settings.GOOGLE_MAPS_API_KEY
 
 class Location(BaseModel):
     addressOrName: Annotated[str, Field(description="The address or name of the location.")]
@@ -42,7 +42,7 @@ async def get_coordinates(address: Annotated[str, Field(description="The formal 
             fix_hint="Retry with a non-empty address or city name.",
         )
 
-    cache_key = generate_cache_key("get_coordinates", {"address": address.lower().strip()})
+    cache_key = await generate_cache_key("get_coordinates", {"address": address.lower().strip()})
     cache_value = await retrieve_api_cache(cache_key, expires_in=31)
 
     url = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -117,7 +117,7 @@ async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description
             fix_hint="Retry with both lat and lng as floats. Use 0.0 explicitly if the coordinate really is zero.",
         )
 
-    cache_key = generate_cache_key("get_address", {"lat": lat, "lng": lng})
+    cache_key = await generate_cache_key("get_address", {"lat": lat, "lng": lng})
     cache_value = await retrieve_api_cache(cache_key, expires_in=31)
 
     url = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -211,7 +211,7 @@ async def get_optimal_route(origin: Annotated[Location, Field(description="The o
             destination.lat = destinationCoordinates.get("lat")
             destination.lng = destinationCoordinates.get("lng")
 
-    cache_key = generate_cache_key("get_optimal_route", {"origin": origin.model_dump(), "destinations": [destination.model_dump() for destination in destinations]})
+    cache_key = await generate_cache_key("get_optimal_route", {"origin": origin.model_dump(), "destinations": [destination.model_dump() for destination in destinations]})
     cache_value = await retrieve_api_cache(cache_key, expires_in=31)
     if cache_value:
         return cache_value
