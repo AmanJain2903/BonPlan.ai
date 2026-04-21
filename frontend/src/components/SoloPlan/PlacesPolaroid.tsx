@@ -1,6 +1,5 @@
 import { ItineraryDay } from './types';
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../api';
 import { FALLBACK_IMAGE } from '../../apis/config';
@@ -150,17 +149,6 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
   const currentImageIndex = imageIndices[placeIndex] || 0;
   const currentImage = currentPlaceImages[currentImageIndex];
   const currentName = filteredPlacesRef.current[placeIndex]?.placeName || '';
-  const hasMultiplePlaces = allImages.length > 1;
-
-  // Navigation
-  const handlePrev = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPlaceIndex((prev) => (prev - 1 + allImages.length) % allImages.length);
-  };
-  const handleNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPlaceIndex((prev) => (prev + 1) % allImages.length);
-  };
 
   // Auto-rotate: image every 3s, place every 6s
   useEffect(() => {
@@ -273,45 +261,9 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
             <p className="text-white font-bold text-lg sm:text-xl tracking-wide drop-shadow-md truncate group-hover/card:text-cyan transition-colors">
               {currentName.split(',')[0]}
             </p>
-            {hasMultiplePlaces && (
-              <span className="text-cyan text-[10px] font-bold uppercase tracking-wider opacity-80 drop-shadow-sm block">
-                + {allImages.length - 1} more places
-              </span>
-            )}
           </motion.div>
         </AnimatePresence>
       </div>
-
-      {/* Navigation Arrows */}
-      {!loading && hasMultiplePlaces && (
-        <>
-          <button
-            onClick={handlePrev}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/80 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 hover:text-white transition-all cursor-pointer z-10"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button
-            onClick={handleNext}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/80 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 hover:text-white transition-all cursor-pointer z-10"
-          >
-            <ChevronRight size={16} />
-          </button>
-
-          {/* Pagination dots */}
-          <div className="absolute top-3 left-0 right-0 flex justify-center gap-1.5 z-10 pointer-events-none">
-            {allImages.map((_, i) => (
-              <div
-                key={i}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === placeIndex
-                  ? 'bg-cyan scale-125 shadow-[0_0_8px_rgba(102,252,241,0.6)]'
-                  : 'bg-white/30'
-                  }`}
-              />
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }
