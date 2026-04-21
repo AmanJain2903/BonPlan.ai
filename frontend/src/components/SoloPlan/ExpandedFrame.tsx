@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import PlacesPolaroid from './PlacesPolaroid';
 import {
   Calendar,
   Activity,
@@ -79,12 +80,15 @@ export default function ExpandedFrame({
         transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
         className={`relative w-full h-full rounded-3xl backdrop-blur-md overflow-hidden flex flex-col ${frameClass}`}
       >
+        {/* Ambient background polaroid — rotates through the day's place images */}
+        <PlacesPolaroid day={day} variant="background" />
+
         {day.isLoading && !day.hasError && (
           <motion.div
             aria-hidden
             animate={{ opacity: [0.15, 0.45, 0.15] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute inset-0 bg-gradient-to-br from-cyan/15 via-transparent to-cyan/15 blur-sm pointer-events-none z-0"
+            className="absolute inset-0 bg-gradient-to-br from-cyan/15 via-transparent to-cyan/15 blur-sm pointer-events-none z-[1]"
           />
         )}
 

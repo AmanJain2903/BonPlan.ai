@@ -8,7 +8,7 @@ import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
-api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
+api_key = settings.GOOGLE_MAPS_API_KEY
 
 # Air Quality API
 async def get_current_air_quality(lat: Annotated[float, Field(ge=-90.0, le=90.0, description="The precise latitude of the location as a float.")],

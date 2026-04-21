@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # Google Cloud Platform settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
-    GOOGLE_MAPS_API_KEY_UNRESTRICTED: str = os.getenv("GOOGLE_MAPS_API_KEY_UNRESTRICTED")
+    GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY")
 
     # Gemini API Keys
     SERPER_CONTENT_PARSER_API_KEY: str = os.getenv("SERPER_CONTENT_PARSER_API_KEY")
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD")
 
     # Fallbacks
-    FALLBACK_IMAGE: str = os.getenv("FALLBACK_IMAGE", "https://unsplash.com/photos/airplanes-window-view-of-sky-during-golden-hour-oCdVtGFeDC0")
+    FALLBACK_IMAGE: str = os.getenv("FALLBACK_IMAGE", "https://images.unsplash.com/photo-1488085061387-422e29b40080?q=80&w=3131&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
 
 
     @property

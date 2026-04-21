@@ -5,11 +5,11 @@ from app.utils.http import get_http_client
 from app.agent.mcp_server.tools.constants import GoogleFieldMasks, GooglePlaceType
 from app.agent.mcp_server.tools._errors import tool_error
 import pathlib
-from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
-api_key = settings.GOOGLE_MAPS_API_KEY_UNRESTRICTED
+api_key = settings.GOOGLE_MAPS_API_KEY
 
 # Full set of valid Google Places API v1 primary types, resolved once at
 # module load from the `GooglePlaceType` Literal in `constants.py`. Kept as
@@ -68,7 +68,7 @@ async def search_places(query: Annotated[str, Field(description="The general or 
             fix_hint="This is a server-side configuration issue — do not retry.",
         )
 
-    cache_key = generate_cache_key("search_places", {"query": query.lower().strip(), "max_results": max_results, "next_page_token": next_page_token})
+    cache_key = await generate_cache_key("search_places", {"query": query.lower().strip(), "max_results": max_results, "next_page_token": next_page_token})
     cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     
     url = "https://places.googleapis.com/v1/places:searchText"
@@ -236,7 +236,7 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
             "valid_types_sample": _PLACE_TYPE_SAMPLE,
         }
 
-    cache_key = generate_cache_key("search_places_nearby", {"lat": lat, "lng": lng, "included_types": included_types, "radius": radius, "max_results": max_results, "rank_preference": rank_preference, "excluded_types": excluded_types})
+    cache_key = await generate_cache_key("search_places_nearby", {"lat": lat, "lng": lng, "included_types": included_types, "radius": radius, "max_results": max_results, "rank_preference": rank_preference, "excluded_types": excluded_types})
     cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     
     url = "https://places.googleapis.com/v1/places:searchNearby"
@@ -384,7 +384,7 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
             fix_hint="This is a server-side configuration issue — do not retry.",
         )
 
-    cache_key = generate_cache_key("get_place_info", {"place_id": place_id})
+    cache_key = await generate_cache_key("get_place_info", {"place_id": place_id})
     cache_value = await retrieve_api_cache(cache_key, expires_in=1)
     
     url = f"https://places.googleapis.com/v1/places/{place_id}"

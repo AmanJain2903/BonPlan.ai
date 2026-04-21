@@ -4,7 +4,7 @@ import pathlib
 from app.agent.mcp_server.tools.constants import WebSearchSites, SERPER_CONTENT_PARSER_PROMPT
 from app.core.config import settings
 from app.utils.http import get_http_client
-from app.agent.mcp_server.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 from app.agent.mcp_server.tools.timezone import convert_target_local_time_to_utc, get_timezone
 from app.agent.mcp_server.tools.geocoding import get_coordinates
 from app.agent.mcp_server.tools._errors import tool_error
@@ -112,13 +112,13 @@ async def format_flight_data(data: Dict, flight_type: str) -> Dict:
         "flight_type": flight_type
     }
     if data.get("booking_token", None):
-        cache_key = generate_cache_key("booking_token", {"booking_token": data.get("booking_token", None)})
+        cache_key = await generate_cache_key("booking_token", {"booking_token": data.get("booking_token", None)})
         cache_value = await retrieve_api_cache(cache_key, expires_in=365)
         if not cache_value:
             await insert_api_cache(cache_key, {"booking_token": data.get("booking_token", None)})
         returnData["bookingToken"] = cache_key
     if data.get("next_token", None):
-        cache_key = generate_cache_key("next_token", {"next_token": data.get("next_token", None)})
+        cache_key = await generate_cache_key("next_token", {"next_token": data.get("next_token", None)})
         cache_value = await retrieve_api_cache(cache_key, expires_in=365)
         if not cache_value:
             await insert_api_cache(cache_key, {"next_token": data.get("next_token", None)})
@@ -183,7 +183,7 @@ async def get_country_code(country_name: Annotated[str, Field(description="The n
         "x-rapidapi-host": "google-flights2.p.rapidapi.com",
         "x-rapidapi-key": rapid_api_key
     }
-    cache_key = generate_cache_key("get_country_code", {"type": "all_codes"})
+    cache_key = await generate_cache_key("get_country_code", {"type": "all_codes"})
     cache_value = await retrieve_api_cache(cache_key, expires_in=365)
     if cache_value:
         country_codes = cache_value
@@ -254,7 +254,7 @@ async def get_airports_and_codes(query: Annotated[str, Field(description="The qu
     }
     if country_code:
         params["country_code"] = country_code
-    cache_key = generate_cache_key("get_airports_and_codes", params)
+    cache_key = await generate_cache_key("get_airports_and_codes", params)
     cache_value = await retrieve_api_cache(cache_key, expires_in=365)
     if cache_value:
         return cache_value
@@ -551,7 +551,7 @@ async def get_flight_booking_details(booking_token: Annotated[str, Field(descrip
             )
         packages = []
         for package in data.get("data", []):
-            cache_key = generate_cache_key("token", {"token": package.get("token", None)})
+            cache_key = await generate_cache_key("token", {"token": package.get("token", None)})
             await insert_api_cache(cache_key, {"token": package.get("token", None)})
             token = cache_key
             packages.append({
@@ -611,7 +611,7 @@ async def get_flight_booking_url(token: Annotated[str, Field(description="The to
     params = {
         "token": token
     }
-    cache_key = generate_cache_key("get_flight_booking_url", params)
+    cache_key = await generate_cache_key("get_flight_booking_url", params)
     cache_value = await retrieve_api_cache(cache_key, expires_in=365)
     if cache_value:
         return {

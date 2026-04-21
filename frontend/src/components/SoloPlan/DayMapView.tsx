@@ -135,7 +135,7 @@ const MODE_COLOR: Record<string, string> = {
   BICYCLE: '#a855f7',
   TWO_WHEELER: '#e11d48',
   FLIGHT: '#6366f1',
-  None: 'transparent',
+  None: '#00d0f0ff',
 };
 
 // ─── Marker Icon SVG Builder ──────────────────────────────────
@@ -239,7 +239,7 @@ const TRAVEL_GLYPH: Record<string, string> = {
     'M5.5 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M18.5 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M12 17V8l-3 3 M12 8h3l2.5 6',
   FLIGHT:
     'M6.36 17.4 4 17l-2-4 1.1-.55a2 2 0 0 1 1.8 0l.17.1a2 2 0 0 0 1.8 0L8 12 5 6l.9-.45a2 2 0 0 1 2.09.2l4.02 3a2 2 0 0 0 2.1.2l4.19-2.06a2.41 2.41 0 0 1 1.73-.17L21 7a1.4 1.4 0 0 1 .87 1.99l-.38.76c-.23.46-.6.84-1.07 1.08L7.58 17.2a2 2 0 0 1-1.22.18Z',
-  None: 'M 0 0',
+  None: 'M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z',
 };
 
 function makeTravelMarkerIcon(travelMode: string): { url: string; size: number } {
@@ -759,10 +759,10 @@ export default function DayMapViewBody({
     const arrowIcon = {
       path: maps.SymbolPath?.FORWARD_CLOSED_ARROW || 0,
       scale: 3.5,
-      strokeColor: 'red',
+      strokeColor: '#013d38ff',
       strokeWeight: 1.5,
       strokeOpacity: 0.7,
-      fillColor: 'red',
+      fillColor: '#00d0f0ff',
       fillOpacity: 0.5,
     };
 
