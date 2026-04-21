@@ -1,6 +1,6 @@
-__pycache__/
 .env
 .bonplan/
+.vscode/
 
 # Logs
 logs

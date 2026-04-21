@@ -561,11 +561,14 @@ async def generate_trip_itinerary(
 
                 # Remote Tool Execution via MCP
                 try:
-                    mcp_result = await asyncio.wait_for(session.call_tool(fc.name, fc.args))
+                    mcp_result = await asyncio.wait_for(session.call_tool(fc.name, fc.args), timeout=60)
                     output = "".join(
                         [c.text for c in mcp_result.content if hasattr(c, "text")]
                     ) or "Task completed."
                     result = {"output": output}
+                except asyncio.TimeoutError:
+                    print(f"[SOLO_PLANNER] Timeout executing tool: {fc.name}", flush=True)
+                    result = {"error": f"Tool {fc.name} timed out after 60 seconds."}
                 except asyncio.CancelledError:
                     print(
                         f"[SOLO_PLANNER] Aborting in-flight tool: {fc.name}",
