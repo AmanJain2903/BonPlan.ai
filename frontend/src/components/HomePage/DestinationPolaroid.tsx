@@ -34,7 +34,7 @@ export default function DestinationPolaroid({
             if (name === 'Unknown Destination') return [];
             // Use the new plural API to get multiple images
             const urls = await api.places.getDestinationImagesByName(name, 10, 1.5);
-            return urls && urls.length > 0 ? urls : [];
+            return urls.length > 0 ? urls : [];
           })
         );
         if (mounted) {

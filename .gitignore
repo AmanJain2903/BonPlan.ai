@@ -27,4 +27,8 @@ dist-ssr
 *.sln
 *.sw?
 
-.claudeignore
+# Claude Code
+.claude/
+
+# Test Results
+backend/app/agent/test/results/

@@ -18,3 +18,6 @@ ddgs==9.13.0
 fake-useragent==2.2.0
 google-genai==1.70.0
 openai==2.31.0
+langgraph==0.4.1
+langgraph-checkpoint-postgres==2.0.22
+pillow==12.2.0

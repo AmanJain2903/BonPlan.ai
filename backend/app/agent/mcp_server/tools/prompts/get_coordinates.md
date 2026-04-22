@@ -1,17 +1,13 @@
 # get_coordinates
 
-## Purpose
-Converts a formal physical address or general city name into its distinct latitude and longitude geographical coordinates using the Google Geocoding API.
+Geocode an address or place name to `(lat, lng, place_id)`.
 
-## When to use
-Use this tool whenever a user provides a location name, and you need numerical coordinates (latitude, longitude) to use other location-based tools (like weather, places nearby, etc.).
+### When to use
+- You have a free-form location string and need numeric coordinates or a Google `place_id` to feed into another tool (weather, nearby search, routing).
 
-## Arguments
-- `address` (str): The address or city to geocode.
-  - Example: `"1600 Amphitheatre Parkway, Mountain View, CA"` or `"Paris, France"`
-- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 5 seconds.
-  - Example: `10`
+### Arguments
+- **`address`** (str, required): Street address, landmark, or city/region — e.g. `"Paris, France"` or `"1 Infinite Loop, Cupertino, CA"`.
+- **`timeout_seconds`** (int, optional): Only raise if a prior call timed out.
 
-## Returns
-- **Success**: A dictionary containing `address` (the formal address), `lat`, `lng`, and `place_id`.
-- **Error**: A dictionary containing an `error` key explaining the issue.
+### Returns
+`{ address: <formal formatted>, lat: float, lng: float, place_id: str }`

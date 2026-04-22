@@ -180,25 +180,14 @@ async def get_route_matrix(
                 "destinationIndex": destination_index,
                 "origin": origin_flat,
                 "destination": destination_flat,
-                "distance" : {
-                    "logicalValueMeters": route.get("distanceMeters", None)
-                },
-                "durationWithoutTraffic" : {
-                    "logicalValueSeconds": int(route["staticDuration"].rstrip('s')) if route.get("staticDuration", None) else None
-                },
-                "durationWithTraffic" : {
-                    "logicalValueSeconds": int(route["duration"].rstrip('s')) if route.get("duration", None) else None
-                },
-                "travelAdvisory": route.get("travelAdvisory", {}),
-                "mapsUrl" : await generate_maps_app_url(origin_google, destination_google),
-                "transitPreferenceFallbackInfo": route.get("fallbackInfo", {}),
+                "distanceMeters": route.get("distanceMeters"),
+                "durationWithoutTrafficSeconds": int(route["staticDuration"].rstrip('s')) if route.get("staticDuration") else None,
+                "durationWithTrafficSeconds": int(route["duration"].rstrip('s')) if route.get("duration") else None,
+                "mapsUrl": await generate_maps_app_url(origin_google, destination_google),
             }
 
             if travel_mode == "TRANSIT":
-                r["transitFare"] = {
-                    "logicalObject" : route.get("travelAdvisory", {}).get("transitFare", {}),
-                    "humanReadableValue" : route.get("localizedValues", {}).get("transitFare", {}).get("text", ""),
-                }
+                r["transitFare"] = route.get("localizedValues", {}).get("transitFare", {}).get("text", "")
 
             routes.append(r)
 

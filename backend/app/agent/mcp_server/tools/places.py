@@ -11,6 +11,96 @@ from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
+_SUMMARY_MAX_CHARS = 300  # cap editorial/generative summaries to control response size
+
+
+def _format_place(place: dict) -> dict:
+    """Shared place formatter for search_places, search_places_nearby, and get_place_info."""
+    summary = place.get("editorialSummary", {}).get("text", "") or ""
+    return {
+        "id": place.get("id"),
+        "name": place.get("displayName", {}).get("text", ""),
+        "type": place.get("primaryTypeDisplayName", {}).get("text", ""),
+        "placeSummary": summary[:_SUMMARY_MAX_CHARS],
+        "location": {
+            "address": place.get("formattedAddress", ""),
+            "latitude": place.get("location", {}).get("latitude"),
+            "longitude": place.get("location", {}).get("longitude"),
+        },
+        "urls": {
+            "googleMapsUrl": place.get("googleMapsUri", ""),
+            "websiteUrl": place.get("websiteUri", ""),
+        },
+        "reviews": {
+            "rating": place.get("rating"),
+            "reviewSummary": place.get("reviewSummary", {}).get("text", {}).get("text", ""),
+        },
+        "accessibilityOptions": place.get("accessibilityOptions", {}),
+        "businessStatus": place.get("businessStatus", ""),
+        "openingHours": {
+            "current": {
+                "openNow": place.get("currentOpeningHours", {}).get("openNow"),
+                "weekdayDescriptions": place.get("currentOpeningHours", {}).get("weekdayDescriptions"),
+                "nextOpenTime": place.get("currentOpeningHours", {}).get("nextOpenTime"),
+                "nextCloseTime": place.get("currentOpeningHours", {}).get("nextCloseTime"),
+            },
+            "regular": {
+                "openNow": place.get("regularOpeningHours", {}).get("openNow"),
+                "weekdayDescriptions": place.get("regularOpeningHours", {}).get("weekdayDescriptions"),
+                "nextOpenTime": place.get("regularOpeningHours", {}).get("nextOpenTime"),
+                "nextCloseTime": place.get("regularOpeningHours", {}).get("nextCloseTime"),
+            },
+        },
+        "priceRange": place.get("priceRange"),
+        "priceLevel": place.get("priceLevel"),
+        # Preference-matching fields (grouped for readability)
+        "diningOptions": {
+            "dineIn": place.get("dineIn"),
+            "takeout": place.get("takeout"),
+            "delivery": place.get("delivery"),
+            "reservable": place.get("reservable"),
+            "servesBeer": place.get("servesBeer"),
+            "servesCocktails": place.get("servesCocktails"),
+            "servesWine": place.get("servesWine"),
+            "servesVegetarianFood": place.get("servesVegetarianFood"),
+        },
+        "amenities": {
+            "allowsDogs": place.get("allowsDogs"),
+            "goodForChildren": place.get("goodForChildren"),
+            "goodForGroups": place.get("goodForGroups"),
+            "liveMusic": place.get("liveMusic"),
+            "outdoorSeating": place.get("outdoorSeating"),
+        },
+    }
+
+
+def _format_place_info(data: dict) -> dict:
+    """Extended formatter for get_place_info which has richer type/summary fields."""
+    editorial = data.get("editorialSummary", {}).get("text", "") or ""
+    generative = data.get("generativeSummary", {}).get("overview", {}).get("text", "") or ""
+    combined = editorial or generative
+    base = _format_place(data)
+    # Override type with richer get_place_info fields
+    base["type"] = {
+        "primaryType": data.get("primaryType", ""),
+        "primaryTypeName": data.get("primaryTypeDisplayName", {}).get("text", ""),
+        "types": data.get("types", []),
+    }
+    base["placeSummaries"] = {
+        "editorialSummary": combined[:_SUMMARY_MAX_CHARS],
+        "neighborhoodSummary": (
+            data.get("neighborhoodSummary", {})
+            .get("overview", {})
+            .get("content", {})
+            .get("text", "")
+        )[:_SUMMARY_MAX_CHARS],
+    }
+    base["phoneNumber"] = data.get("internationalPhoneNumber", "")
+    base["reviews"]["userRatingCount"] = data.get("userRatingCount")
+    del base["placeSummary"]  # replaced by placeSummaries above
+    return base
+
+
 # Full set of valid Google Places API v1 primary types, resolved once at
 # module load from the `GooglePlaceType` Literal in `constants.py`. Kept as
 # a frozenset for O(1) membership checks during input validation.
@@ -114,77 +204,8 @@ async def search_places(query: Annotated[str, Field(description="The general or 
             )
         
         place = data.get("places", [])[place_index]
-        placeOutput = {
-                "id": place.get("id"),
-                "name": place.get("displayName", {}).get("text", ""),
-                "type": place.get("primaryTypeDisplayName", {}).get("text", ""),
-                "placeSummary": place.get("editorialSummary", {}).get("text", ""),
-                "location": {
-                    "address": place.get("formattedAddress", ""),
-                    "latitude": place.get("location", {}).get("latitude", None),
-                    "longitude": place.get("location", {}).get("longitude", None),
-                },
-                "urls": {
-                    "googleMapsUrl": place.get("googleMapsUri", ""),
-                    "websiteUrl": place.get("websiteUri", ""),
-                },
-                "reviews": {
-                    "rating": place.get("rating", None),
-                    "reviewSummary": place.get("reviewSummary", {}).get("text", {}).get("text", ""),
-                },
-                "accessibilityOptions": place.get("accessibilityOptions", {}),
-                "businessStatus": place.get("businessStatus", ""),
-                "openingHours": {
-                    "current": {
-                        "openNow": place.get("currentOpeningHours", {}).get("openNow", None),
-                        "weekdayDescriptions": place.get("currentOpeningHours", {}).get("weekdayDescriptions", None),
-                        "nextOpenTime": place.get("currentOpeningHours", {}).get("nextOpenTime", None),
-                        "nextCloseTime": place.get("currentOpeningHours", {}).get("nextCloseTime", None),
-                    },
-                    "regular": {
-                        "openNow": place.get("regularOpeningHours", {}).get("openNow", None),
-                        "weekdayDescriptions": place.get("regularOpeningHours", {}).get("weekdayDescriptions", None),
-                        "nextOpenTime": place.get("regularOpeningHours", {}).get("nextOpenTime", None),
-                        "nextCloseTime": place.get("regularOpeningHours", {}).get("nextCloseTime", None),
-                    },
-                    "currentSecondary": place.get("currentSecondaryOpeningHours", {}),
-                    "regularSecondary": place.get("regularSecondaryOpeningHours", {}),
-                },
-                "priceRange": place.get("priceRange", None),
-                "priceLevel": place.get("priceLevel", None),
-                "parkingOptions": place.get("parkingOptions", None),
-                "paymentOptions": place.get("paymentOptions", None),
-                "fuelOptions": place.get("fuelOptions", None),
-                "evChargeOptions": place.get("evChargeOptions", None),
-                "otherOptions": {
-                    "allowsDogs": place.get("allowsDogs", None),
-                    "curbsidePickup": place.get("curbsidePickup", None),
-                    "delivery": place.get("delivery", None),
-                    "dineIn": place.get("dineIn", None),
-                    "takeout": place.get("takeout", None),
-                    "goodForChildren": place.get("goodForChildren", None),
-                    "goodForGroups": place.get("goodForGroups", None),
-                    "goodForWatchingSports": place.get("goodForWatchingSports", None),
-                    "liveMusic": place.get("liveMusic", None),
-                    "menuForChildren": place.get("menuForChildren", None),
-                    "outdoorSeating": place.get("outdoorSeating", None),
-                    "reservable": place.get("reservable", None),
-                    "restroom": place.get("restroom", None),
-                    "servesBeer": place.get("servesBeer", None),
-                    "servesBreakfast": place.get("servesBreakfast", None),
-                    "servesBrunch": place.get("servesBrunch", None),
-                    "servesCocktails": place.get("servesCocktails", None),
-                    "servesCoffee": place.get("servesCoffee", None),
-                    "servesDessert": place.get("servesDessert", None),
-                    "servesDinner": place.get("servesDinner", None),
-                    "servesLunch": place.get("servesLunch", None),
-                    "servesVegetarianFood": place.get("servesVegetarianFood", None),
-                    "servesWine": place.get("servesWine", None),
-                },
-            }
-        
         return {
-            "place": placeOutput,
+            "place": _format_place(place),
             "nextPageToken": data.get("nextPageToken", None),
             "hasNext": len(data.get("places", [])) > place_index + 1,
             "nextIndex": place_index + 1 if len(data.get("places", [])) > place_index + 1 else None,
@@ -291,74 +312,7 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
         
         place = data.get("places", [])[place_index]
         return {
-            "place": {
-                "id": place.get("id"),
-                "name": place.get("displayName", {}).get("text", ""),
-                "type": place.get("primaryTypeDisplayName", {}).get("text", ""),
-                "placeSummary": place.get("editorialSummary", {}).get("text", ""),
-                "location": {
-                    "address": place.get("formattedAddress", ""),
-                    "latitude": place.get("location", {}).get("latitude", None),
-                    "longitude": place.get("location", {}).get("longitude", None),
-                },
-                "urls": {
-                    "googleMapsUrl": place.get("googleMapsUri", ""),
-                    "websiteUrl": place.get("websiteUri", ""),
-                },
-                "reviews": {
-                    "rating": place.get("rating", None),
-                    "reviewSummary": place.get("reviewSummary", {}).get("text", {}).get("text", ""),
-                },
-                "accessibilityOptions": place.get("accessibilityOptions", {}),
-                "businessStatus": place.get("businessStatus", ""),
-                "openingHours": {
-                    "current": {
-                        "openNow": place.get("currentOpeningHours", {}).get("openNow", None),
-                        "weekdayDescriptions": place.get("currentOpeningHours", {}).get("weekdayDescriptions", None),
-                        "nextOpenTime": place.get("currentOpeningHours", {}).get("nextOpenTime", None),
-                        "nextCloseTime": place.get("currentOpeningHours", {}).get("nextCloseTime", None),
-                    },
-                    "regular": {
-                        "openNow": place.get("regularOpeningHours", {}).get("openNow", None),
-                        "weekdayDescriptions": place.get("regularOpeningHours", {}).get("weekdayDescriptions", None),
-                        "nextOpenTime": place.get("regularOpeningHours", {}).get("nextOpenTime", None),
-                        "nextCloseTime": place.get("regularOpeningHours", {}).get("nextCloseTime", None),
-                    },
-                    "currentSecondary": place.get("currentSecondaryOpeningHours", {}),
-                    "regularSecondary": place.get("regularSecondaryOpeningHours", {}),
-                },
-                "priceRange": place.get("priceRange", None),
-                "priceLevel": place.get("priceLevel", None),
-                "parkingOptions": place.get("parkingOptions", None),
-                "paymentOptions": place.get("paymentOptions", None),
-                "fuelOptions": place.get("fuelOptions", None),
-                "evChargeOptions": place.get("evChargeOptions", None),
-                "otherOptions": {
-                    "allowsDogs": place.get("allowsDogs", None),
-                    "curbsidePickup": place.get("curbsidePickup", None),
-                    "delivery": place.get("delivery", None),
-                    "dineIn": place.get("dineIn", None),
-                    "takeout": place.get("takeout", None),
-                    "goodForChildren": place.get("goodForChildren", None),
-                    "goodForGroups": place.get("goodForGroups", None),
-                    "goodForWatchingSports": place.get("goodForWatchingSports", None),
-                    "liveMusic": place.get("liveMusic", None),
-                    "menuForChildren": place.get("menuForChildren", None),
-                    "outdoorSeating": place.get("outdoorSeating", None),
-                    "reservable": place.get("reservable", None),
-                    "restroom": place.get("restroom", None),
-                    "servesBeer": place.get("servesBeer", None),
-                    "servesBreakfast": place.get("servesBreakfast", None),
-                    "servesBrunch": place.get("servesBrunch", None),
-                    "servesCocktails": place.get("servesCocktails", None),
-                    "servesCoffee": place.get("servesCoffee", None),
-                    "servesDessert": place.get("servesDessert", None),
-                    "servesDinner": place.get("servesDinner", None),
-                    "servesLunch": place.get("servesLunch", None),
-                    "servesVegetarianFood": place.get("servesVegetarianFood", None),
-                    "servesWine": place.get("servesWine", None),
-                },
-            },
+            "place": _format_place(place),
             "hasNext": len(data.get("places", [])) > place_index + 1,
             "nextIndex": place_index + 1 if len(data.get("places", [])) > place_index + 1 else None,
             }
@@ -415,86 +369,7 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
                 fix_hint="Verify the Place ID is recent and accurate. Consider calling search_places again to get a fresh ID.",
             )
         
-        return {
-            "place": {
-                "id": data.get("id"),
-                "name": data.get("displayName", {}).get("text", ""),
-                "type": {
-                    "primaryType": data.get("primaryType", ""),
-                    "primaryTypeName": data.get("primaryTypeDisplayName", {}).get("text", ""),
-                    "types": data.get("types", []),
-                },
-                "placeSummaries": {
-                    "editorialSummary": data.get("editorialSummary", {}).get("text", ""),
-                    "generativeSummary": data.get("generativeSummary", {}).get("overview", {}).get("text", ""),
-                    "neighborhoodSummary": data.get("neighborhoodSummary", {}).get("overview", {}).get("content", {}).get("text", ""),
-                },
-                "location": {
-                    "address": data.get("formattedAddress", ""),
-                    "latitude": data.get("location", {}).get("latitude", None),
-                    "longitude": data.get("location", {}).get("longitude", None),
-                },
-                "phoneNumber": data.get("internationalPhoneNumber", ""),
-                "reviews": {
-                    "rating": data.get("rating", None),
-                    "userRatingCount": data.get("userRatingCount", None),
-                    "reviewSummary": data.get("reviewSummary", {}).get("text", {}).get("text", ""),
-                },
-                "urls" : {
-                    "googleMapsUrl": data.get("googleMapsUri", ""),
-                    "websiteUrl": data.get("websiteUri", ""),
-                },
-                "accessibilityOptions": data.get("accessibilityOptions", {}),
-                "businessStatus": data.get("businessStatus", ""),
-                "openingHours": {
-                    "current": {
-                        "openNow": data.get("currentOpeningHours", {}).get("openNow", None),
-                        "weekdayDescriptions": data.get("currentOpeningHours", {}).get("weekdayDescriptions", None),
-                        "nextOpenTime": data.get("currentOpeningHours", {}).get("nextOpenTime", None),
-                        "nextCloseTime": data.get("currentOpeningHours", {}).get("nextCloseTime", None),
-                    },
-                    "regular": {
-                        "openNow": data.get("regularOpeningHours", {}).get("openNow", None),
-                        "weekdayDescriptions": data.get("regularOpeningHours", {}).get("weekdayDescriptions", None),
-                        "nextOpenTime": data.get("regularOpeningHours", {}).get("nextOpenTime", None),
-                        "nextCloseTime": data.get("regularOpeningHours", {}).get("nextCloseTime", None),
-                    },
-                    "currentSecondary": data.get("currentSecondaryOpeningHours", {}),
-                    "regularSecondary": data.get("regularSecondaryOpeningHours", {}),
-                },
-                "priceRange": data.get("priceRange", None),
-                "priceLevel": data.get("priceLevel", None),
-                "parkingOptions": data.get("parkingOptions", None),
-                "paymentOptions": data.get("paymentOptions", None),
-                "fuelOptions": data.get("fuelOptions", None),
-                "evChargeOptions": data.get("evChargeOptions", None),
-                "otherOptions": {
-                    "allowsDogs": data.get("allowsDogs", None),
-                    "curbsidePickup": data.get("curbsidePickup", None),
-                    "delivery": data.get("delivery", None),
-                    "dineIn": data.get("dineIn", None),
-                    "takeout": data.get("takeout", None),
-                    "goodForChildren": data.get("goodForChildren", None),
-                    "goodForGroups": data.get("goodForGroups", None),
-                    "goodForWatchingSports": data.get("goodForWatchingSports", None),
-                    "liveMusic": data.get("liveMusic", None),
-                    "menuForChildren": data.get("menuForChildren", None),
-                    "outdoorSeating": data.get("outdoorSeating", None),
-                    "reservable": data.get("reservable", None),
-                    "restroom": data.get("restroom", None),
-                    "servesBeer": data.get("servesBeer", None),
-                    "servesBreakfast": data.get("servesBreakfast", None),
-                    "servesBrunch": data.get("servesBrunch", None),
-                    "servesCocktails": data.get("servesCocktails", None),
-                    "servesCoffee": data.get("servesCoffee", None),
-                    "servesDessert": data.get("servesDessert", None),
-                    "servesDinner": data.get("servesDinner", None),
-                    "servesLunch": data.get("servesLunch", None),
-                    "servesVegetarianFood": data.get("servesVegetarianFood", None),
-                    "servesWine": data.get("servesWine", None),
-                },
-            }
-        }
+        return {"place": _format_place_info(data)}
     except httpx.TimeoutException:
         return tool_error(
             f"Tool timeout after {timeout_seconds} seconds.",

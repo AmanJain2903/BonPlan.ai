@@ -40,7 +40,7 @@ async def format_date_time(date_time: str, airport_name: str) -> Dict:
     date = dateTime[0].split("-")
     time = dateTime[1].split(":")
     dateTimeString = f"{date[0]}-{date[1].zfill(2)}-{date[2].zfill(2)}T{time[0].zfill(2)}:{time[1].zfill(2)}:00"
-    return convert_target_local_time_to_utc(dateTimeString, timezone.get("timeZoneId").get("value"))
+    return await convert_target_local_time_to_utc(dateTimeString, timezone.get("timeZoneId").get("value"))
 
 async def format_flight_data(data: Dict, flight_type: str) -> Dict:
     departureTime = None

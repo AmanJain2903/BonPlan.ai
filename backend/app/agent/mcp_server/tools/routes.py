@@ -207,15 +207,9 @@ async def get_route(
             r = {
                 "routeLabels": route.get("routeLabels", []),
                 "description": route.get("description", ""),
-                "distance" : {
-                    "logicalValueMeters": route.get("distanceMeters", None)
-                },
-                "durationWithoutTraffic" : {
-                    "logicalValueSeconds": int(route.get("staticDuration", None).rstrip('s')) if route.get("staticDuration", None) else None
-                },
-                "durationWithTraffic" : {
-                    "logicalValueSeconds": int(route.get("duration", None).rstrip('s')) if route.get("duration", None) else None
-                },
+                "distanceMeters": route.get("distanceMeters", None),
+                "durationWithoutTrafficSeconds": int(route.get("staticDuration", None).rstrip('s')) if route.get("staticDuration", None) else None,
+                "durationWithTrafficSeconds": int(route.get("duration", None).rstrip('s')) if route.get("duration", None) else None,
                 "routeLegs": [await get_route_leg(leg) for leg in route.get("legs", [])],
                 "warnings": route.get("warnings", []),
                 "travelAdvisory": route.get("travelAdvisory", {}),

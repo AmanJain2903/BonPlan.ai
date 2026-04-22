@@ -16,7 +16,7 @@ TIMEOUTS = {
     "get_current_air_quality": 5,
     "get_air_quality_forecast": 10,
     "get_timezone": 10,
-    "search_web": 20,
+    "search_web": 60,
     "get_current_weather": 5,
     "get_daily_forecast": 10,
     "get_hourly_forecast": 10,
