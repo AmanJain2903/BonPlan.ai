@@ -55,7 +55,7 @@ def _route(state: PlannerState):
     # to stop via the `error` chunk, so we MUST NOT run finalizer (which would
     # try to emit more events and confuse the client).
     if state.get("cancelled"):
-        log.info(f"Cancelled state detected. Routing to END", state=state)
+        log.info(f"Cancelled state detected. Routing to END")
         return END
     current_day = state.get("current_day", 1)
     total_days = state.get("total_days", 1)
@@ -64,7 +64,7 @@ def _route(state: PlannerState):
 
 def _route_after_bootstrap(state: PlannerState):
     if state.get("cancelled"):
-        log.info(f"Cancelled state detected. Routing to END", state=state)
+        log.info(f"Cancelled state detected. Routing to END")
         return END
     # Resuming with at least one day already in progress → skip research +
     # START (START must not be re-emitted) and jump straight to day loop.

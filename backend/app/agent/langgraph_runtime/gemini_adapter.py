@@ -12,6 +12,7 @@ Each LangGraph node calls `run_chat_loop(...)` with a node-specific initial
 message and receives a `ChatResult` back.
 """
 import asyncio
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, Optional
@@ -35,17 +36,45 @@ log = get_agent_logger("gemini_adapter")
 # at the end of the day.
 _KNOWLEDGE_TOOL_NAMES: set[str] = {
     "search_hotels",
+    "get_hotel_booking_url",
+    "search_rental_cars",
+    "search_places",
+    "search_places_nearby",
+    "get_place_info",
     "search_flights",
     "search_multi_city_flights",
     "get_next_flights",
-    "search_rental_cars",
-    "get_place_info",
     "get_flight_booking_details",
     "get_hotel_booking_url",
 }
 
 _MODEL = settings.PLANNER_AGENT_MODEL
 _PRUNING_MODEL = settings.CONTEXT_PRUNING_MODEL
+
+
+# Per-tool cap on how many characters of a tool response get forwarded to the
+# model on the next turn. Uncapped responses (search_hotels / search_places /
+# search_flights can each be 30-50 KB) balloon the model's input on every
+# subsequent turn and are the #1 driver of post-tool-call "halts" (high TTFT
+# on large context). The full response is still stored in session_tool_findings
+# for the knowledge-extractor, which already has its own 4 KB cap there.
+_TOOL_RESPONSE_CAPS: dict[str, int] = {
+    # Heavy search tools — many results, each big. 8 KB is roughly 5-8 items.
+    "search_hotels": 8000,
+    "search_places": 8000,
+    "search_places_nearby": 8000,
+    "search_flights": 10000,
+    "search_multi_city_flights": 10000,
+    "get_next_flights": 10000,
+    "search_rental_cars": 8000,
+    # Content scrapes — already trimmed server-side to 4 KB, but defend again.
+    "search_web": 6000,
+    "get_content_from_url": 5000,
+    "get_place_info": 5000,
+}
+# Default cap for any tool not in the map above. Geocoding / routing / timezone
+# responses are small, so this is mostly a safety floor.
+_DEFAULT_RESPONSE_CAP = 4000
 
 
 def _is_event_tool(name: str) -> bool:
@@ -75,13 +104,13 @@ def _coerce_event_args(tool_name: str, raw_args: dict) -> dict:
 # `_PRUNE_THRESHOLD_RATIO` of the model's context window; after pruning aim for
 # `_PRUNE_TARGET_RATIO`.  The first history item (the initial user message) is
 # always preserved — it contains the node-specific task prompt.
-_PRUNE_THRESHOLD_RATIO = 0.25
+_PRUNE_THRESHOLD_RATIO = 0.20
 _PRUNE_TARGET_RATIO = 0.15
 _PRUNE_MAX_ITERS = 12
 
 # Safety floor: even if token counting fails we never let history grow
 # unbounded. This caps total items (2 per turn + the initial message).
-_SAFETY_MAX_ITEMS = 30
+_SAFETY_MAX_ITEMS = 25
 
 
 def _estimate_tokens_from_chars(history: list) -> int:
@@ -118,7 +147,6 @@ async def _count_tokens_safe(client, history: list) -> Optional[int]:
         t = int(getattr(resp, "total_tokens", 0) or 0)
         if t > 0:
             return t
-        log.info("count_tokens successful")
     except Exception as exc:
         log.debug("count_tokens failed; using char estimate", error=str(exc))
     return _estimate_tokens_from_chars(history)
@@ -166,6 +194,7 @@ async def _summarize_dropped(dropped_items: list) -> str:
     pruning_client = runtime.pruning_client
     rendered = _render_history_for_summary(dropped_items)
     if not rendered:
+        log.warning("No rendered history for summarization")
         return "(older context elided)"
 
     fallback = (
@@ -174,11 +203,12 @@ async def _summarize_dropped(dropped_items: list) -> str:
     )
 
     if pruning_client is None:
+        log.warning("Pruning client unavailable, falling back to fallback stub")
         return fallback
 
     prompt = (
         "You are compressing earlier turns of an AI travel-planning conversation. "
-        "Produce a tight recap (<=600 tokens) that preserves: tools already called "
+        "Produce a tight recap that preserves: tools already called "
         "and their key findings (hotels/flights/places/routes chosen or ruled out), "
         "coordinates/IDs referenced, user preferences the model has committed to, "
         "and any decisions already made. Drop chit-chat. Use bullet points. "
@@ -221,8 +251,17 @@ async def _prune_history(client, history: list) -> tuple[list, int, str | None]:
     threshold = int(settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW * _PRUNE_THRESHOLD_RATIO)
     target = int(settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW * _PRUNE_TARGET_RATIO)
 
+    # Cheap local gate — avoids a network count_tokens call on every turn when
+    # history is nowhere near the threshold. Char/4 overestimates slightly so
+    # a false-negative here is ~impossible; if it thinks we're near threshold
+    # we verify with the real counter below.
+    cheap = _estimate_tokens_from_chars(history)
+    if cheap < int(threshold * 0.8):
+        return history, 0, None
+
     total = await _count_tokens_safe(client, history)
     if total is None:
+        log.warning("Token-counting unavailable, falling back to item cap without summarizing")
         # Token-counting unavailable → fall back to item cap without summarizing.
         if len(history) <= _SAFETY_MAX_ITEMS:
             return history, 0, None
@@ -242,8 +281,9 @@ async def _prune_history(client, history: list) -> tuple[list, int, str | None]:
             break
         dropped_acc.extend(pruned[1:3])
         pruned = pruned[:1] + pruned[3:]
-        current = await _count_tokens_safe(client, pruned)
-        if current is None or current <= target:
+        # Use char-estimate inside the loop to avoid N network calls; one real
+        # count_tokens at the end is enough to verify we're under target.
+        if _estimate_tokens_from_chars(pruned) <= target:
             break
 
     if not dropped_acc:
@@ -335,11 +375,12 @@ async def run_chat_loop(
 
     max_turn_retries = 3
     turn_retries = 0
-    max_turns = 45
+    max_turns = 30
     turn_count = 0
 
     while True:
         if await _is_cancelled():
+            log.info("Chat loop cancelled", node=node_name)
             return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
                               is_complete=is_complete, error="Cancelled")
 
@@ -374,9 +415,13 @@ async def run_chat_loop(
             pending_turn_text = ""
 
             try:
+                _turn_started = time.monotonic()
+                _first_chunk_at: Optional[float] = None
                 response_stream = await chat.send_message_stream(current_message)
 
                 async for chunk in response_stream:
+                    if _first_chunk_at is None:
+                        _first_chunk_at = time.monotonic()
                     last_chunk = chunk
 
                     parts = (
@@ -392,11 +437,16 @@ async def run_chat_loop(
                     for part in parts:
                         if isinstance(part.text, str) and part.text:
                             is_thought = bool(getattr(part, "thought", False))
-                            if is_thought or not is_complete:
+                            if is_thought:
                                 emit({"type": "thinking", "content": part.text})
-                            else:
+                            elif is_complete:
                                 emit({"type": "summary", "content": part.text})
-                            if not is_thought:
+                            else:
+                                # Narrative text the model produced BEFORE a tool
+                                # call. We don't surface this to the user — the
+                                # user only cares about events and the final
+                                # summary. Emitting it as a visible chunk just
+                                # confuses the UI.
                                 pending_turn_text += part.text
                             continue
 
@@ -504,13 +554,6 @@ async def run_chat_loop(
                                         "data": coerced_args,
                                         "call_id": call_id,
                                     })
-                                else:
-                                    log.warning(
-                                        "Invalid event tool call — asking agent to retry",
-                                        node=node_name,
-                                        tool=fc.name,
-                                        validation_error=str(validation_error),
-                                    )
                             else:
                                 active_tool_calls.append((call_id, fc, None, None))
                                 emit({
@@ -521,6 +564,7 @@ async def run_chat_loop(
                                 })
 
                     if await _is_cancelled():
+                        log.info("Chat loop cancelled mid-stream", node=node_name)
                         return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
                             success=False, next_event_number=next_event_number,
                             is_complete=is_complete, error="Cancelled mid-stream"
@@ -529,6 +573,16 @@ async def run_chat_loop(
                 stream_ok = True
                 if pending_turn_text.strip():
                     last_text_buffer = pending_turn_text
+                _turn_total = time.monotonic() - _turn_started
+                _ttft = (_first_chunk_at - _turn_started) if _first_chunk_at else None
+                log.info(
+                    "Model turn done",
+                    node=node_name,
+                    turn=turn_count,
+                    ttft_s=round(_ttft, 2) if _ttft is not None else None,
+                    total_s=round(_turn_total, 2),
+                    tool_calls=len([p for p in (active_tool_calls or [])]),
+                )
                 break
 
             except asyncio.CancelledError:
@@ -634,6 +688,7 @@ async def run_chat_loop(
                     }
 
                 _timeout = TIMEOUTS.get(fc.name, 60)
+                _started = time.monotonic()
                 try:
                     mcp_result = await asyncio.wait_for(
                         session.call_tool(fc.name, dict(fc.args or {})),
@@ -643,9 +698,29 @@ async def run_chat_loop(
                         "".join(c.text for c in mcp_result.content if hasattr(c, "text"))
                         or "Task completed."
                     )
+                    _elapsed = time.monotonic() - _started
+                    _raw_len = len(output)
+                    _cap = _TOOL_RESPONSE_CAPS.get(fc.name, _DEFAULT_RESPONSE_CAP)
+                    if _raw_len > _cap:
+                        output = output[:_cap] + f"\n…[truncated, {_raw_len - _cap} chars dropped]"
+                    log.info(
+                        "Tool done",
+                        node=node_name,
+                        tool=fc.name,
+                        elapsed_s=round(_elapsed, 2),
+                        raw_chars=_raw_len,
+                        sent_chars=len(output),
+                    )
                     return call_id, fc, {"output": output}
                 except asyncio.TimeoutError:
-                    log.warning("Tool timeout", node=node_name, tool=fc.name, timeout=_timeout)
+                    _elapsed = time.monotonic() - _started
+                    log.warning(
+                        "Tool timeout",
+                        node=node_name,
+                        tool=fc.name,
+                        timeout=_timeout,
+                        elapsed_s=round(_elapsed, 2),
+                    )
                     return call_id, fc, {
                         "error": f"Tool {fc.name} timed out after {_timeout}s."
                     }
@@ -653,13 +728,33 @@ async def run_chat_loop(
                     log.info("Tool cancelled", node=node_name, tool=fc.name)
                     raise
                 except Exception as e:
-                    log.error("Tool execution failed", node=node_name, tool=fc.name, error=str(e))
+                    _elapsed = time.monotonic() - _started
+                    log.error(
+                        "Tool execution failed",
+                        node=node_name,
+                        tool=fc.name,
+                        elapsed_s=round(_elapsed, 2),
+                        error=str(e),
+                    )
                     return call_id, fc, {"error": str(e)}
 
+            _batch_started = time.monotonic()
+            _mcp_calls = [t for t in active_tool_calls if not _is_event_tool(t[1].name)]
             try:
                 gathered = await asyncio.gather(*(_execute(t) for t in active_tool_calls))
             except asyncio.CancelledError:
                 raise
+            _batch_elapsed = time.monotonic() - _batch_started
+            if _mcp_calls:
+                log.info(
+                    "Tool batch done",
+                    node=node_name,
+                    turn=turn_count,
+                    mcp_calls=len(_mcp_calls),
+                    total_calls=len(active_tool_calls),
+                    batch_s=round(_batch_elapsed, 2),
+                    tools=[t[1].name for t in _mcp_calls],
+                )
 
             tool_responses = []
             for call_id, fc, result in gathered:
@@ -748,13 +843,11 @@ async def run_chat_loop(
             #   END is emitted later by the finalizer, not here.
             # - finalizer (require_end=True): missing END is a genuine error.
             if stop_after_start and start_emitted:
-                log.info(f"Research node stopped", node=node_name)
                 return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
                     success=True, next_event_number=next_event_number, is_complete=False,
                     last_text=last_text_buffer,
                 )
             if not require_end:
-                log.info(f"Day planner stopped", node=node_name)
                 return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
                     success=True, next_event_number=next_event_number, is_complete=False,
                     last_text=last_text_buffer,
@@ -773,8 +866,6 @@ async def run_chat_loop(
             )
 
         if is_max_tokens:
-            # Gemma blew the OUTPUT-token ceiling, almost always because it
-            # was thinking out an entire day's plan before calling any tool.
             # Rebuild from history_snapshot (discarding the runaway turn) and
             # push the model to emit ONE concrete tool call immediately.
             if turn_retries >= max_turn_retries:
@@ -812,6 +903,7 @@ async def run_chat_loop(
                         "summary": summary,
                         "dropped": dropped,
                     })
+                    log.info("History pruned after MAX_TOKENS", node=node_name, before=len(history_snapshot), after=len(pruned), dropped=dropped)
                     history_snapshot = pruned
             except Exception as prune_err:
                 log.warning("Post-MAX_TOKENS pruning failed", node=node_name, error=str(prune_err))

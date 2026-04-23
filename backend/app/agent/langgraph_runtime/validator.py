@@ -9,6 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent.schemas.structuredOutput import AddItineraryEvent
 
+from app.logging import get_agent_logger
+
+log = get_agent_logger("validator")
+
 # Event type → the single *_details field that MUST be populated.
 EVENT_TYPE_TO_DETAIL_FIELD: Dict[str, str] = {
     "START": "start_details",
@@ -27,7 +31,6 @@ EVENT_TYPE_TO_DETAIL_FIELD: Dict[str, str] = {
 
 # In these modes re-emitting START must be blocked to avoid breaking the frontend.
 START_GUARD_MODES = {"editing"}
-
 
 # ─── Commute-placement validation helpers ────────────────────────────────────
 # For every event type, which details field holds it and which sub-fields hold
@@ -148,6 +151,7 @@ def _validate_placement(
         #     starts at Farley).
         if et == "COMMUTE":
             if prev_type == "COMMUTE":
+                log.warning("Agent tried to emit a COMMUTE event back-to-back.")
                 return (
                     "Two COMMUTE events back-to-back are not allowed. If the "
                     "previous COMMUTE is wrong, re-emit IT with its original "
@@ -159,6 +163,7 @@ def _validate_placement(
             _, prev_dest = _event_coords(prev)
             curr_origin, _ = _event_coords(args)
             if not _same_location(prev_dest, curr_origin):
+                log.warning("Agent tried to emit a COMMUTE event with a mismatched origin.")
                 return (
                     f"This COMMUTE event's origin does not match where the traveler "
                     f"currently is according to the last event. Previous event on day {current_day} (event #"
@@ -182,6 +187,7 @@ def _validate_placement(
         _, prev_dest = _event_coords(prev)
         curr_origin, _ = _event_coords(args)
         if not _same_location(prev_dest, curr_origin):
+            log.warning("Agent tried to emit an event with a mismatched origin.")
             return (
                 f"Previous event on day {current_day} (event #{prev.get('event_number')} "
                 f"[{prev_type}]) ended at {prev_dest}"
@@ -209,6 +215,7 @@ def validate_itinerary_event(
 
     # Editing-mode guard: START re-emission breaks the frontend.
     if mode in START_GUARD_MODES and event_type == "START":
+        log.warning(f"Agent tried to re-emit a START event in {mode} mode.")
         return (
             "Re-emitting a START event is forbidden in editing mode. "
             "Edit individual events using their day_number/event_number instead.",
@@ -218,6 +225,7 @@ def validate_itinerary_event(
     # Resume guard: once START has been emitted in a prior run, re-emitting
     # it corrupts the frontend timeline. This applies to every mode.
     if is_resuming and event_type == "START":
+        log.warning("Agent tried to re-emit a START event in a resuming run.")
         return (
             "A START event was already emitted in a previous run. You are "
             "resuming an existing itinerary — DO NOT emit START again. "
@@ -227,6 +235,7 @@ def validate_itinerary_event(
 
     expected_field = EVENT_TYPE_TO_DETAIL_FIELD.get(event_type)
     if not expected_field:
+        log.warning("Agent tried to emit an unknown event_type..", event_type=event_type)
         return f"Unknown event_type '{event_type}'.", None
 
     populated_detail_fields = [
@@ -236,6 +245,7 @@ def validate_itinerary_event(
     ]
 
     if expected_field not in populated_detail_fields:
+        log.warning("Agent tried to emit an event_type with a missing detail field.", event_type=event_type)
         return (
             f"event_type='{event_type}' requires '{expected_field}' to be populated, "
             f"but it is missing or null.",
@@ -244,6 +254,7 @@ def validate_itinerary_event(
 
     extra_fields = [f for f in populated_detail_fields if f != expected_field]
     if extra_fields:
+        log.warning("Agent tried to emit an event_type with extra detail fields.", event_type=event_type)
         return (
             f"event_type='{event_type}' must have ONLY '{expected_field}' populated, "
             f"but also received: {extra_fields}.",
@@ -259,4 +270,5 @@ def validate_itinerary_event(
         validated = AddItineraryEvent(**args)
         return None, validated.model_dump()
     except Exception as exc:
+        log.error("Validation failed", error=str(exc))
         return str(exc), None

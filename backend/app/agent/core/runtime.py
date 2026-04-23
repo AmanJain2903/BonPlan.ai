@@ -112,12 +112,7 @@ _DAY_MCP_TOOLS: set[str] = {
 }
 
 _FINALIZER_MCP_TOOLS: set[str] = {
-    # Timezone / time math
-    "get_current_timestamp",
-    "get_timezone",
-    "convert_utc_string_to_timestamp",
-    "convert_timestamp_to_utc_string",
-    "convert_target_local_time_to_utc",
+    # No tools needed for the finalizer
 }
 
 
@@ -130,7 +125,7 @@ def _filter_mcp_decls(
 
 class AgentRuntime:
     genai_client: Optional[genai.Client] = None
-    pruning_client: Optional[genai.Client] = None  # small/fast model for history summarization
+    pruning_client: Optional[genai.Client] = None  # small/fast model for history summarization and handoff-note extraction
     mcp_session: Optional[ClientSession] = None
     gemini_tools: Optional[List[types.FunctionDeclaration]] = None
     planner_tool_block: Optional[types.Tool] = None
@@ -194,7 +189,7 @@ async def agent_runtime_context():
     except Exception as e:
         # Non-fatal: summarization pruning falls back to drop-oldest behavior.
         runtime.pruning_client = None
-        log.info("Pruning client unavailable, will fall back to drop-oldest behavior", error=str(e))
+        log.info("Pruning client unavailable, will fall back to drop-oldest behavior and handoff-note extraction will not be available", error=str(e))
 
     server_params = StdioServerParameters(
         command="python",

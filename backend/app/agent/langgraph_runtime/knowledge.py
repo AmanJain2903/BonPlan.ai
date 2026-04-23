@@ -29,39 +29,11 @@ from app.agent.core.runtime import runtime
 from app.core.config import settings
 
 log = get_agent_logger("knowledge")
-_MODEL = settings.CONTEXT_PRUNING_MODEL
 
+_MODEL = settings.CONTEXT_PRUNING_MODEL
 _MAX_FINDINGS_CONSIDERED = 12
 _MAX_FINDING_RESPONSE_CHARS = 2500
 _MAX_NOTES_PER_DAY = 20
-
-
-def _compact_events(events: List[Dict[str, Any]]) -> str:
-    return json.dumps(
-        [
-            {
-                "day_number": e.get("day_number"),
-                "event_number": e.get("event_number"),
-                "event_type": e.get("event_type"),
-                "event_name": e.get("event_name"),
-            }
-            for e in events
-        ],
-        default=str,
-    )
-
-
-def _compact_findings(findings: List[Dict[str, Any]]) -> str:
-    chunks: List[str] = []
-    for f in findings[-_MAX_FINDINGS_CONSIDERED:]:
-        try:
-            args_str = json.dumps(f.get("args") or {}, default=str)[:400]
-        except Exception:
-            args_str = ""
-        resp = str(f.get("response") or "")[:_MAX_FINDING_RESPONSE_CHARS]
-        chunks.append(f"[{f.get('tool')}]\nargs={args_str}\nresponse={resp}")
-    return "\n\n".join(chunks)
-
 
 def _strip_code_fences(text: str) -> str:
     t = text.strip()
@@ -77,12 +49,15 @@ def _parse_notes_payload(text: str, day_number: int) -> List[Dict[str, Any]]:
     start = cleaned.find("[")
     end = cleaned.rfind("]")
     if start == -1 or end == -1 or end < start:
+        log.warning("No valid JSON found in handoff-note extraction")
         return []
     try:
         parsed = json.loads(cleaned[start : end + 1])
     except Exception:
+        log.warning("Failed to parse JSON in handoff-note extraction")
         return []
     if not isinstance(parsed, list):
+        log.warning("Parsed JSON is not a list in handoff-note extraction")
         return []
 
     out: List[Dict[str, Any]] = []
@@ -102,6 +77,7 @@ def _parse_notes_payload(text: str, day_number: int) -> List[Dict[str, Any]]:
         })
         if len(out) >= _MAX_NOTES_PER_DAY:
             break
+    log.info("Handoff-note extraction successful")
     return out
 
 
@@ -117,6 +93,7 @@ async def extract_handoff_notes(
     """
     client = runtime.pruning_client
     if client is None or not tool_findings or not session_events:
+        log.warning("No tool findings or session events to extract handoff notes from")
         return []
 
     prompt = (
@@ -127,14 +104,14 @@ async def extract_handoff_notes(
         "Events emitted on this day (authoritative — do NOT repeat their core "
         "content in notes; only add information the events themselves do not "
         "carry):\n"
-        f"{_compact_events(session_events)}\n\n"
+        f"{json.dumps(session_events, default=str)}\n\n"
         "Search-tool responses the day planner consulted (policies / "
         "round-trip coverage / booking tokens live here):\n"
-        f"{_compact_findings(tool_findings)}\n\n"
+        f"{json.dumps(tool_findings, default=str)}\n\n"
         "Extract ONLY facts that future days need but cannot read off the "
         "emitted events. Good examples:\n"
         "- hotel checkout time + late-checkout rule\n"
-        "- hotel early-check-in policy\n"
+        "- hotel early-checkin + late-checkout policy\n"
         "- round-trip flight coverage (state clearly that the return leg is "
         "already booked as part of the outbound ticket, with flight number/"
         "date/time — so the return-day planner DOES NOT rebook and just outputs the event)\n"
@@ -157,6 +134,7 @@ async def extract_handoff_notes(
         )
         text = (getattr(resp, "text", None) or "").strip()
         if not text:
+            log.warning("No text returned from handoff-note extraction")
             return []
         return _parse_notes_payload(text, day_number)
     except Exception as e:

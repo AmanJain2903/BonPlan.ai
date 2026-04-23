@@ -29,6 +29,8 @@ from app.database.database import Session
 from app.database.models.tripMembersTable import TripMember
 from app.database.models.tripsTable import Trip
 
+from app.core.config import settings
+
 import sys
 
 testResultsFolder = os.path.join(os.path.dirname(__file__), "results")
@@ -126,6 +128,8 @@ class RunResults(BaseModel):
 
 
 class TestResults(BaseModel):
+    planner_agent_model: str = settings.PLANNER_AGENT_MODEL
+    pruning_agent_model: str = settings.CONTEXT_PRUNING_MODEL
     num_runs: int = RUNS
     successful_runs: int = 0
     failed_runs: int = 0

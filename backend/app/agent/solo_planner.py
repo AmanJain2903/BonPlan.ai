@@ -76,9 +76,6 @@ async def generate_trip_itinerary(
     log.info("Starting generation", trip_id=trip_id, mode=mode)
 
     # Derive resume point from previously emitted events.
-    # event_number is PER-DAY (resets to 1 each day). We track the max
-    # event_number within each positive day_number and pick the counter for
-    # whatever day we are resuming.
     current_day = 0
     next_event_number = 1
     is_resuming = False
@@ -98,14 +95,15 @@ async def generate_trip_itinerary(
                     if isinstance(evnum, int):
                         per_day_max[day] = max(per_day_max.get(day, 0), evnum)
             except Exception as e:
-                log.warning("Skipping malformed prior event", error=str(e))
+                log.error("Resume Point Derivation Failed.", error=str(e))
+                return
         if sanitized_prior_events:
             is_resuming = True
         if max_positive_day > 0:
             current_day = max_positive_day
             next_event_number = per_day_max.get(max_positive_day, 0) + 1
+        # START was emitted but no numbered day yet — resume at day 1.
         elif is_resuming:
-            # START was emitted but no numbered day yet — resume at day 1.
             current_day = 1
             next_event_number = 1
 
@@ -123,14 +121,12 @@ async def generate_trip_itinerary(
         "phase": "bootstrap",
     }
 
-    run_id = trip_id or str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
     graph_config = {"configurable": {"thread_id": run_id}}
 
     graph = get_planner_graph()
 
-    # Queue-backed writer. LangGraph's get_stream_writer() requires Python
-    # 3.11 contextvar propagation — we run on 3.10, so we publish our own
-    # writer via a ContextVar set before the graph task is spawned.
+    # Queue-backed writer.
     queue: asyncio.Queue = asyncio.Queue()
     _SENTINEL = object()
 

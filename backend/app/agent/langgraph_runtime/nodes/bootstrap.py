@@ -10,6 +10,8 @@ Responsibilities:
 
 Returns state updates: total_days, current_day, next_event_number, phase.
 """
+import asyncio
+import uuid
 from datetime import date, datetime
 from typing import Any, Dict
 
@@ -23,18 +25,24 @@ log = get_agent_logger("bootstrap")
 
 
 async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
-    run_id = state.get("trip_id") or "unknown"
+    run_id = (state.get("trip_id") + "-" + state.get("owner_id")) if state.get("owner_id") and state.get("trip_id") else str(uuid.uuid4())
     set_agent_log_context(run_id=run_id, node="bootstrap")
 
-    if not runtime.is_ready:
+    _wait_attempts = 0
+    while not runtime.is_ready:
+        if _wait_attempts >= 30:
+            emit({"type": "error", "content": "Agent runtime never became ready."})
+            log.error("Agent runtime never became ready after 30s; aborting bootstrap")
+            return {"phase": "done", "cancelled": True}
         emit({
             "type": "system",
             "content": "Agent runtime initializing...",
             "error": "Agent runtime is not initialized yet. Please wait.",
         })
         log.warning("Agent runtime is not initialized yet. Please wait.")
-        # Return minimal state so the graph can still attempt to proceed or fail gracefully.
-        return {"phase": "done", "cancelled": True}
+        await asyncio.sleep(1)
+        _wait_attempts += 1
+
 
     mode = state.get("mode", "autonomous")
     if mode != "autonomous":
@@ -43,11 +51,13 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
             "content": f"Mode '{mode}' not wired yet.",
             "error": "Only 'autonomous' mode is supported currently.",
         })
+        log.warning(f"Mode '{mode}' not wired yet.", mode=mode)
         return {"phase": "done", "cancelled": True}
 
     trip_payload = state.get("trip_input", {})
     try:
         trip_data = TripInput(**trip_payload)
+        log.info("Trip input validated", trip_data=trip_data)
     except Exception as exc:
         emit({"type": "error", "content": f"Invalid trip input: {exc}"})
         log.error(f"Invalid trip input: {exc}")
@@ -66,7 +76,6 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
         total_days = max(1, (end_local - start_local).days + 1)
     except Exception:
         # Fall back to the origin-date fields if localTimeString is malformed.
-        log.warning("localTimeStrings malformed, using origin-date fields for total_days calculation")
         try:
             start_local = date(
                 trip_data.start_date.year,
@@ -79,11 +88,13 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
                 trip_data.end_date.day,
             )
             total_days = max(1, (end_local - start_local).days + 1)
+            log.warning("localTimeStrings malformed, used origin-date fields for total_days calculation")
         except Exception:
             total_days = max(
                 1,
                 (trip_data.end_date.utcTimestamp - trip_data.start_date.utcTimestamp) // 86400,
             )
+            log.warning("localTimeStrings malformed, used utcTimestamp fields for total_days calculation")
 
     # Determine resume point from already-emitted events (passed in via initial state).
     # The caller sets state["next_event_number"] and state["current_day"] when resuming.
@@ -91,18 +102,13 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
     next_event_number = state.get("next_event_number", 1)
     is_resuming = bool(state.get("is_resuming", False))
 
-    # If we're resuming and at least one positive day already has events,
-    # skip the research phase entirely (START must not be re-emitted).
-    next_phase = "day" if is_resuming and current_day > 0 else "research"
-
     log.info(
         "Bootstrap complete",
         total_days=total_days,
         current_day=current_day,
         next_event_number=next_event_number,
         mode=mode,
-        is_resuming=is_resuming,
-        next_phase=next_phase,
+        is_resuming=is_resuming
     )
 
     return {
@@ -110,6 +116,5 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
         "current_day": current_day,
         "next_event_number": next_event_number,
         "is_resuming": is_resuming,
-        "is_complete": False,
-        "phase": next_phase,
+        "is_complete": False
     }

@@ -23,7 +23,7 @@ class PlannerState(TypedDict, total=False):
     total_days: int
     next_event_number: int                  # per-day counter (resets to 1 each day)
     is_complete: bool                       # True after END event is emitted
-    phase: Literal["bootstrap", "research", "day", "finalize", "done"]
+    phase: Literal["bootstrap", "research", "collaboration", "day", "finalize", "done"]
 
     # ── Resume ────────────────────────────────────────────────────────────────
     is_resuming: bool                       # True if picking up prior events
@@ -32,20 +32,19 @@ class PlannerState(TypedDict, total=False):
     # ── Research artefacts ────────────────────────────────────────────────────
     research_facts: dict                    # compact JSON ≤ 2 KB; schema_version: 1
 
-    # ── Cross-day handoff notes ──────────────────────────────────────────────
-    # Append-only (reducer = list add). Populated at the end of each day to
-    # carry policy/coverage facts that aren't captured in emitted events:
-    # hotel checkout rules, round-trip flight coverage (so the return-day
-    # planner doesn't rebook), car rental fuel policy, booking-token expiry,
-    # etc. Each note: {day_number_added, scope, topic, text}.
+    # ── Cross-day handoff notes ──────────────────────────────────────────────=
     shared_notes: Annotated[list, add]
 
-    # ── Identity (for DB persistence and resume) ─────────────────────────────
+    # ── Identity  ─────────────────────────────
     owner_id: Optional[str]
     trip_id: Optional[str]
 
     # ── Cancellation ──────────────────────────────────────────────────────────
     cancelled: bool
+
+
+
+    
 
     # ── Reserved: collaborative mode ──────────────────────────────────────────
     pending_human_request: Optional[str]    # question to surface to the user
