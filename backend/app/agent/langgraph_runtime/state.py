@@ -32,8 +32,6 @@ class PlannerState(TypedDict, total=False):
     # ── Research artefacts ────────────────────────────────────────────────────
     research_facts: dict                    # compact JSON ≤ 2 KB; schema_version: 1
 
-    # ── Cross-day handoff notes ──────────────────────────────────────────────=
-    shared_notes: Annotated[list, add]
 
     # ── Identity  ─────────────────────────────
     owner_id: Optional[str]
@@ -41,6 +39,13 @@ class PlannerState(TypedDict, total=False):
 
     # ── Cancellation ──────────────────────────────────────────────────────────
     cancelled: bool
+
+    # ── Open-booking guard ────────────────────────────────────────────────────
+    # Set by the open_booking_guard node when it detects un-closed bookings
+    # (HOTEL_CHECKIN without HOTEL_CHECKOUT, etc.) and routes back to the
+    # day planner for a dedicated close-only pass on the final day.
+    close_pass: bool                        # True → day_planner runs in close-only mode
+    close_pass_attempted: bool              # True after one close pass has run; prevents infinite loops
 
 
 

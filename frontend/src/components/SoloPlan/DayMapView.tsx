@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Car, Footprints, Bike, Train, Plane, Loader2, Play, Square, Copyright } from 'lucide-react';
+import { Car, Footprints, Bike, Train, Plane, Loader2, Play, Square } from 'lucide-react';
 import { ItineraryDay } from './types';
 import {
   EVENT_ACCENT,
@@ -7,6 +7,7 @@ import {
   coordinatesForEvent,
   eventKey,
 } from './constants';
+import { GOOGLE_MAPS_MAP_ID } from '../../apis/config';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -719,6 +720,7 @@ export default function DayMapViewBody({
       mapRef.current = new maps.Map(el, {
         center: pins.length > 0 ? { lat: pins[0].lat, lng: pins[0].lng } : { lat: 20, lng: 0 },
         zoom: pins.length > 0 ? 12 : 3,
+        mapId: GOOGLE_MAPS_MAP_ID,
         disableDefaultUI: true,
         fullscreenControl: true,
         fullscreenControlOptions: { position: maps.ControlPosition?.TOP_RIGHT },

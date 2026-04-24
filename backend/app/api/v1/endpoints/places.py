@@ -183,46 +183,38 @@ async def get_destination_image_by_place_id(place_id: str = Query(..., descripti
 
 @router.get("/destination-images-by-name")
 async def get_destination_images_by_name(destination: str = Query(..., description="Destination city/place name"), count: int = Query(5, description="Number of images to return"), min_ratio: float = Query(1.5, description="Minimum ratio of width to height for landscape images")):
+    # This endpoint first gets the place id from its name, then reuses the get_destination_image_by_place_id endpoint to get the images.
     if not destination or destination == "" or destination == "N/A":
         return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Destination is required"}
     cache_key = await generate_cache_key("get_destination_images_by_name", {"destination": destination.lower().strip()})
     cached_value = await retrieve_api_cache(cache_key, expires_in=31)
     if cached_value:
-        all_photos = cached_value.get("photos", [])
+        placeId = cached_value.get("placeId", "")
     else:
         if not API_KEY:
-            return {"image_urls": [settings.FALLBACK_IMAGE]}
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": API_KEY,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.photos"
-        }
-        payload = {
-        "textQuery": destination,
-        "maxResultCount": 1 ## This is for searching for the place
-        }
-        client = get_http_client()
-        place_resp = await client.post(SEARCH_URL, headers=headers, json=payload, timeout=10)
-        if place_resp.status_code != 200:
+            return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Google Maps API key is not configured on the server."}
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": API_KEY,
+                "X-Goog-FieldMask": "places.id"
+            }
+            payload = {
+            "textQuery": destination,
+            "maxResultCount": 1 ## This is for searching for the place which best matches the destination name
+            }
+            client = get_http_client()
+            place_resp = await client.post(SEARCH_URL, headers=headers, json=payload, timeout=10)
+            if place_resp.status_code != 200:
+                return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Failed to search for the destination"}
+            results = place_resp.json().get("places", [])
+            if not results:
+                return {"image_urls": [settings.FALLBACK_IMAGE], "error": "No results found for the destination"}
+            target_place = results[0]
+            placeId = target_place.get("id", "")
+            if not placeId or placeId == "" or placeId == "N/A":
+                return {"image_urls": [settings.FALLBACK_IMAGE], "error": "No place ID found for the destination"}
+            await insert_api_cache(cache_key, {"placeId": placeId})
+        except Exception:
             return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Failed to search for the destination"}
-        results = place_resp.json().get("places", [])
-        if not results:
-            return {"image_urls": [settings.FALLBACK_IMAGE], "error": "No results found for the destination"}
-        target_place = results[0]
-        all_photos = target_place.get("photos", [])
-        await insert_api_cache(cache_key, {"photos": all_photos})
-    photo_urls = []
-    async with Session() as db:
-        for photo in all_photos:
-            if len(photo_urls) >= count:
-                break
-            width = photo.get("widthPx", 0)
-            height = photo.get("heightPx", 0)
-            if height > 0:
-                if width / height >= min_ratio:
-                    resource_name = photo.get("name")
-                    # Return proxy URL instead of direct Google URL
-                    media_url = await _build_proxy_url(resource_name, db)
-                    if media_url:
-                        photo_urls.append(media_url)
-    return {"image_urls": photo_urls}
+    return await get_destination_image_by_place_id(placeId, count, min_ratio)

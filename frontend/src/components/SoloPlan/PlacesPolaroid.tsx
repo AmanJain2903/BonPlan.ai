@@ -58,7 +58,7 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
       try {
         const rawImageSets = await Promise.all(
           places.map(async (place) => {
-            const urls = await api.places.getDestinationImagesByPlaceId(place.placeId, 10, 1.5);
+            const urls = await api.places.getDestinationImagesByPlaceId(place.placeId, 1, 1.5);
             // Filter out fallback placeholder images
             const validUrls = (urls || []).filter((url) => url && url !== FALLBACK_IMAGE);
             return validUrls;
@@ -111,7 +111,7 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
   const currentImage = currentPlaceImages[currentImageIndex];
   const currentName = filteredPlacesRef.current[placeIndex]?.placeName || '';
 
-  // Auto-rotate: image every 3s, place every 6s
+  // Auto-rotate: image every 1.5s, place every 3s
   useEffect(() => {
     if (loading || allImages.length === 0) return;
 
@@ -140,7 +140,7 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
           return next;
         });
       }
-    }, 3000);
+    }, 1500);
 
     return () => window.clearInterval(intervalId);
   }, [loading, allImages, placeIndex]);

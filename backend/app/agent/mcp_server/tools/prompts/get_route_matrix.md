@@ -13,8 +13,8 @@ Same as `get_route`: exactly ONE of `address`, `{lat,lng}`, or `place_id` per en
 ### Arguments
 - **`origins`** (list[Waypoint], required, non-empty).
 - **`destinations`** (list[Waypoint], required, non-empty).
-- **`travel_mode`** (`DRIVE`|`WALK`|`BICYCLE`|`TRANSIT`|`TWO_WHEELER`, optional): default `DRIVE`.
-- **`routing_preference`** (optional): DRIVE/TWO_WHEELER only.
+- **`travel_mode`** (`DRIVE`|`WALK`|`BICYCLE`|`TRANSIT`, optional): default `DRIVE`.
+- **`routing_preference`** (optional): DRIVE only.
 - **`departure_time`** (str ISO 8601 UTC, optional): must be in the future.
 - **`route_modifiers`** (optional).
 - **`units_system`** (`IMPERIAL`|`METRIC`, optional): default `IMPERIAL`.

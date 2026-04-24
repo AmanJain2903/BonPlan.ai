@@ -129,7 +129,8 @@ class RunResults(BaseModel):
 
 class TestResults(BaseModel):
     planner_agent_model: str = settings.PLANNER_AGENT_MODEL
-    pruning_agent_model: str = settings.CONTEXT_PRUNING_MODEL
+    context_pruning_model: str = settings.CONTEXT_PRUNING_MODEL
+    serper_content_parser_model: str = settings.SERPER_CONTENT_PARSER_MODEL
     num_runs: int = RUNS
     successful_runs: int = 0
     failed_runs: int = 0

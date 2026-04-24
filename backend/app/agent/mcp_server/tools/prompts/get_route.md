@@ -15,9 +15,9 @@ Each waypoint uses exactly ONE of:
 ### Arguments
 - **`origin`** (Waypoint, required).
 - **`destination`** (Waypoint, required).
-- **`intermediate_waypoints`** (list[Waypoint], optional): ordered stops.
-- **`travel_mode`** (`DRIVE`|`WALK`|`BICYCLE`|`TRANSIT`|`TWO_WHEELER`, optional): default `DRIVE`.
-- **`routing_preference`** (`TRAFFIC_AWARE`|`TRAFFIC_UNAWARE`|`TRAFFIC_AWARE_OPTIMAL`, optional): DRIVE/TWO_WHEELER only. Default `TRAFFIC_AWARE`.
+- **`intermediate_waypoints`** (list[Waypoint], optional): ordered stops. Must be less than 11 waypoints.
+- **`travel_mode`** (`DRIVE`|`WALK`|`BICYCLE`|`TRANSIT`, optional): default `DRIVE`.
+- **`routing_preference`** (`TRAFFIC_AWARE`|`TRAFFIC_UNAWARE`|`TRAFFIC_AWARE_OPTIMAL`, optional): DRIVE only. Default `TRAFFIC_AWARE`.
 - **`departure_time`** (str ISO 8601 UTC, optional): must be in the future.
 - **`route_modifiers`** (optional): e.g. `{ avoidHighways: true, avoidTolls: false }`.
 - **`units_system`** (`IMPERIAL`|`METRIC`, optional): default `IMPERIAL`.

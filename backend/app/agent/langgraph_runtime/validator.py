@@ -107,7 +107,7 @@ def _same_location(a: Optional[Tuple[float, float]], b: Optional[Tuple[float, fl
     return _haversine_m(a, b) <= _SAME_LOCATION_METERS
 
 
-def _validate_placement(
+async def _validate_placement(
     args: Dict[str, Any],
     prior_events: List[Dict[str, Any]],
 ) -> Optional[str]:
@@ -136,6 +136,32 @@ def _validate_placement(
         return None
 
     same_day = [e for e in prior_events if e.get("day_number") == current_day]
+
+    # ── Day-boundary check ───────────────────────────────────────────────────
+    # When this is the FIRST event of a new day (no same-day prior events) and
+    # previous day(s) exist, the traveler must start day N where day N-1
+    # ended. Allow a COMMUTE whose origin matches the previous day's end to
+    # bridge any location change; anything else is a teleport.
+    if not same_day and prior_day_numbers:
+        last_prior_day = max(prior_day_numbers)
+        prev_day_events = [e for e in prior_events if e.get("day_number") == last_prior_day]
+        if prev_day_events:
+            prev_day_last = prev_day_events[-1]
+            _, prev_day_end = _event_coords(prev_day_last)
+            curr_origin, _ = _event_coords(args)
+            if not _same_location(prev_day_end, curr_origin):
+                log.warning("Agent tried to start a new day at a different location than the previous day's end.")
+                return (
+                    f"Day {current_day} cannot start at a different location than where "
+                    f"day {last_prior_day} ended. The previous day ended at {prev_day_end} "
+                    f"(event #{prev_day_last.get('event_number')} "
+                    f"[{prev_day_last.get('event_type')}]) but this [{et}] event "
+                    f"begins at {curr_origin}. "
+                    "Either start this day with a COMMUTE event bridging from "
+                    "the previous day's end location, or re-emit the LAST event "
+                    f"of day {last_prior_day} (same day_number + event_number as it was for that event) so "
+                    "the traveler ends that day at this location. Do NOT teleport."
+                )
 
     # Commute gap between same-day adjacent events at different locations.
     if same_day:
@@ -198,11 +224,14 @@ def _validate_placement(
     return None
 
 
-def validate_itinerary_event(
+async def validate_itinerary_event(
     args: Dict[str, Any],
     mode: str = "autonomous",
     is_resuming: bool = False,
     prior_events: Optional[List[Dict[str, Any]]] = None,
+    current_day: int = 0,
+    total_days: int = 1,
+    next_event_number: int = 1,
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     """
     Validate and coerce an add_itinerary_event call.
@@ -213,6 +242,71 @@ def validate_itinerary_event(
     """
     event_type = args.get("event_type", "")
 
+    # ── day_number / event_number sanity checks ───────────────────────────
+    day_number = args.get("day_number")
+    event_number = args.get("event_number")
+
+    if day_number is None or not isinstance(day_number, int):
+        log.warning("Missing or non-int day_number", day_number=day_number)
+        return (
+            "day_number is required and must be an integer. "
+            "For START use 0, for END use -1, for regular events use the "
+            f"current day number which is {current_day}.",
+            None,
+        )
+
+    if event_number is None or not isinstance(event_number, int):
+        log.warning("Missing or non-int event_number", event_number=event_number)
+        return (
+            "event_number is required and must be an integer. "
+            "For START use 0, for END use -1, for regular events the next "
+            f"expected event_number is {next_event_number}.",
+            None,
+        )
+
+    # START and END have fixed numbering enforced upstream, but double-check.
+    if event_type == "START":
+        if day_number != 0 or event_number != 0:
+            log.warning("START event with wrong numbering", day_number=day_number, event_number=event_number)
+            args["day_number"] = 0
+            args["event_number"] = 0
+    elif event_type == "END":
+        if day_number != -1 or event_number != -1:
+            log.warning("END event with wrong numbering", day_number=day_number, event_number=event_number)
+            args["day_number"] = -1
+            args["event_number"] = -1
+    else:
+        # Regular events: day_number must be >= 1, event_number >= 1.
+        if day_number < 1:
+            log.warning("Regular event with invalid day_number", event_type=event_type, day_number=day_number)
+            return (
+                f"day_number must be >= 1 for event_type='{event_type}', "
+                f"but got {day_number}. The current day is {current_day}.",
+                None,
+            )
+        if event_number < 1:
+            log.warning("Regular event with invalid event_number", event_type=event_type, event_number=event_number)
+            return (
+                f"event_number must be >= 1 for event_type='{event_type}', "
+                f"but got {event_number}. The next expected event_number is "
+                f"{next_event_number}.",
+                None,
+            )
+        
+        if total_days > 0 and day_number > total_days:
+            log.warning(
+                "day_number exceeds total_days",
+                event_type=event_type,
+                day_number=day_number,
+                total_days=total_days,
+            )
+            return (
+                f"day_number={day_number} exceeds the total trip length of "
+                f"{total_days} days. You cannot emit events beyond the trip.",
+                None,
+            )
+
+    # ── Mode guards ───────────────────────────────────────────────────────
     # Editing-mode guard: START re-emission breaks the frontend.
     if mode in START_GUARD_MODES and event_type == "START":
         log.warning(f"Agent tried to re-emit a START event in {mode} mode.")
@@ -233,9 +327,10 @@ def validate_itinerary_event(
             None,
         )
 
+    # ── event_type + detail-field shape checks ────────────────────────────
     expected_field = EVENT_TYPE_TO_DETAIL_FIELD.get(event_type)
     if not expected_field:
-        log.warning("Agent tried to emit an unknown event_type..", event_type=event_type)
+        log.warning("Agent tried to emit an unknown event_type.", event_type=event_type)
         return f"Unknown event_type '{event_type}'.", None
 
     populated_detail_fields = [
@@ -262,7 +357,7 @@ def validate_itinerary_event(
         )
 
     # Commute/placement rules — only after basic shape passes.
-    placement_error = _validate_placement(args, prior_events or [])
+    placement_error = await _validate_placement(args, prior_events or [])
     if placement_error:
         return placement_error, None
 

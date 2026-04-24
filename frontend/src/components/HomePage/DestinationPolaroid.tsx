@@ -33,7 +33,7 @@ export default function DestinationPolaroid({
           destNames.map(async (name) => {
             if (name === 'Unknown Destination') return [];
             // Use the new plural API to get multiple images
-            const urls = await api.places.getDestinationImagesByName(name, 10, 1.5);
+            const urls = await api.places.getDestinationImagesByName(name, 2, 1.5);
             return urls.length > 0 ? urls : [];
           })
         );
@@ -91,7 +91,7 @@ export default function DestinationPolaroid({
 
       const cityImages = allImages[cityIndex] || [];
 
-      // 1. Every 6s (every 2nd tick), swap city
+      // 1. Every 3s (every 2nd tick), swap city
       if (totalTicks % 2 === 0 && allImages.length > 1) {
         setImageIndices(prev => {
           const newIndices = [...prev];
@@ -102,7 +102,7 @@ export default function DestinationPolaroid({
         });
         setCityIndex(prev => (prev + 1) % allImages.length);
       }
-      // 2. Every 3s (every tick), swap image within city
+      // 2. Every 1.5s (every tick), swap image within city
       else if (cityImages.length > 1) {
         setImageIndices(prev => {
           const newIndices = [...prev];
@@ -110,7 +110,7 @@ export default function DestinationPolaroid({
           return newIndices;
         });
       }
-    }, 3000);
+    }, 1500);
 
     return () => window.clearInterval(intervalId);
   }, [loading, allImages, cityIndex]); // Reset on city change (automatic or manual)

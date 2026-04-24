@@ -76,9 +76,6 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
     trip_data = TripInput(**trip_payload)
 
     config = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(
-            include_thoughts=False,
-        ),
         tools=[runtime.research_tool_block or runtime.planner_tool_block],
         system_instruction=RESEARCH_SYSTEM_PROMPT,
         temperature=0.5,
@@ -95,8 +92,6 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
         "2-4 key neighborhoods, any travel advisories, optimal route covering all destinations).\n"
         "2. Emit the START event immediately after. Keep the start_details "
         "costs as rough estimates.\n"
-        "3. After emitting START, output EXACTLY ONE JSON object with the research you did)\n"
-        "Then STOP. Do not emit anything else.\n"
         f"User Request:\n{trip_data.model_dump_json()}\n\n"
         "Begin now."
     )

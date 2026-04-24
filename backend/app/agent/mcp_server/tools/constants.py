@@ -2,16 +2,46 @@ from typing import Literal
 
 GoogleFieldMasks = {
     "places": {
-        "textSearch": "places.id,nextPageToken,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.businessStatus,places.primaryTypeDisplayName,places.primaryType,places.types,places.accessibilityOptions,places.currentOpeningHours,places.currentSecondaryOpeningHours,places.internationalPhoneNumber,places.priceLevel,places.priceRange,places.rating,places.regularOpeningHours,places.regularSecondaryOpeningHours,places.userRatingCount,places.websiteUri,places.allowsDogs,places.curbsidePickup,places.delivery,places.dineIn,places.editorialSummary,places.evChargeAmenitySummary,places.evChargeOptions,places.fuelOptions,places.generativeSummary,places.goodForChildren,places.goodForGroups,places.goodForWatchingSports,places.liveMusic,places.menuForChildren,places.neighborhoodSummary,places.parkingOptions,places.paymentOptions,places.outdoorSeating,places.reservable,places.restroom,places.reviewSummary,places.servesBeer,places.servesBreakfast,places.servesBrunch,places.servesCocktails,places.servesCoffee,places.servesDessert,places.servesDinner,places.servesLunch,places.servesVegetarianFood,places.servesWine,places.takeout",
-        "nearbySearch": "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.businessStatus,places.primaryTypeDisplayName,places.primaryType,places.types,places.accessibilityOptions,places.currentOpeningHours,places.currentSecondaryOpeningHours,places.internationalPhoneNumber,places.priceLevel,places.priceRange,places.rating,places.regularOpeningHours,places.regularSecondaryOpeningHours,places.userRatingCount,places.websiteUri,places.allowsDogs,places.curbsidePickup,places.delivery,places.dineIn,places.editorialSummary,places.evChargeAmenitySummary,places.evChargeOptions,places.fuelOptions,places.generativeSummary,places.goodForChildren,places.goodForGroups,places.goodForWatchingSports,places.liveMusic,places.menuForChildren,places.neighborhoodSummary,places.parkingOptions,places.paymentOptions,places.outdoorSeating,places.reservable,places.restroom,places.reviewSummary,places.servesBeer,places.servesBreakfast,places.servesBrunch,places.servesCocktails,places.servesCoffee,places.servesDessert,places.servesDinner,places.servesLunch,places.servesVegetarianFood,places.servesWine,places.takeout",
-        "placeInfo": "id,displayName,formattedAddress,location,googleMapsUri,businessStatus,primaryTypeDisplayName,primaryType,types,accessibilityOptions,currentOpeningHours,currentSecondaryOpeningHours,internationalPhoneNumber,priceLevel,priceRange,rating,regularOpeningHours,regularSecondaryOpeningHours,userRatingCount,websiteUri,editorialSummary,generativeSummary,neighborhoodSummary,reviewSummary,allowsDogs,curbsidePickup,delivery,dineIn,goodForChildren,goodForGroups,goodForWatchingSports,liveMusic,menuForChildren,outdoorSeating,reservable,restroom,servesBeer,servesBreakfast,servesBrunch,servesCocktails,servesCoffee,servesDessert,servesDinner,servesLunch,servesVegetarianFood,servesWine,takeout,evChargeAmenitySummary,evChargeOptions,fuelOptions,parkingOptions,paymentOptions",
+        "textSearch": "nextPageToken,places.id,places.displayName,places.primaryTypeDisplayName,places.formattedAddress,places.location,places.googleMapsUri,places.websiteUri,places.rating,places.userRatingCount,places.priceRange,places.priceLevel,places.currentOpeningHours,places.regularOpeningHours,places.accessibilityOptions",
+        "nearbySearch": "places.id,places.displayName,places.primaryTypeDisplayName,places.formattedAddress,places.location,places.googleMapsUri,places.websiteUri,places.rating,places.userRatingCount,places.priceRange,places.priceLevel,places.currentOpeningHours,places.regularOpeningHours,places.accessibilityOptions",
+        "placeInfo": "id,displayName,primaryTypeDisplayName,primaryType,types,formattedAddress,location,googleMapsUri,websiteUri,rating,userRatingCount,priceRange,priceLevel,currentOpeningHours,regularOpeningHours,accessibilityOptions,dineIn,servesBeer,servesCocktails,servesWine,servesVegetarianFood,servesBreakfast,servesCoffee,servesBrunch,servesLunch,servesDinner,servesDessert,allowsDogs,goodForChildren,goodForGroups,liveMusic,outdoorSeating,evChargeOptions,parkingOptions,paymentOptions,editorialSummary,generativeSummary,neighborhoodSummary,reviewSummary,internationalPhoneNumber",
     },
     "routes": {
-        "computeRoutes": "routes.routeToken,routes.routeLabels,routes.distanceMeters,routes.duration,routes.staticDuration,routes.description,routes.warnings,routes.travelAdvisory,routes.localizedValues,routes.optimized_intermediate_waypoint_index,routes.legs",
-        "computeRouteMatrix": "status,condition,distanceMeters,duration,staticDuration,travelAdvisory,localizedValues,originIndex,destinationIndex,fallbackInfo",
+        "computeRoutes": "routes.routeLabels,routes.distanceMeters,routes.duration,routes.staticDuration,routes.description,routes.warnings,routes.travelAdvisory,routes.localizedValues,routes.optimized_intermediate_waypoint_index,routes.legs",
+        "computeRouteMatrix": "status,condition,distanceMeters,duration,staticDuration,travelAdvisory,localizedValues,originIndex,destinationIndex",
     },
 
 }
+
+_PLACE_TYPE_SAMPLE: list[str] = sorted({
+    "restaurant",
+    "cafe",
+    "bar",
+    "bakery",
+    "hotel",
+    "lodging",
+    "hostel",
+    "resort_hotel",
+    "tourist_attraction",
+    "museum",
+    "art_gallery",
+    "park",
+    "national_park",
+    "beach",
+    "shopping_mall",
+    "supermarket",
+    "grocery_store",
+    "airport",
+    "subway_station",
+    "train_station",
+    "bus_station",
+    "gas_station",
+    "parking",
+    "pharmacy",
+    "hospital",
+    "atm",
+    "bank",
+})
 
 GooglePlaceType = Literal[
 "car_dealer","car_rental","car_repair","car_wash","ebike_charging_station","electric_vehicle_charging_station","gas_station","parking","parking_garage","parking_lot","rest_stop","tire_shop",

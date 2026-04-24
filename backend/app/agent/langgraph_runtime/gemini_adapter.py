@@ -30,51 +30,31 @@ from app.agent.langgraph_runtime.validator import validate_itinerary_event
 
 log = get_agent_logger("gemini_adapter")
 
-# Tools whose responses carry durable cross-day facts (policies, round-trip
-# coverage, booking tokens) that emitted events don't capture. Responses
-# from these tools get snapshotted and surfaced to the knowledge-extractor
-# at the end of the day.
-_KNOWLEDGE_TOOL_NAMES: set[str] = {
-    "search_hotels",
-    "get_hotel_booking_url",
-    "search_rental_cars",
-    "search_places",
-    "search_places_nearby",
-    "get_place_info",
-    "search_flights",
-    "search_multi_city_flights",
-    "get_next_flights",
-    "get_flight_booking_details",
-    "get_hotel_booking_url",
-}
-
 _MODEL = settings.PLANNER_AGENT_MODEL
-_PRUNING_MODEL = settings.CONTEXT_PRUNING_MODEL
 
 
 # Per-tool cap on how many characters of a tool response get forwarded to the
 # model on the next turn. Uncapped responses (search_hotels / search_places /
 # search_flights can each be 30-50 KB) balloon the model's input on every
 # subsequent turn and are the #1 driver of post-tool-call "halts" (high TTFT
-# on large context). The full response is still stored in session_tool_findings
-# for the knowledge-extractor, which already has its own 4 KB cap there.
+# on large context).
 _TOOL_RESPONSE_CAPS: dict[str, int] = {
-    # Heavy search tools — many results, each big. 8 KB is roughly 5-8 items.
-    "search_hotels": 8000,
+    # Heavy search tools — many results, each big. 12 KB is roughly 8-12 items.
+    "search_hotels": 12000,
     "search_places": 8000,
     "search_places_nearby": 8000,
-    "search_flights": 10000,
-    "search_multi_city_flights": 10000,
-    "get_next_flights": 10000,
-    "search_rental_cars": 8000,
+    "search_flights": 12000,
+    "search_multi_city_flights": 12000,
+    "get_next_flights": 12000,
+    "search_rental_cars": 12000,
     # Content scrapes — already trimmed server-side to 4 KB, but defend again.
     "search_web": 6000,
     "get_content_from_url": 5000,
-    "get_place_info": 5000,
+    "get_place_info": 8000,
 }
 # Default cap for any tool not in the map above. Geocoding / routing / timezone
 # responses are small, so this is mostly a safety floor.
-_DEFAULT_RESPONSE_CAP = 4000
+_DEFAULT_RESPONSE_CAP = 8000
 
 
 def _is_event_tool(name: str) -> bool:
@@ -100,17 +80,18 @@ def _coerce_event_args(tool_name: str, raw_args: dict) -> dict:
         args["event_type"] = fixed
     return args
 
-# Token-based history pruning.  Trigger pruning when history approaches
-# `_PRUNE_THRESHOLD_RATIO` of the model's context window; after pruning aim for
-# `_PRUNE_TARGET_RATIO`.  The first history item (the initial user message) is
-# always preserved — it contains the node-specific task prompt.
-_PRUNE_THRESHOLD_RATIO = 0.20
-_PRUNE_TARGET_RATIO = 0.15
-_PRUNE_MAX_ITERS = 12
+# Token-based history pruning.  Trigger pruning when TOTAL context usage
+# (system prompt + tool schemas + history) approaches `_PRUNE_THRESHOLD_RATIO`
+# of the model's context window; after pruning aim for `_PRUNE_TARGET_RATIO`.
+# The first history item (the initial user message) is always preserved — it
+# contains the node-specific task prompt.
+_PRUNE_THRESHOLD_RATIO = 0.75
+_PRUNE_TARGET_RATIO = 0.50
+_PRUNE_MAX_ITERS = 8
 
-# Safety floor: even if token counting fails we never let history grow
-# unbounded. This caps total items (2 per turn + the initial message).
-_SAFETY_MAX_ITEMS = 25
+# One-time cache for the static token overhead (system instruction + tool
+# schemas).  Keyed by id(config) so each node's config is measured once.
+_static_overhead_cache: dict[int, int] = {}
 
 
 def _estimate_tokens_from_chars(history: list) -> int:
@@ -135,144 +116,184 @@ def _estimate_tokens_from_chars(history: list) -> int:
                     total_chars += len(str(getattr(fr, "response", "")))
                 except Exception:
                     pass
-    return total_chars // 4
+    return total_chars // 3
 
 
-async def _count_tokens_safe(client, history: list) -> Optional[int]:
-    """Return total tokens; fall back to char/4 estimate if the SDK call fails."""
+async def _get_static_overhead(
+    client, config: types.GenerateContentConfig
+) -> int:
+    """
+    One-time count of system_instruction + tool-schema tokens.
+
+    Result is cached by ``id(config)`` so subsequent calls for the same
+    node config are free.  If the network call fails, falls back to a
+    conservative estimate (40 000 tokens — roughly 30-50 MCP tool schemas
+    + a multi-KB system prompt).
+    """
+    key = id(config)
+    if key in _static_overhead_cache:
+        return _static_overhead_cache[key]
+    try:
+        resp = await client.aio.models.count_tokens(
+            model=_MODEL,
+            contents=[],
+            config=types.CountTokensConfig(
+                system_instruction=config.system_instruction,
+                tools=config.tools,
+            ),
+        )
+        overhead = int(getattr(resp, "total_tokens", 0) or 0)
+        _static_overhead_cache[key] = overhead
+        log.info("Static overhead computed", tokens=overhead)
+        return overhead
+    except Exception as exc:
+        log.warning("Failed to compute static overhead; using 40k fallback", error=str(exc))
+        _static_overhead_cache[key] = 40_000
+        return 40_000
+
+
+async def _count_tokens_safe(
+    client,
+    history: list,
+    config: Optional[types.GenerateContentConfig] = None,
+) -> Optional[int]:
+    """
+    Return total tokens for the full request (system + tools + history).
+
+    When *config* is supplied the count includes system_instruction and tool
+    schemas — giving an accurate picture of context-window usage.  Falls back
+    to char/3 estimate of history + cached static overhead if the SDK call
+    fails.
+    """
     if not history:
         return 0
     try:
-        resp = await client.aio.models.count_tokens(model=_MODEL, contents=history)
+        count_cfg = None
+        if config is not None:
+            count_cfg = types.CountTokensConfig(
+                system_instruction=config.system_instruction,
+                tools=config.tools,
+            )
+        resp = await client.aio.models.count_tokens(
+            model=_MODEL, contents=history, config=count_cfg,
+        )
         t = int(getattr(resp, "total_tokens", 0) or 0)
         if t > 0:
             return t
     except Exception as exc:
         log.debug("count_tokens failed; using char estimate", error=str(exc))
-    return _estimate_tokens_from_chars(history)
+    # Fallback: char estimate + cached static overhead (if available).
+    est = _estimate_tokens_from_chars(history)
+    if config is not None:
+        est += _static_overhead_cache.get(id(config), 40_000)
+    return est
 
 
-def _render_history_for_summary(items: list) -> str:
-    """Flatten a list of Content items into plain text for the summarizer."""
-    lines: list[str] = []
-    for item in items:
-        role = getattr(item, "role", None) or "unknown"
-        parts = getattr(item, "parts", None) or []
-        chunks: list[str] = []
-        for p in parts:
-            txt = getattr(p, "text", None)
-            if isinstance(txt, str) and txt.strip():
-                chunks.append(txt.strip())
-                continue
-            fc = getattr(p, "function_call", None)
-            if fc is not None:
-                try:
-                    args_preview = str(dict(fc.args or {}))[:400]
-                except Exception:
-                    args_preview = ""
-                chunks.append(f"[tool_call {fc.name}] {args_preview}")
-                continue
-            fr = getattr(p, "function_response", None)
-            if fr is not None:
-                try:
-                    resp_preview = str(getattr(fr, "response", ""))[:400]
-                except Exception:
-                    resp_preview = ""
-                chunks.append(f"[tool_response {getattr(fr, 'name', '')}] {resp_preview}")
-                continue
-        if chunks:
-            lines.append(f"{role}: " + " | ".join(chunks))
-    return "\n".join(lines)
+_RECAP_PROMPT = (
+    "You are summarizing intermediate messages from an AI travel-planner's "
+    "chat history that are about to be dropped to free context window. "
+    "Write a compact recap in <=220 words capturing ONLY information the "
+    "planner still needs for later turns: tools called, key facts discovered "
+    "(prices, flight numbers, hotel names, place IDs, coordinates, booking "
+    "URLs), decisions locked in, and any open loose ends. Preserve exact "
+    "numeric values. No preamble, no bullet headers, no meta commentary — "
+    "just the recap paragraph."
+)
 
 
-async def _summarize_dropped(dropped_items: list) -> str:
+async def _summarize_dropped(dropped: list) -> Optional[str]:
     """
-    Ask the pruning model to compress the dropped turns into a dense recap.
-    Falls back to a deterministic text stub if the pruning client is absent or
-    the call fails — the calling code never raises.
+    Use the small pruning model to compress dropped chat items into a short
+    recap the planner can reference on later turns. Returns None on any
+    failure — caller falls back to drop-without-recap behavior.
     """
-    pruning_client = runtime.pruning_client
-    rendered = _render_history_for_summary(dropped_items)
-    if not rendered:
-        log.warning("No rendered history for summarization")
-        return "(older context elided)"
-
-    fallback = (
-        "[Older context compressed] "
-        + rendered[:1200].replace("\n", " ")
-    )
-
-    if pruning_client is None:
-        log.warning("Pruning client unavailable, falling back to fallback stub")
-        return fallback
-
-    prompt = (
-        "You are compressing earlier turns of an AI travel-planning conversation. "
-        "Produce a tight recap that preserves: tools already called "
-        "and their key findings (hotels/flights/places/routes chosen or ruled out), "
-        "coordinates/IDs referenced, user preferences the model has committed to, "
-        "and any decisions already made. Drop chit-chat. Use bullet points. "
-        "Do NOT fabricate details. Do NOT re-emit events. Do NOT include markdown headers.\n\n"
-        "--- DROPPED TURNS START ---\n"
-        f"{rendered}\n"
-        "--- DROPPED TURNS END ---\n\n"
-        "Recap:"
-    )
+    if not dropped or runtime.pruning_client is None:
+        return None
     try:
-        resp = await pruning_client.aio.models.generate_content(
-            model=_PRUNING_MODEL,
-            contents=prompt,
+        chunks: list[str] = []
+        for item in dropped:
+            parts = getattr(item, "parts", None) or []
+            role = getattr(item, "role", "") or ""
+            for p in parts:
+                txt = getattr(p, "text", None)
+                if isinstance(txt, str) and txt:
+                    chunks.append(f"[{role}] {txt}")
+                fc = getattr(p, "function_call", None)
+                if fc is not None:
+                    try:
+                        args_repr = str(dict(fc.args or {}))[:2000]
+                    except Exception:
+                        args_repr = ""
+                    chunks.append(f"[tool_call {getattr(fc, 'name', '')}] {args_repr}")
+                fr = getattr(p, "function_response", None)
+                if fr is not None:
+                    try:
+                        resp_repr = str(getattr(fr, "response", ""))[:2000]
+                    except Exception:
+                        resp_repr = ""
+                    chunks.append(f"[tool_response {getattr(fr, 'name', '')}] {resp_repr}")
+        blob = "\n".join(chunks)
+        if not blob.strip():
+            return None
+        resp = await runtime.pruning_client.aio.models.generate_content(
+            model=settings.CONTEXT_PRUNING_MODEL,
+            contents=[f"Messages to recap:\n\n{blob}"],
+            config=types.GenerateContentConfig(
+                system_instruction=_RECAP_PROMPT,
+                temperature=0.1,
+                max_output_tokens=512,
+            ),
         )
-        text = (getattr(resp, "text", None) or "").strip()
-        if text:
-            return "[Earlier-context recap]\n" + text
-        log.info("Summarization pruning successful")
+        text = getattr(resp, "text", None)
+        if isinstance(text, str) and text.strip():
+            log.info("Pruning summarization successful", summary_length=len(text.strip()))
+            return text.strip()
     except Exception as exc:
-        log.debug("Summarization pruning failed; using fallback stub", error=str(exc))
-    return fallback
+        log.warning("Pruning summarization failed", error=str(exc))
+    return None
 
 
-async def _prune_history(client, history: list) -> tuple[list, int, str | None]:
+async def _needs_pruning(
+    client,
+    history: list,
+    config: Optional[types.GenerateContentConfig] = None,
+) -> bool:
+    """Cheap gate: does the current history cross the prune threshold?"""
+    if len(history) <= 3:
+        return False
+    ctx_window = settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
+    threshold = int(ctx_window * _PRUNE_THRESHOLD_RATIO)
+    static_overhead = await _get_static_overhead(client, config) if config else 0
+    local_estimate = _estimate_tokens_from_chars(history) + static_overhead
+    if local_estimate < int(threshold * 0.8):
+        return False
+    # Confirm with full network count before committing to a prune.
+    total = await _count_tokens_safe(client, history, config=config)
+    return (total or local_estimate) >= threshold
+
+
+async def _prune_history(
+    client,
+    history: list,
+    config: Optional[types.GenerateContentConfig] = None,
+) -> tuple[list, int, str | None]:
     """
-    Token-aware summarizing sliding window.
+    Token-aware sliding-window pruning with recap injection.
 
-    Returns `(new_history, dropped_count, summary_text_or_None)`.
+    Assumes the caller has already confirmed pruning is needed (via
+    ``_needs_pruning``) and emitted the "pruning" chunk — this function
+    performs the drop, summarizes what it dropped via the small pruning
+    model, and injects the recap as a synthetic user note right after
+    ``history[0]`` so no context is lost outright.
 
-    - Always preserves history[0] (initial user message).
-    - When total tokens exceed the threshold, drops oldest non-initial items
-      (2 at a time) until under the target ratio, summarizes the dropped turns
-      via the pruning client, and injects the summary as a synthetic user
-      message at position 1 so the main model keeps continuity.
-    - If token counting fails, falls back to a fixed-item cap.
+    Returns ``(new_history, dropped_count, summary_text_or_None)``.
     """
     if len(history) <= 1:
         return history, 0, None
 
-    threshold = int(settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW * _PRUNE_THRESHOLD_RATIO)
-    target = int(settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW * _PRUNE_TARGET_RATIO)
-
-    # Cheap local gate — avoids a network count_tokens call on every turn when
-    # history is nowhere near the threshold. Char/4 overestimates slightly so
-    # a false-negative here is ~impossible; if it thinks we're near threshold
-    # we verify with the real counter below.
-    cheap = _estimate_tokens_from_chars(history)
-    if cheap < int(threshold * 0.8):
-        return history, 0, None
-
-    total = await _count_tokens_safe(client, history)
-    if total is None:
-        log.warning("Token-counting unavailable, falling back to item cap without summarizing")
-        # Token-counting unavailable → fall back to item cap without summarizing.
-        if len(history) <= _SAFETY_MAX_ITEMS:
-            return history, 0, None
-        keep_tail = _SAFETY_MAX_ITEMS - 1
-        dropped = history[1:-keep_tail]
-        summary = await _summarize_dropped(dropped)
-        pruned = history[:1] + [_summary_content(summary)] + history[-keep_tail:]
-        return pruned, len(dropped), summary
-
-    if total <= threshold:
-        return history, 0, None
+    ctx_window = settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
+    target = int(ctx_window * _PRUNE_TARGET_RATIO)
+    static_overhead = await _get_static_overhead(client, config) if config else 0
 
     pruned = list(history)
     dropped_acc: list = []
@@ -281,25 +302,33 @@ async def _prune_history(client, history: list) -> tuple[list, int, str | None]:
             break
         dropped_acc.extend(pruned[1:3])
         pruned = pruned[:1] + pruned[3:]
-        # Use char-estimate inside the loop to avoid N network calls; one real
-        # count_tokens at the end is enough to verify we're under target.
-        if _estimate_tokens_from_chars(pruned) <= target:
+        if _estimate_tokens_from_chars(pruned) + static_overhead <= target:
             break
 
     if not dropped_acc:
+        log.info("No history dropped. Not pruning further.")
         return history, 0, None
 
     summary = await _summarize_dropped(dropped_acc)
-    # Insert the recap as a synthetic user message right after the initial
-    # prompt so the main model treats it as authoritative context.
-    pruned = pruned[:1] + [_summary_content(summary)] + pruned[1:]
+    if summary:
+        try:
+            recap_content = types.Content(
+                role="user",
+                parts=[types.Part.from_text(
+                    text=f"[RECAP of earlier messages dropped to free context]\n{summary}"
+                )],
+            )
+            pruned = pruned[:1] + [recap_content] + pruned[1:]
+        except Exception as exc:
+            log.warning("Failed to inject recap into pruned history", error=str(exc))
+
+    log.info(
+        "History pruned",
+        pruned_length=len(pruned),
+        dropped_count=len(dropped_acc),
+        recap_injected=bool(summary),
+    )
     return pruned, len(dropped_acc), summary
-
-
-def _summary_content(summary: str):
-    """Wrap a recap string as a user-role Content so the chat history accepts it."""
-    return types.Content(role="user", parts=[types.Part.from_text(text=summary)])
-
 
 @dataclass
 class ChatResult:
@@ -309,7 +338,6 @@ class ChatResult:
     error: Optional[str] = None
     last_text: Optional[str] = None  # last non-thought text chunk emitted by the model
     emitted_events: list = None  # events successfully emitted during this chat loop
-    tool_findings: list = None   # compact (tool, args, response) for knowledge-tool calls
 
 
 async def run_chat_loop(
@@ -318,6 +346,8 @@ async def run_chat_loop(
     config: types.GenerateContentConfig,
     node_name: str,
     next_event_number: int,
+    current_day: int = 0,
+    total_days: int = 1,
     mode: str = "autonomous",
     is_resuming: bool = False,
     prior_events: Optional[list] = None,
@@ -359,35 +389,52 @@ async def run_chat_loop(
 
     chat = client.aio.chats.create(model=_MODEL, config=config)
 
+    # Baseline Content capturing the initial_message. Used on turn-1
+    # MAX_TOKENS/MALFORMED rebuilds where `chat.get_history()` is still empty
+    # (the runaway turn never made it into history) — without this, rebuilding
+    # would strip the node-specific task prompt (prior_events, research_facts,
+    # open bookings, etc.) and the nudge message would land in a chat with
+    # zero context.
+    def _initial_message_as_content(msg: Any) -> Optional[types.Content]:
+        try:
+            if isinstance(msg, str):
+                return types.Content(role="user", parts=[types.Part.from_text(text=msg)])
+            if isinstance(msg, list):
+                return types.Content(role="user", parts=list(msg))
+        except Exception:
+            pass
+        return None
+
+    _initial_baseline_content = _initial_message_as_content(initial_message)
+
+    def _baseline_history() -> list:
+        return [_initial_baseline_content] if _initial_baseline_content else []
+
     current_message: Any = initial_message
     is_complete = False
     start_emitted = False
     # Running list of events emitted within this chat loop. Combined with
     # `prior_events` (from persisted state) to feed the placement validator.
     session_events: list = []
-    # Snapshots of hotel/flight/car search responses this session so the
-    # end-of-day knowledge extractor can surface policies + round-trip
-    # coverage for the next day's planner.
-    session_tool_findings: list = []
     _all_prior_events = list(prior_events or [])
     last_text_buffer: str = ""
     pending_turn_text: str = ""
 
     max_turn_retries = 3
     turn_retries = 0
-    max_turns = 30
+    max_turns = 50
     turn_count = 0
 
     while True:
         if await _is_cancelled():
             log.info("Chat loop cancelled", node=node_name)
-            return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
+            return ChatResult(emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
                               is_complete=is_complete, error="Cancelled")
 
         if turn_count >= max_turns:
             log.error("Node turn cap reached", node=node_name, turns=turn_count)
             emit({"type": "error", "content": f"Node '{node_name}' exceeded turn budget."})
-            return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
+            return ChatResult(emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
                               is_complete=is_complete, error="Turn cap reached")
 
         turn_count += 1
@@ -498,6 +545,10 @@ async def run_chat_loop(
                                                     break
                                     if not is_replacement:
                                         args["event_number"] = next_event_number
+                                        # Force day_number to current_day so the
+                                        # model can't hallucinate a wrong day.
+                                        if current_day > 0:
+                                            args["day_number"] = current_day
 
                                 # For replacements, validate placement as if the
                                 # event were being inserted at its original slot
@@ -524,11 +575,14 @@ async def run_chat_loop(
                                         )
                                     ]
 
-                                validation_error, coerced_args = validate_itinerary_event(
+                                validation_error, coerced_args = await validate_itinerary_event(
                                     args,
                                     mode=mode,
                                     is_resuming=is_resuming,
                                     prior_events=combined_prior,
+                                    current_day=current_day,
+                                    total_days=total_days,
+                                    next_event_number=next_event_number,
                                 )
                                 active_tool_calls.append((call_id, fc, validation_error, coerced_args))
 
@@ -565,7 +619,7 @@ async def run_chat_loop(
 
                     if await _is_cancelled():
                         log.info("Chat loop cancelled mid-stream", node=node_name)
-                        return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                        return ChatResult(emitted_events=list(session_events),
                             success=False, next_event_number=next_event_number,
                             is_complete=is_complete, error="Cancelled mid-stream"
                         )
@@ -646,7 +700,7 @@ async def run_chat_loop(
             err_msg = retry_exhausted_error or "Unknown streaming error."
             log.error("Terminal stream error", node=node_name, error=err_msg)
             emit({"type": "error", "content": err_msg})
-            return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
+            return ChatResult(emitted_events=list(session_events),last_text=last_text_buffer, success=False, next_event_number=next_event_number,
                               is_complete=is_complete, error=err_msg)
 
         finish_reason = None
@@ -666,7 +720,7 @@ async def run_chat_loop(
             turn_retries = 0  # real progress → reset bad-turn counter
 
             if await _is_cancelled():
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=False, next_event_number=next_event_number,
                     is_complete=is_complete, error="Cancelled before tool execution"
                 )
@@ -690,10 +744,7 @@ async def run_chat_loop(
                 _timeout = TIMEOUTS.get(fc.name, 60)
                 _started = time.monotonic()
                 try:
-                    mcp_result = await asyncio.wait_for(
-                        session.call_tool(fc.name, dict(fc.args or {})),
-                        timeout=_timeout,
-                    )
+                    mcp_result = await session.call_tool(fc.name, dict(fc.args or {}))
                     output = (
                         "".join(c.text for c in mcp_result.content if hasattr(c, "text"))
                         or "Task completed."
@@ -712,18 +763,6 @@ async def run_chat_loop(
                         sent_chars=len(output),
                     )
                     return call_id, fc, {"output": output}
-                except asyncio.TimeoutError:
-                    _elapsed = time.monotonic() - _started
-                    log.warning(
-                        "Tool timeout",
-                        node=node_name,
-                        tool=fc.name,
-                        timeout=_timeout,
-                        elapsed_s=round(_elapsed, 2),
-                    )
-                    return call_id, fc, {
-                        "error": f"Tool {fc.name} timed out after {_timeout}s."
-                    }
                 except asyncio.CancelledError:
                     log.info("Tool cancelled", node=node_name, tool=fc.name)
                     raise
@@ -758,22 +797,6 @@ async def run_chat_loop(
 
             tool_responses = []
             for call_id, fc, result in gathered:
-                if (
-                    not _is_event_tool(fc.name)
-                    and fc.name in _KNOWLEDGE_TOOL_NAMES
-                    and isinstance(result, dict)
-                    and "output" in result
-                ):
-                    try:
-                        raw_args = dict(fc.args or {})
-                    except Exception:
-                        raw_args = {}
-                    # Hard cap per finding so a chatty tool can't bloat state.
-                    session_tool_findings.append({
-                        "tool": fc.name,
-                        "args": raw_args,
-                        "response": str(result.get("output") or "")[:4000],
-                    })
                 if not _is_event_tool(fc.name):
                     emit({
                         "type": "tool_response",
@@ -790,33 +813,34 @@ async def run_chat_loop(
             # ── Token-aware summarizing sliding window ────────────────────────
             try:
                 current_history = list(chat.get_history())
-                pruned, dropped, summary = await _prune_history(client, current_history)
-                if dropped > 0:
+                if await _needs_pruning(client, current_history, config=config):
+                    log.info("Pruning history", node=node_name)
                     emit({
                         "type": "pruning",
                         "content": (
-                            f"Compressing {dropped} older message(s) into a recap to "
-                            "stay within the model's context window."
+                            "Context window filling up — summarizing and "
+                            "dropping older messages to free room."
                         ),
-                        "summary": summary,
-                        "dropped": dropped,
                     })
-                    chat = client.aio.chats.create(
-                        model=_MODEL, config=config, history=pruned
+                    pruned, dropped, summary = await _prune_history(
+                        client, current_history, config=config
                     )
-                    log.info(
-                        "History pruned",
-                        node=node_name,
-                        before=len(current_history),
-                        after=len(pruned),
-                        dropped=dropped,
-                    )
+                    if dropped > 0:
+                        chat = client.aio.chats.create(
+                            model=_MODEL, config=config, history=pruned
+                        )
+                        log.info(
+                            "History pruned and chat rebuilt",
+                            node=node_name,
+                            dropped=dropped,
+                            recap_injected=bool(summary),
+                        )
             except Exception as prune_err:
                 log.warning("History pruning failed", node=node_name, error=str(prune_err))
 
             # Research node: stop as soon as START event is emitted.
             if stop_after_start and start_emitted:
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=True,
                     next_event_number=next_event_number,
                     is_complete=False,
@@ -832,7 +856,7 @@ async def run_chat_loop(
                     "Post-END turn with non-STOP finish_reason; treating as success",
                     node=node_name, finish_reason=finish_reason_str,
                 )
-            return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+            return ChatResult(emitted_events=list(session_events),
                 success=True, next_event_number=next_event_number, is_complete=True
             )
 
@@ -843,12 +867,12 @@ async def run_chat_loop(
             #   END is emitted later by the finalizer, not here.
             # - finalizer (require_end=True): missing END is a genuine error.
             if stop_after_start and start_emitted:
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=True, next_event_number=next_event_number, is_complete=False,
                     last_text=last_text_buffer,
                 )
             if not require_end:
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=True, next_event_number=next_event_number, is_complete=False,
                     last_text=last_text_buffer,
                 )
@@ -860,7 +884,7 @@ async def run_chat_loop(
                 ),
             })
             log.error(f"Agent stopped cleanly but never emitted an END event", node=node_name, finish_reason=finish_reason)
-            return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+            return ChatResult(emitted_events=list(session_events),
                 success=False, next_event_number=next_event_number,
                 is_complete=False, error="Clean stop without END"
             )
@@ -875,7 +899,7 @@ async def run_chat_loop(
                 )
                 emit({"type": "error", "content": err})
                 log.error(f"MAX_TOKENS hit {turn_retries + 1} times in a row", node=node_name)
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=False, next_event_number=next_event_number,
                     is_complete=False, error=err,
                 )
@@ -893,31 +917,17 @@ async def run_chat_loop(
                 ),
                 "error": finish_reason_str,
             })
-            # Force pruning before rebuild — long histories compound the problem.
-            try:
-                pruned, dropped, summary = await _prune_history(client, history_snapshot)
-                if dropped > 0:
-                    emit({
-                        "type": "pruning",
-                        "content": f"Compressing {dropped} older message(s) after MAX_TOKENS.",
-                        "summary": summary,
-                        "dropped": dropped,
-                    })
-                    log.info("History pruned after MAX_TOKENS", node=node_name, before=len(history_snapshot), after=len(pruned), dropped=dropped)
-                    history_snapshot = pruned
-            except Exception as prune_err:
-                log.warning("Post-MAX_TOKENS pruning failed", node=node_name, error=str(prune_err))
             try:
                 chat = client.aio.chats.create(
                     model=_MODEL, config=config,
-                    history=history_snapshot,
+                    history=_baseline_history() or history_snapshot,
                 )
                 log.info(f"Rebuilt after MAX_TOKENS", node=node_name)
             except Exception as rebuild_err:
                 err = f"Failed to rebuild after MAX_TOKENS: {rebuild_err}"
                 emit({"type": "error", "content": err})
                 log.error(f"Failed to rebuild after MAX_TOKENS", node=node_name, error=str(rebuild_err))
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=False, next_event_number=next_event_number,
                     is_complete=False, error=err,
                 )
@@ -940,7 +950,7 @@ async def run_chat_loop(
                 )
                 emit({"type": "error", "content": err})
                 log.error(f"MALFORMED_FUNCTION_CALL {turn_retries + 1} times in a row", node=node_name)
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=False, next_event_number=next_event_number,
                     is_complete=False, error=err
                 )
@@ -961,14 +971,14 @@ async def run_chat_loop(
             try:
                 chat = client.aio.chats.create(
                     model=_MODEL, config=config,
-                    history=history_snapshot,
+                    history=_baseline_history() or history_snapshot,
                 )
                 log.info(f"Rebuilt after MALFORMED", node=node_name)
             except Exception as rebuild_err:
                 err = f"Failed to rebuild after MALFORMED: {rebuild_err}"
                 emit({"type": "error", "content": err})
                 log.error(f"Failed to rebuild after MALFORMED", node=node_name, error=str(rebuild_err))
-                return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+                return ChatResult(emitted_events=list(session_events),
                     success=False, next_event_number=next_event_number,
                     is_complete=False, error=err
                 )
@@ -990,7 +1000,7 @@ async def run_chat_loop(
         )
         emit({"type": "error", "content": err})
         log.error(f"Agent turn ended with finish_reason={finish_reason}", node=node_name)
-        return ChatResult(tool_findings=list(session_tool_findings), emitted_events=list(session_events),
+        return ChatResult(emitted_events=list(session_events),
             success=False, next_event_number=next_event_number,
             is_complete=False, error=err
         )

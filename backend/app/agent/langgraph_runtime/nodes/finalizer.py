@@ -18,7 +18,6 @@ from google.genai import types
 from app.logging import get_agent_logger, set_agent_log_context
 from app.agent.core.runtime import runtime
 from app.agent.langgraph_runtime.gemini_adapter import run_chat_loop
-from app.agent.langgraph_runtime.knowledge import render_shared_notes
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
 from app.agent.langgraph_runtime.streaming import emit
@@ -31,6 +30,32 @@ _FINALIZER_PROMPT_PATH = os.path.join(
 with open(_FINALIZER_PROMPT_PATH, "r", encoding="utf-8") as _f:
     FINALIZER_SYSTEM_PROMPT = _f.read()
 
+
+# (details_field, cost_key) pairs for every event type that contributes to the
+# trip cost. Aggregated once in Python so the model never has to re-sum.
+_COST_SOURCES = (
+    ("flight_takeoff_details", "cost"),
+    ("hotel_checkin_details", "cost"),
+    ("car_pickup_details", "cost"),
+    ("place_details", "cost"),
+    ("other_details", "cost"),
+    ("commute_details", "transit_fare"),
+)
+
+
+def _sum_trip_cost(events: list) -> float:
+    total = 0.0
+    for e in events or []:
+        for field, key in _COST_SOURCES:
+            details = e.get(field) or {}
+            val = details.get(key)
+            try:
+                if val is not None:
+                    total += float(val)
+            except (TypeError, ValueError):
+                continue
+    return round(total, 2)
+
 async def finalizer_node(state: PlannerState) -> Dict[str, Any]:
     run_id = (state.get("trip_id") + "-" + state.get("owner_id")) if state.get("owner_id") and state.get("trip_id") else str(uuid.uuid4())
     set_agent_log_context(run_id=run_id, node="finalizer", day=-1)
@@ -40,20 +65,19 @@ async def finalizer_node(state: PlannerState) -> Dict[str, Any]:
     trip_data = TripInput(**trip_payload)
     research_facts = state.get("research_facts", {})
     prior_events = state.get("prior_events", []) or []
-    total_days = state.get("total_days", 1)
 
     trip_state_json = json.dumps(prior_events, default=str)
 
-    shared_notes_block = render_shared_notes(state.get("shared_notes", []) or [])
+    # Pre-compute the trip cost from committed events so the model never
+    # re-sums. Using the precomputed value keeps finalization one-shot.
+    precomputed_trip_cost = _sum_trip_cost(prior_events)
+
 
     config = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(
-            include_thoughts=False,
-        ),
         tools=[runtime.finalizer_tool_block or runtime.planner_tool_block],
         system_instruction=FINALIZER_SYSTEM_PROMPT,
-        temperature=0.3,
-        max_output_tokens=2048,
+        temperature=0.2,
+        max_output_tokens=1024,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
@@ -61,16 +85,14 @@ async def finalizer_node(state: PlannerState) -> Dict[str, Any]:
         f"User Request:\n{trip_data.model_dump_json()}\n\n"
         f"Research Context:\n{json.dumps(research_facts, default=str)}\n\n"
         f"Trip State Snapshot (structured):\n{trip_state_json}\n\n"
-        f"Handoff Notes accumulated across days (round-trip coverage, "
-        f"checkout policies, fuel rules, etc.):\n{shared_notes_block}\n\n"
+        f"PRECOMPUTED trip_cost (USD, committed): {precomputed_trip_cost}\n"
         "Phase: FINALIZE\n"
-        "All trip days have been planned. Your task:\n"
-        "1. Emit the END event (event_type='END', day_number=-1) with a complete "
-        "cost breakdown tips and everything required in end_details — base trip_cost on the committed per-event "
-        "costs above; do NOT invent numbers.\n"
-        "2. After emitting END, output a brief final summary in plain text.\n"
-        "STOP after the summary.\n"
-        "Begin now."
+        "Emit ONE add_end_event tool call now. Rules:\n"
+        f"- Set `trip_cost` to EXACTLY {precomputed_trip_cost}. Do NOT recalculate.\n"
+        "- `trip_title`: a short, final title (no 'Start'/'Complete' words).\n"
+        "- `trip_tips`: 3-5 concrete tips based on the research context and trip state.\n"
+        "- Do NOT call any other tool. Do NOT re-read events.\n"
+        "After the tool call, output ONE short final summary, then STOP."
     )
 
     result = await run_chat_loop(

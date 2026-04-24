@@ -27,7 +27,7 @@ If the user has multiple destinations to visit, find the best optimal sequence o
 - Use the supplied baseline facts from the user input first; fetch only what's missing.
 - At most 2 quick lookups for whatever you want to research about(airports, weather, neighborhoods, advisories).
 - Emit the `START` event as quickly as possible once with a rough cost estimate.
-- Output exactly one JSON object with research facts (keys per the research facts you got), then stop. No prose.
+- You must be very quick. Prioritize emitting the start event as soon as possible.
 
 # Response Style
 

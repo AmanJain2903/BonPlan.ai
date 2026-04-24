@@ -20,12 +20,15 @@ Graph topology - Planning Mode (autonomous mode/collaborative mode):
     ▼ (routed by _should_plan_day)
   day_planner ──────────────────────┐
     │  (increments current_day)     │
-    │  routed by _should_continue   │
+    │  routed by _route             │
     ▼ (more days)                   │
   day_planner (loop) ◄──────────────┘
     │ (no more days)
     ▼
-  finalizer
+  open_booking_guard ───────────────┐ (close_pass=True → re-run last day)
+    │                               │
+    ▼ (no open bookings)            ▼
+  finalizer                     day_planner
     │
     ▼
    END
@@ -42,6 +45,7 @@ from app.agent.langgraph_runtime.nodes.collaboration_checkpoint import (
     collaboration_checkpoint_node,
 )
 from app.agent.langgraph_runtime.nodes.day_planner import day_planner_node
+from app.agent.langgraph_runtime.nodes.open_booking_guard import open_booking_guard_node
 from app.agent.langgraph_runtime.nodes.finalizer import finalizer_node
 from app.agent.core.runtime import runtime
 
@@ -59,7 +63,17 @@ def _route(state: PlannerState):
         return END
     current_day = state.get("current_day", 1)
     total_days = state.get("total_days", 1)
-    return "day_planner" if current_day <= total_days else "finalizer"
+    # All days done → guard checks for un-closed bookings before finalizing.
+    return "day_planner" if current_day <= total_days else "open_booking_guard"
+
+
+def _route_after_guard(state: PlannerState):
+    if state.get("cancelled"):
+        log.info(f"Cancelled state detected. Routing to END")
+        return END
+    # Guard sets close_pass=True when it needs the day_planner to run one
+    # more close-only pass on the final day.
+    return "day_planner" if state.get("close_pass") else "finalizer"
 
 
 def _route_after_bootstrap(state: PlannerState):
@@ -88,6 +102,7 @@ def build_planner_graph(checkpointer=None):
     builder.add_node("research_and_start", research_node)
     builder.add_node("collaboration_checkpoint", collaboration_checkpoint_node)
     builder.add_node("day_planner", day_planner_node)
+    builder.add_node("open_booking_guard", open_booking_guard_node)
     builder.add_node("finalizer", finalizer_node)
 
     builder.add_edge(START, "bootstrap")
@@ -104,11 +119,24 @@ def build_planner_graph(checkpointer=None):
     builder.add_conditional_edges(
         "collaboration_checkpoint",
         _route,
-        {"day_planner": "day_planner", "finalizer": "finalizer", END: END},
+        {
+            "day_planner": "day_planner",
+            "open_booking_guard": "open_booking_guard",
+            END: END,
+        },
     )
     builder.add_conditional_edges(
         "day_planner",
         _route,
+        {
+            "day_planner": "day_planner",
+            "open_booking_guard": "open_booking_guard",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "open_booking_guard",
+        _route_after_guard,
         {"day_planner": "day_planner", "finalizer": "finalizer", END: END},
     )
     builder.add_edge("finalizer", END)

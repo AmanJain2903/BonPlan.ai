@@ -19,7 +19,7 @@ api_key = settings.GOOGLE_MAPS_API_KEY
 
 
 # Types
-travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT", "TWO_WHEELER"]
+travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT"]
 
 routingPreferences = Literal["TRAFFIC_AWARE", "TRAFFIC_UNAWARE", "TRAFFIC_AWARE_OPTIMAL"]
 
@@ -114,17 +114,17 @@ async def get_route_matrix(
         "travelMode": travel_mode,
         "units": units_system,
     }
-    if route_modifiers and travel_mode in ["DRIVE", "TWO_WHEELER"]:
+    if route_modifiers and travel_mode in ["DRIVE"]:
         modifiers_payload = route_modifiers.model_dump(exclude_none=True)
         for origin_entry in body["origins"]:
             origin_entry["routeModifiers"] = modifiers_payload
 
-    if travel_mode in ["DRIVE", "TWO_WHEELER"] and routing_preference:
+    if travel_mode in ["DRIVE"] and routing_preference:
         body["routingPreference"] = routing_preference
     
     if departure_time:
         body["departureTime"] = departure_time
-        if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE", "TWO_WHEELER"]:
+        if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE"]:
             body["routingPreference"] = "TRAFFIC_AWARE"
 
     try:
