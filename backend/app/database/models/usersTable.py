@@ -38,3 +38,4 @@ class User(Base):
 
     trip_memberships = relationship("TripMember", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     owned_trips = relationship("Trip", back_populates="owner", cascade="all, delete-orphan", lazy="selectin")
+    usage = relationship("RateLimitUsage", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
