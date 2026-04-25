@@ -125,7 +125,6 @@ async def get_rate_limit_config(sku: Optional[str] = None, sku_id: Optional[str]
     config_dict = {
         "id": str(config.id),
         "sku": _titlelize_optional(config.sku),
-        "raw_sku": config.sku,
         "service": config.service,
         "description": config.description,
         "provider": _titlelize_optional(config.provider),
@@ -185,9 +184,8 @@ async def update_rate_limit_config(data: UpdateRateLimitConfigBody):
     return {"message": "Rate limit config updated successfully.", "status_code": 200}
 
 @router.delete("/delete-rate-limit-config", response_model=dict)
-async def delete_rate_limit_config(data: DeleteRateLimitConfigBody):
-    sku = _format_for_insert(data.sku)
-    sku_id = data.sku_id
+async def delete_rate_limit_config(sku: Optional[str] = Query(None), sku_id: Optional[str] = Query(None)):
+    sku = _format_for_insert(sku)
     if not sku and not sku_id:
         raise HTTPException(status_code=400, detail="SKU name or SKU ID is required.")
 

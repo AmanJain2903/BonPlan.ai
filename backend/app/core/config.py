@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
     AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    ADMIN_URL: str = os.getenv("ADMIN_URL", "http://localhost:5174")
 
     # Project settings
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "BonPlan.ai")

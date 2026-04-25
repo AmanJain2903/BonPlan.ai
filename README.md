@@ -113,7 +113,7 @@ target_metadata = Base.metadata
 
 #### 4 Apply your migrations
 ```bash
-alembic revision --autogenerate -m "add cascade delete to trips"
+alembic revision --autogenerate -m "Message"
 alembic upgrade head
 ```
 

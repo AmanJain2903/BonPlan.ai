@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Navbar from './components/shared/Navbar';
 import ScrollManager from './components/shared/ScrollManager';
@@ -23,6 +23,25 @@ import WorldMapBackground from './components/shared/WorldMapBackground';
 import BlurBackground from './components/shared/blurBackground';
 import { TripProvider } from './context/TripContext';
 import TripFlushOnHome from './components/shared/TripFlushOnHome';
+import AdminLayout from './components/Admin/AdminLayout';
+import SkuManager from './components/Admin/Pages/SkuManager';
+import UsageViewer from './components/Admin/Pages/UsageViewer';
+
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isLoggedIn, isAdmin } = useAuth();
+  const location = useLocation();
+
+  if (!isLoggedIn) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/" />;
+  }
+
+  return children;
+}
 
 
 function HomePage() {
@@ -84,6 +103,20 @@ function AnimatedRoutes() {
         <Route path="/draft-plan" element={<PlanSetup />} />
         <Route path="/plan/solo/:tripId" element={<SoloPlanView />} />
         <Route path="/plan/squad/:tripId" element={<SquadPlanView />} />
+        <Route
+          path="/admin"
+          element={(
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          )}
+        >
+          <Route index element={<Navigate to="skus" replace />} />
+          <Route path="skus" element={<SkuManager />} />
+          <Route path="usage" element={<UsageViewer />} />
+        </Route>
+        <Route path="/rate-limits/skus" element={<Navigate to="/admin/skus" replace />} />
+        <Route path="/rate-limits/usage" element={<Navigate to="/admin/usage" replace />} />
       </Routes>
     </AnimatePresence>
   );

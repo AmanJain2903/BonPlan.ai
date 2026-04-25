@@ -13,6 +13,7 @@ lerna-debug.log*
 
 # Database Migrations
 migrations
+alembic.ini
 
 node_modules
 dist

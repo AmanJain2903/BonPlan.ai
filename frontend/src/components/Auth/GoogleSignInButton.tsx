@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { GOOGLE_CLIENT_ID } from '../../apis/config';
@@ -42,6 +42,7 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
   const containerRef = useRef<HTMLDivElement>(null);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [ready, setReady] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
 
@@ -57,19 +58,24 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
           try {
             const res = await api.auth.googleLogin(response.credential);
             if (res.token) {
+              const isAdmin = res.is_admin ?? false;
               login(res.token, true, {
                 firstName: res.first_name ?? '',
                 lastName: res.last_name ?? '',
                 email: res.email ?? '',
                 authProvider: 'google',
                 preferences: res.preferences,
+                isAdmin,
               });
+
+              const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+              const next = fromPath && fromPath.startsWith('/admin') && isAdmin ? fromPath : '/';
 
               // Show welcome modal only for first-time registrations (server-driven)
               if (res.is_new_user) {
                 setShowWelcome(true);
               } else {
-                navigate('/');
+                navigate(next);
               }
             }
           } catch (err: unknown) {

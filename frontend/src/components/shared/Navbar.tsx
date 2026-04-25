@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, User, LogOut, ChevronDown, Settings, Headset, UserCircle, SlidersHorizontal, Plug, Bell } from 'lucide-react';
+import { Menu, X, User, LogOut, ChevronDown, Settings, Headset, UserCircle, SlidersHorizontal, Plug, Bell, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 
@@ -104,6 +104,12 @@ export default function Navbar() {
 
                     {/* Section 1 */}
                     <div className="py-1.5">
+                      {user?.isAdmin && (
+                        <Link to="/admin" onClick={() => setMenuOpen(false)} className={menuItemClass}>
+                          <Shield size={16} className="shrink-0 text-white/40" />
+                          Admin Dashboard
+                        </Link>
+                      )}
                       <Link to="/account/profile" onClick={() => setMenuOpen(false)} className={menuItemClass}>
                         <UserCircle size={16} className="shrink-0 text-white/40" />
                         My Profile
@@ -216,6 +222,12 @@ export default function Navbar() {
                 </div>
               </div>
 
+              {user?.isAdmin && (
+                <Link to="/admin" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
+                  <Shield size={16} className="text-white/40" />
+                  Admin Dashboard
+                </Link>
+              )}
               <Link to="/account/profile" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
                 <UserCircle size={16} className="text-white/40" />
                 My Profile

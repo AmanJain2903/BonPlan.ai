@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import GoogleSignInButton from './GoogleSignInButton';
@@ -11,6 +11,7 @@ type Status = 'idle' | 'loading' | 'error';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState<Status>('idle');
@@ -29,19 +30,24 @@ export default function Login() {
     try {
       const res = await api.auth.login(form.email.trim(), form.password);
       if (res.token) {
+        const isAdmin = res.is_admin ?? false;
         login(res.token, form.remember, {
           firstName: res.first_name ?? '',
           lastName: res.last_name ?? '',
           email: res.email ?? '',
           authProvider: 'local',
           preferences: res.preferences,
+          isAdmin,
         });
+
+        const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+        const next = fromPath && fromPath.startsWith('/admin') && isAdmin ? fromPath : '/';
 
         // Show welcome modal only for first-time registrations (server-driven)
         if (res.is_new_user) {
           setShowWelcome(true);
         } else {
-          navigate('/');
+          navigate(next);
         }
       }
     } catch (err: unknown) {
