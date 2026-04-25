@@ -7,6 +7,16 @@ from app.utils.http import get_http_client
 from app.agent.mcp_server.tools._errors import tool_error
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
+
+def _car_rental_quota_error(exc: "RateLimitExceeded") -> Dict:
+    return tool_error(
+        f"Monthly quota exhausted for SKU '{exc.sku}'.",
+        fix_hint=f"Do not retry. Skip this and proceed with what you have. Retry after {exc.retry_after_seconds}s.",
+        status_code=429,
+        extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+    )
 
 rapid_api_key = settings.RAPID_API_KEY
 
@@ -128,6 +138,11 @@ async def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(des
     if carTypes:
         carType = ",".join("carCategory::" + car for car in carTypes)
         params["carType"] = carType
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["booking_com"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _car_rental_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
