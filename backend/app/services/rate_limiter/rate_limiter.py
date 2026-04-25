@@ -107,13 +107,16 @@ local limit = tonumber(ARGV[1])
 local ttl = tonumber(ARGV[2])
 local amount = tonumber(ARGV[3])
 
-if limit < 0 then
-    return {1, 0, -1}
-end
-
 local current = redis.call('INCRBY', KEYS[1], amount)
 if current == amount then
     redis.call('EXPIRE', KEYS[1], ttl)
+end
+
+-- Unlimited SKUs (limit < 0) still get counted for observability,
+-- but never deny.
+if limit < 0 then
+    local ttl_remaining = redis.call('TTL', KEYS[1])
+    return {1, current, ttl_remaining}
 end
 
 if current > limit then
@@ -325,19 +328,6 @@ class RateLimiter:
                 remaining=-1,
                 scope="global",
                 period="",
-                retry_after_seconds=0,
-                skipped=True,
-            )
-
-        if config.limit < 0:
-            return ConsumeResult(
-                allowed=True,
-                sku=sku_normalized,
-                limit=-1,
-                current=0,
-                remaining=-1,
-                scope=config.scope.value,
-                period=config.period.value,
                 retry_after_seconds=0,
                 skipped=True,
             )

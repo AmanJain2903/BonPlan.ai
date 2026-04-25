@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Short in-process TTL for SKU config lookups so we don't hammer Postgres.
     RATE_LIMITER_CONFIG_TTL_SECONDS: int = int(os.getenv("RATE_LIMITER_CONFIG_TTL_SECONDS", "60"))
     # Hard reset hour (local time in RATE_LIMITER_RESET_TZ).
-    RATE_LIMITER_RESET_HOUR: int = int(os.getenv("RATE_LIMITER_RESET_HOUR", "7"))
+    RATE_LIMITER_RESET_HOUR: int = int(os.getenv("RATE_LIMITER_RESET_HOUR", "0"))
     RATE_LIMITER_RESET_TZ: str = os.getenv("RATE_LIMITER_RESET_TZ", "America/Los_Angeles")
 
     # Google Cloud Platform settings

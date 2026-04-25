@@ -9,6 +9,17 @@ import math
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
+
+
+def _booking_quota_error(exc: "RateLimitExceeded") -> Dict:
+    return tool_error(
+        f"Monthly quota exhausted for SKU '{exc.sku}'.",
+        fix_hint=f"Do not retry. Skip this and proceed with what you have. Retry after {exc.retry_after_seconds}s.",
+        status_code=429,
+        extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+    )
 
 rapid_api_key = settings.RAPID_API_KEY
 
@@ -124,6 +135,11 @@ async def search_hotels(searchCoordinates: Annotated[SearchCoordinates, Field(de
         params["minPrice"] = minPrice
     elif maxPrice:
         params["maxPrice"] = maxPrice
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["booking_com"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _booking_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
@@ -199,6 +215,11 @@ async def get_hotel_booking_url(hotel_id: Annotated[str, Field(description="The 
         return {
             "booking_url": cache_value.get("booking_url", "")
         }
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["booking_com"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _booking_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)

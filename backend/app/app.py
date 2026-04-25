@@ -27,8 +27,6 @@ async def lifespan(app: FastAPI):
         # await conn.run_sync(Base.metadata.drop_all) # <--- DELETE DATA
         await conn.run_sync(Base.metadata.create_all)
 
-
-
     # Restore Redis counters from Postgres for the active period buckets so
     # that a Redis restart doesn't hand free quota back to clients.
     import logging

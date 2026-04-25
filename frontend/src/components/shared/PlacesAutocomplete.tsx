@@ -106,21 +106,32 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
     const abortRef = useRef<AbortController | null>(null);
     const reqIdRef = useRef(0);
     const skipNextFetchRef = useRef(false);
-    // Track each new session token exactly once. The "session" SKU is unbilled
-    // by Google but seeded so the dashboard can show how many sessions opened.
-    const sessionTrackedRef = useRef(false);
     // Once the keystroke quota goes red, freeze further autocomplete fetches
     // for the rest of the page lifetime — the next call would still bill.
     const keystrokeQuotaExhaustedRef = useRef(false);
+    // Pending keystrokes for the *current* session token. Google credits these
+    // back on a successful Place Details call within the same session, so we
+    // hold them locally and only commit on session abandonment. See
+    // `flushPendingKeystrokes` and `selectSuggestion` for the two outcomes.
+    const pendingKeystrokesRef = useRef(0);
+
+    const flushPendingKeystrokes = useCallback(() => {
+      const n = pendingKeystrokesRef.current;
+      if (n <= 0) return;
+      pendingKeystrokesRef.current = 0;
+      void trackClientSku('autocomplete_requests', n);
+    }, []);
 
     useImperativeHandle(ref, () => ({
       clear: () => {
+        // External clear without a selection ⇒ session is abandoned. Commit
+        // its keystrokes before rotating the token.
+        flushPendingKeystrokes();
         setQuery('');
         setSuggestions([]);
         setIsOpen(false);
         setActiveIdx(-1);
         sessionRef.current = newSessionToken();
-        sessionTrackedRef.current = false;
       },
       focus: () => inputRef.current?.focus(),
     }));
@@ -142,18 +153,16 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
       }
 
       // Pre-flight: bail out cheaply if we already know the budget is gone.
+      // Read-only — we don't bill keystrokes upfront. Google will credit this
+      // request on a successful Place Details call in the same session, and
+      // charge for it only if the user abandons the session. We mirror that
+      // by deferring the increment to one of those two outcomes.
       const preflight = await checkSkuQuota('autocomplete_requests');
       if (!preflight.allowed && !preflight.skipped) {
         keystrokeQuotaExhaustedRef.current = true;
         setSuggestions([]);
         setIsOpen(false);
         return;
-      }
-
-      // First keystroke of a fresh session token — record the session opening.
-      if (!sessionTrackedRef.current) {
-        sessionTrackedRef.current = true;
-        void trackClientSku('autocomplete_session_usage', 1);
       }
 
       abortRef.current?.abort();
@@ -177,12 +186,9 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         });
         if (!res.ok) throw new Error(`Autocomplete ${res.status}`);
         const data = await res.json();
-        // Bill the keystroke after the request actually went out — if the
-        // request failed we don't burn quota on it.
-        const tracked = await trackClientSku('autocomplete_requests', 1);
-        if (!tracked.allowed) {
-          keystrokeQuotaExhaustedRef.current = true;
-        }
+        // Hold the keystroke locally instead of billing now. Committed on
+        // session abandonment, discarded on a successful Place Details call.
+        pendingKeystrokesRef.current += 1;
         if (myReqId !== reqIdRef.current) return; // a newer request has superseded
         const parsed: Suggestion[] = (data?.suggestions ?? [])
           .map((s: any) => s?.placePrediction)
@@ -217,6 +223,20 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         if (debounceRef.current) window.clearTimeout(debounceRef.current);
       };
     }, [query, fetchSuggestions]);
+
+    // Flush pending keystrokes when the component unmounts without a selection
+    // (route change, parent collapses the picker, etc.) and when the page is
+    // hidden (tab close / nav away). `pagehide` is best-effort — `sendBeacon`
+    // would be more reliable on close, but trackClientSku's regular POST is
+    // good enough for our soft cap.
+    useEffect(() => {
+      const onPageHide = () => flushPendingKeystrokes();
+      window.addEventListener('pagehide', onPageHide);
+      return () => {
+        window.removeEventListener('pagehide', onPageHide);
+        flushPendingKeystrokes();
+      };
+    }, [flushPendingKeystrokes]);
 
     // Click-outside handler — account for the portal-rendered menu too.
     useEffect(() => {
@@ -276,8 +296,15 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
           });
           if (!res.ok) throw new Error(`Details ${res.status}`);
           const data = await res.json();
-          // Successfully billed — record it.
+          // Place Details billed by Google → also closes the session and
+          // credits all autocomplete keystrokes inside it. Mirror both:
+          //   - bill places_place_details_essentials (1)
+          //   - bill autocomplete_session_usage (1) — only completed sessions
+          //     count as "used", per the user spec
+          //   - discard pending keystrokes (Google credits them)
           void trackClientSku('places_place_details_essentials', 1);
+          void trackClientSku('autocomplete_session_usage', 1);
+          pendingKeystrokesRef.current = 0;
           const lat = data?.location?.latitude;
           const lng = data?.location?.longitude;
           if (typeof lat !== 'number' || typeof lng !== 'number') {
@@ -299,14 +326,16 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
           });
         } catch (err) {
           console.warn('[PlacesAutocomplete] details failed:', err);
+          // Place Details failed → session ends without a billable close,
+          // so Google will charge for the keystrokes after all. Commit them.
+          flushPendingKeystrokes();
         } finally {
           setIsResolving(false);
           // End of session — rotate token for the next search.
           sessionRef.current = newSessionToken();
-          sessionTrackedRef.current = false;
         }
       },
-      [onPlaceChange],
+      [onPlaceChange, flushPendingKeystrokes],
     );
 
     const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
