@@ -141,6 +141,7 @@ TOOL_TO_SKU: dict[str, SkuResolver] = {
     "get_flight_booking_url": lambda **_: SKU["google_flights"],
     "search_hotels": lambda **_: SKU["booking_com"],
     "get_hotel_booking_url": lambda **_: SKU["booking_com"],
+    "search_rental_cars": lambda **_: SKU["booking_com"],
     # Backend endpoints (not MCP tools, still go through consume())
     "get_destination_image_by_place_id": lambda **_: SKU["places_place_details_essentials_ids_only"],
     "get_destination_images_by_name": lambda **_: SKU["places_text_search_essentials_ids_only"],
