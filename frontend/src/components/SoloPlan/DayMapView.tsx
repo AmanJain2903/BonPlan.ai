@@ -559,6 +559,7 @@ export default function DayMapViewBody({
   const polylinesRef = useRef<any[]>([]);
   const labelsRef = useRef<any[]>([]);
   const isFirstRenderRef = useRef(true);
+  const impressionTrackedRef = useRef(false);
 
   const [routeVersion, setRouteVersion] = useState(0);
   const bumpRouteVersion = useCallback(() => setRouteVersion((v) => v + 1), []);
@@ -767,8 +768,12 @@ export default function DayMapViewBody({
         return;
       }
 
-      // Bill the impression after a successful mount.
-      void trackClientSku('dynamic_maps', 1);
+      // Bill the impression after a successful mount — once per component
+      // instance to avoid StrictMode/effect-rerun double counting.
+      if (!impressionTrackedRef.current) {
+        impressionTrackedRef.current = true;
+        void trackClientSku('dynamic_maps', 1);
+      }
 
       try {
         ro = new ResizeObserver(() => { maps.event?.trigger?.(mapRef.current, 'resize'); });

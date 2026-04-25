@@ -13,6 +13,17 @@ from datetime import datetime
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 import traceback
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
+
+
+def _flight_quota_error(exc: "RateLimitExceeded") -> Dict:
+    return tool_error(
+        f"Monthly quota exhausted for SKU '{exc.sku}'.",
+        fix_hint=f"Do not retry. Skip this and proceed with what you have. Retry after {exc.retry_after_seconds}s.",
+        status_code=429,
+        extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+    )
 
 rapid_api_key = settings.RAPID_API_KEY
 
@@ -188,6 +199,11 @@ async def get_country_code(country_name: Annotated[str, Field(description="The n
     if cache_value:
         country_codes = cache_value
     else:
+        # Rate-limit gate.
+        try:
+            await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+        except RateLimitExceeded as exc:
+            return _flight_quota_error(exc)
         try:
             client = get_http_client()
             response = await client.get(url, headers=headers, timeout=timeout_seconds)
@@ -258,6 +274,11 @@ async def get_airports_and_codes(query: Annotated[str, Field(description="The qu
     cache_value = await retrieve_api_cache(cache_key, expires_in=365)
     if cache_value:
         return cache_value
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _flight_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
@@ -350,6 +371,11 @@ async def search_flights(departure_id: Annotated[str, Field(description="The dep
         flight_type = "ROUND_TRIP"
     if search_type:
         params["search_type"] = search_type
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _flight_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
@@ -412,6 +438,11 @@ async def search_multi_city_flights(legs: Annotated[List[FlightLeg], Field(descr
     }
     if search_type:
         body["search_type"] = search_type
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _flight_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.post(url, headers=headers, json=body, timeout=timeout_seconds)
@@ -469,6 +500,11 @@ async def get_next_flights(next_token: Annotated[str, Field(description="The nex
     params = {
         "next_token": next_token
     }
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _flight_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
@@ -531,6 +567,11 @@ async def get_flight_booking_details(booking_token: Annotated[str, Field(descrip
     params = {
         "booking_token": booking_token
     }
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _flight_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)
@@ -617,6 +658,11 @@ async def get_flight_booking_url(token: Annotated[str, Field(description="The to
         return {
             "booking_url": cache_value.get("booking_url", "")
         }
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["google_flights"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return _flight_quota_error(exc)
     try:
         client = get_http_client()
         response = await client.get(url, headers=headers, params=params, timeout=timeout_seconds)

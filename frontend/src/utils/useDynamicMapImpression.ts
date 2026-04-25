@@ -14,24 +14,26 @@
 //   billable map after the quota has flipped to red.
 // - The `trackClientSku` call after mount keeps the counter accurate.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { checkSkuQuota, trackClientSku } from './rateLimiter';
 
 export function useDynamicMapImpression(enabled: boolean = true): boolean {
-  // Default to allowing render until we know otherwise — better to flash
-  // an extra map than to leave the UI blank during a slow status read.
   const [allowed, setAllowed] = useState(true);
+  // One impression per hook instance. Guards against React StrictMode's
+  // double-invoked effects in dev and parent re-renders that flicker
+  // `enabled` true→false→true. Without this we over-count badly.
+  const trackedRef = useRef(false);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || trackedRef.current) return;
     let cancelled = false;
     (async () => {
       const status = await checkSkuQuota('dynamic_maps');
-      if (cancelled) return;
+      if (cancelled || trackedRef.current) return;
       const ok = status.allowed || status.skipped;
       setAllowed(ok);
       if (ok) {
-        // Bill the mount once we've decided to render.
+        trackedRef.current = true;
         void trackClientSku('dynamic_maps', 1);
       }
     })();

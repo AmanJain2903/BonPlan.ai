@@ -10,6 +10,8 @@ from app.agent.mcp_server.tools._errors import tool_error
 from google import genai
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
 
 serper_api_key = settings.SERPER_API_KEY
 gemini_api_key_serper_content_parser = settings.SERPER_CONTENT_PARSER_API_KEY
@@ -47,6 +49,17 @@ async def pre_process_content(content):
             "external_links": [],
             "status": "Content returned without pre-processing through LLM API. Check if the API key, model or prompt is configured."
         }
+        # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["serper_content_parser"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return {
+            "title": "Unknown Title",
+            "content": content,
+            "external_links": [],
+            "status": f"Content returned without pre-processing through LLM API, rate limit exceeded for SKU '{exc.sku}', retry after {exc.retry_after_seconds}s"
+        }
+
     try:
         response = await asyncio.to_thread(
             client.models.generate_content,
@@ -154,7 +167,18 @@ async def search_web(query: Annotated[str, Field(description="The query to searc
 
     if site:
         query = f"{query} site:{site}"
-    
+
+    # Rate-limit gate.
+    try:
+        await get_rate_limiter().consume(SKU["serper_web_search"], cache_hit=False)
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry. Skip this and proceed with what you have. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     url = "https://google.serper.dev/search"
     headers = {
         'X-API-KEY': serper_api_key,

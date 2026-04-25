@@ -54,6 +54,13 @@ SKU = {
     "autocomplete_session_usage": "autocomplete_session_usage",
     "places_place_details_essentials": "places_place_details_essentials",
     "autocomplete_requests": "autocomplete_requests",
+    # Third-party APIs and internal LLM SKUs.
+    "serper_web_search": "serper_web_search",                # search_web tool
+    "serper_content_parser": "serper_content_parser",        # get_content_from_url Gemini parse
+    "google_flights": "google_flights",                      # all flights.py RapidAPI tools
+    "booking_com": "booking_com",                            # all accommodations.py RapidAPI tools
+    "context_pruning": "context_pruning",                    # planner history-summarization Gemini call
+    "planner_agent": "planner_agent",                        # each planner Gemini turn
 }
 
 
@@ -122,6 +129,18 @@ TOOL_TO_SKU: dict[str, SkuResolver] = {
     "search_places": resolve_search_places_sku,
     "search_places_nearby": resolve_search_places_nearby_sku,
     "get_place_info": lambda **_: SKU["places_place_details_enterprise_atmosphere"],
+    # Third-party / internal SKUs (no arg branching).
+    "search_web": lambda **_: SKU["serper_web_search"],
+    "get_content_from_url": lambda **_: SKU["serper_content_parser"],
+    "get_country_code": lambda **_: SKU["google_flights"],
+    "get_airports_and_codes": lambda **_: SKU["google_flights"],
+    "search_flights": lambda **_: SKU["google_flights"],
+    "search_multi_city_flights": lambda **_: SKU["google_flights"],
+    "get_next_flights": lambda **_: SKU["google_flights"],
+    "get_flight_booking_details": lambda **_: SKU["google_flights"],
+    "get_flight_booking_url": lambda **_: SKU["google_flights"],
+    "search_hotels": lambda **_: SKU["booking_com"],
+    "get_hotel_booking_url": lambda **_: SKU["booking_com"],
     # Backend endpoints (not MCP tools, still go through consume())
     "get_destination_image_by_place_id": lambda **_: SKU["places_place_details_essentials_ids_only"],
     "get_destination_images_by_name": lambda **_: SKU["places_text_search_essentials_ids_only"],

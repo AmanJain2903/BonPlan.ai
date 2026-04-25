@@ -27,6 +27,8 @@ from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.agent.helpers.utils import TOOL_NAME_TO_EVENT_TYPE
 from app.agent.langgraph_runtime.streaming import emit
 from app.agent.langgraph_runtime.validator import validate_itinerary_event
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
 
 log = get_agent_logger("gemini_adapter")
 
@@ -234,6 +236,12 @@ async def _summarize_dropped(dropped: list) -> Optional[str]:
                     chunks.append(f"[tool_response {getattr(fr, 'name', '')}] {resp_repr}")
         blob = "\n".join(chunks)
         if not blob.strip():
+            return None
+        # Rate-limit gate.
+        try:
+            await get_rate_limiter().consume(SKU["context_pruning"])
+        except RateLimitExceeded as exc:
+            log.warning("context_pruning quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
             return None
         resp = await runtime.pruning_client.aio.models.generate_content(
             model=settings.CONTEXT_PRUNING_MODEL,
@@ -460,6 +468,18 @@ async def run_chat_loop(
             active_tool_calls = []
             last_chunk = None
             pending_turn_text = ""
+
+            # Rate-limit gate.
+            try:
+                await get_rate_limiter().consume(SKU["planner_agent"])
+            except RateLimitExceeded as exc:
+                log.error("planner_agent quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
+                emit({"type": "error", "content": f"Planner quota exhausted. Retry after {exc.retry_after_seconds}s."})
+                return ChatResult(
+                    emitted_events=list(session_events), last_text=last_text_buffer,
+                    success=False, next_event_number=next_event_number,
+                    is_complete=is_complete, error="planner_agent quota exhausted",
+                )
 
             try:
                 _turn_started = time.monotonic()
