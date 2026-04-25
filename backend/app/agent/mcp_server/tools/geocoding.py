@@ -9,6 +9,8 @@ import math
 import itertools
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -44,6 +46,18 @@ async def get_coordinates(address: Annotated[str, Field(description="The formal 
 
     cache_key = await generate_cache_key("get_coordinates", {"address": address.lower().strip()})
     cache_value = await retrieve_api_cache(cache_key, expires_in=31)
+
+    # Rate-limit: skip counting on cache hit so repeated requests for the
+    # same address don't burn the monthly Geocoding quota.
+    try:
+        await get_rate_limiter().consume(SKU["geocoding"], cache_hit=bool(cache_value))
+    except RateLimitExceeded as exc:
+        return tool_error(
+            "Monthly Geocoding SKU quota exhausted.",
+            fix_hint=f"Do not retry. Skip geocoding for this address. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
 
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {
@@ -119,6 +133,17 @@ async def get_address(lat: Annotated[float, Field(ge=-90.0, le=90.0, description
 
     cache_key = await generate_cache_key("get_address", {"lat": lat, "lng": lng})
     cache_value = await retrieve_api_cache(cache_key, expires_in=31)
+
+    # Rate-limit: shared "geocoding" SKU. Skip on cache hit.
+    try:
+        await get_rate_limiter().consume(SKU["geocoding"], cache_hit=bool(cache_value))
+    except RateLimitExceeded as exc:
+        return tool_error(
+            "Monthly Geocoding SKU quota exhausted.",
+            fix_hint=f"Do not retry. Skip reverse-geocoding. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
 
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {

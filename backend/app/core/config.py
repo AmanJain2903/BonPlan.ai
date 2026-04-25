@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
     AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    ADMIN_URL: str = os.getenv("ADMIN_URL", "http://localhost:5174")
 
     # Project settings
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "BonPlan.ai")
@@ -32,6 +33,19 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "bonplan_db")
+
+    # Redis settings (used by the SKU rate limiter)
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # Key prefix lets multiple environments share a single Redis instance safely.
+    REDIS_RATE_LIMIT_PREFIX: str = os.getenv("REDIS_RATE_LIMIT_PREFIX", "rl")
+    # When Redis is unreachable we fail-open by default so a Redis outage
+    # doesn't take the whole app down. Flip to "strict" in prod to fail-closed.
+    RATE_LIMITER_MODE: str = os.getenv("RATE_LIMITER_MODE", "lenient")
+    # Short in-process TTL for SKU config lookups so we don't hammer Postgres.
+    RATE_LIMITER_CONFIG_TTL_SECONDS: int = int(os.getenv("RATE_LIMITER_CONFIG_TTL_SECONDS", "60"))
+    # Hard reset hour (local time in RATE_LIMITER_RESET_TZ).
+    RATE_LIMITER_RESET_HOUR: int = int(os.getenv("RATE_LIMITER_RESET_HOUR", "7"))
+    RATE_LIMITER_RESET_TZ: str = os.getenv("RATE_LIMITER_RESET_TZ", "America/Los_Angeles")
 
     # Google Cloud Platform settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")

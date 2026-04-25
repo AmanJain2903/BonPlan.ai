@@ -6,6 +6,22 @@ from app.agent.mcp_server.tools._errors import tool_error
 import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
+
+
+async def _weather_consume_or_error() -> Optional[Dict]:
+    """Consume the shared weather_usage SKU; return an error dict if over limit."""
+    try:
+        await get_rate_limiter().consume(SKU["weather_usage"])
+        return None
+    except RateLimitExceeded as exc:
+        return tool_error(
+            "Monthly Weather SKU quota exhausted.",
+            fix_hint=f"Do not retry. Skip weather data. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -40,6 +56,10 @@ async def get_current_weather(lat: Annotated[float, Field(ge=-90.0, le=90.0, des
                         timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_current_weather'])]) -> Dict:
     if not api_key:
         return await _weather_key_missing_error()
+
+    rl_error = await _weather_consume_or_error()
+    if rl_error:
+        return rl_error
 
     url = f"https://weather.googleapis.com/v1/currentConditions:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}"
 
@@ -99,6 +119,10 @@ async def get_daily_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, desc
                        timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_daily_forecast'])]) -> Dict:
     if not api_key:
         return await _weather_key_missing_error()
+
+    rl_error = await _weather_consume_or_error()
+    if rl_error:
+        return rl_error
 
     url = f"https://weather.googleapis.com/v1/forecast/days:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}&days={days}&pageSize=10"
 
@@ -177,6 +201,10 @@ async def get_hourly_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0, des
                         timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_hourly_forecast'])]) -> Dict:
     if not api_key:
         return await _weather_key_missing_error()
+
+    rl_error = await _weather_consume_or_error()
+    if rl_error:
+        return rl_error
 
     url = f"https://weather.googleapis.com/v1/forecast/hours:lookup?key={api_key}&location.latitude={lat}&location.longitude={lng}&unitsSystem={units_system}&hours={hours}"
 

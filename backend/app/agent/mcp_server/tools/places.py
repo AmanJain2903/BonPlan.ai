@@ -8,6 +8,12 @@ import pathlib
 from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import (
+    SKU,
+    resolve_search_places_nearby_sku,
+    resolve_search_places_sku,
+)
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -137,6 +143,23 @@ async def search_places(query: Annotated[str, Field(description="The general or 
     cache_key = await generate_cache_key("search_places", {"query": query.lower().strip(), "include_dining_options": include_dining_options, "include_amenities": include_amenities, "max_results": max_results, "next_page_token": next_page_token})
     cache_value = await retrieve_api_cache(cache_key, expires_in=7)
 
+    # Context-aware SKU: jumps to "Atmosphere" variant when dining/amenity
+    # field masks are requested. Skip on cache hit so repeat queries don't
+    # burn the low 1,000/month Places quota.
+    resolved_sku = resolve_search_places_sku(
+        include_dining_options=include_dining_options,
+        include_amenities=include_amenities,
+    )
+    try:
+        await get_rate_limiter().consume(resolved_sku, cache_hit=bool(cache_value))
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry. Skip this place search and proceed with what you have. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     field_mask = GoogleFieldMasks["places"]["textSearch"]
     if include_dining_options:
         field_mask += "," + ",".join(_DINING_OPTIONS_FIELD_MASKS)
@@ -244,6 +267,21 @@ async def search_places_nearby(lat: Annotated[float, Field(ge=-90.0, le=90.0, de
     cache_key = await generate_cache_key("search_places_nearby", {"lat": lat, "lng": lng, "included_types": included_types, "radius": radius, "include_dining_options": include_dining_options, "include_amenities": include_amenities, "max_results": max_results, "rank_preference": rank_preference, "excluded_types": excluded_types})
     cache_value = await retrieve_api_cache(cache_key, expires_in=7)
 
+    # Context-aware SKU + cache-aware consume.
+    resolved_sku = resolve_search_places_nearby_sku(
+        include_dining_options=include_dining_options,
+        include_amenities=include_amenities,
+    )
+    try:
+        await get_rate_limiter().consume(resolved_sku, cache_hit=bool(cache_value))
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry. Skip this nearby search. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     field_mask = GoogleFieldMasks["places"]["nearbySearch"]
     if include_dining_options:
         field_mask += "," + ",".join(_DINING_OPTIONS_FIELD_MASKS)
@@ -330,7 +368,22 @@ async def get_place_info(place_id: Annotated[str, Field(description="The Google 
 
     cache_key = await generate_cache_key("get_place_info", {"place_id": place_id})
     cache_value = await retrieve_api_cache(cache_key, expires_in=31)
-    
+
+    # `get_place_info` always returns the full atmosphere field mask, so it
+    # always bills the "Enterprise + Atmosphere" SKU.
+    try:
+        await get_rate_limiter().consume(
+            SKU["places_place_details_enterprise_atmosphere"],
+            cache_hit=bool(cache_value),
+        )
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry. Proceed without detailed place info. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     url = f"https://places.googleapis.com/v1/places/{place_id}"
     headers = {
         "Content-Type": "application/json",

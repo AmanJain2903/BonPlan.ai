@@ -8,6 +8,7 @@ import PlacesAutocomplete, {
   type ParsedPlace,
 } from '../../shared/PlacesAutocomplete.tsx';
 import { GOOGLE_MAPS_MAP_ID } from '../../../apis/config';
+import { useDynamicMapImpression } from '../../../utils/useDynamicMapImpression';
 
 type Step3Props = {
   onNext?: () => void;
@@ -34,7 +35,10 @@ type LocationCardProps = {
 const LocationCard = ({
   title, subtitle, Icon, gradientPos, inputValue, onPlaceChange, showMap,
   animCondition, animKey, animName, onAnimEnd, belowMap, placePickerRef,
-}: LocationCardProps) => (
+}: LocationCardProps) => {
+  const mapVisible = showMap && inputValue?.lat != null && inputValue?.lng != null;
+  const allowMap = useDynamicMapImpression(mapVisible);
+  return (
   <div className="group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-8 overflow-hidden">
     {/* Background Glow */}
     <div className="pointer-events-none absolute -inset-24 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-3xl">
@@ -79,7 +83,7 @@ const LocationCard = ({
 
     {/* Mini Map (Renders when BOTH fields are selected globally) */}
     <AnimatePresence>
-      {showMap && inputValue?.lat != null && inputValue?.lng != null && (
+      {mapVisible && allowMap && (
         <motion.div
           initial={{ height: 0, opacity: 0, marginBottom: 0 }}
           animate={{ height: 170, opacity: 1, marginBottom: 16 }} // 16px is mb-4
@@ -113,7 +117,8 @@ const LocationCard = ({
       onPlaceChange={onPlaceChange}
     />
   </div>
-);
+  );
+};
 
 function Step3SingleHub({ onNext, registerCommit }: Step3Props) {
   const { trip, updateTripData } = useTrip();
@@ -240,6 +245,8 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
   const destPickerRef = useRef<PlacesAutocompleteHandle>(null);
 
   const canContinue = Boolean(originInput && destinationsInput.length > 0);
+  const multiMapVisible = canContinue && destinationsInput.length > 0;
+  const allowMultiMap = useDynamicMapImpression(multiMapVisible);
 
   useEffect(() => {
     registerCommit?.(() => {
@@ -356,7 +363,7 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
             <>
               {/* Custom Multi-Map (Same 170px height as SingleHub) */}
               <AnimatePresence>
-                {canContinue && destinationsInput.length > 0 && (
+                {multiMapVisible && allowMultiMap && (
                   <motion.div
                     initial={{ height: 0, opacity: 0, marginBottom: 0 }}
                     animate={{ height: 170, opacity: 1, marginBottom: 16 }} // 16px is mb-4

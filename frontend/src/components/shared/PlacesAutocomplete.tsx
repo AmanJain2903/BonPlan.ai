@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Search, Loader2 } from 'lucide-react';
 import { GOOGLE_MAPS_API_KEY } from '../../apis/config';
+import { checkSkuQuota, trackClientSku } from '../../utils/rateLimiter';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -105,6 +106,12 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
     const abortRef = useRef<AbortController | null>(null);
     const reqIdRef = useRef(0);
     const skipNextFetchRef = useRef(false);
+    // Track each new session token exactly once. The "session" SKU is unbilled
+    // by Google but seeded so the dashboard can show how many sessions opened.
+    const sessionTrackedRef = useRef(false);
+    // Once the keystroke quota goes red, freeze further autocomplete fetches
+    // for the rest of the page lifetime — the next call would still bill.
+    const keystrokeQuotaExhaustedRef = useRef(false);
 
     useImperativeHandle(ref, () => ({
       clear: () => {
@@ -113,6 +120,7 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         setIsOpen(false);
         setActiveIdx(-1);
         sessionRef.current = newSessionToken();
+        sessionTrackedRef.current = false;
       },
       focus: () => inputRef.current?.focus(),
     }));
@@ -123,6 +131,29 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         setSuggestions([]);
         setIsOpen(false);
         return;
+      }
+
+      // Hard stop once the quota has been exhausted in this session — every
+      // additional keystroke would still bill Google.
+      if (keystrokeQuotaExhaustedRef.current) {
+        setSuggestions([]);
+        setIsOpen(false);
+        return;
+      }
+
+      // Pre-flight: bail out cheaply if we already know the budget is gone.
+      const preflight = await checkSkuQuota('autocomplete_requests');
+      if (!preflight.allowed && !preflight.skipped) {
+        keystrokeQuotaExhaustedRef.current = true;
+        setSuggestions([]);
+        setIsOpen(false);
+        return;
+      }
+
+      // First keystroke of a fresh session token — record the session opening.
+      if (!sessionTrackedRef.current) {
+        sessionTrackedRef.current = true;
+        void trackClientSku('autocomplete_session_usage', 1);
       }
 
       abortRef.current?.abort();
@@ -146,6 +177,12 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         });
         if (!res.ok) throw new Error(`Autocomplete ${res.status}`);
         const data = await res.json();
+        // Bill the keystroke after the request actually went out — if the
+        // request failed we don't burn quota on it.
+        const tracked = await trackClientSku('autocomplete_requests', 1);
+        if (!tracked.allowed) {
+          keystrokeQuotaExhaustedRef.current = true;
+        }
         if (myReqId !== reqIdRef.current) return; // a newer request has superseded
         const parsed: Suggestion[] = (data?.suggestions ?? [])
           .map((s: any) => s?.placePrediction)
@@ -216,6 +253,17 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
     const selectSuggestion = useCallback(
       async (s: Suggestion) => {
         setIsOpen(false);
+
+        // Pre-check the Place Details Essentials budget — this is the
+        // billable end of the session token. Block selection if exhausted.
+        const preflight = await checkSkuQuota('places_place_details_essentials');
+        if (!preflight.allowed && !preflight.skipped) {
+          console.warn(
+            '[PlacesAutocomplete] place_details_essentials quota exhausted — selection blocked',
+          );
+          return;
+        }
+
         setIsResolving(true);
         const tokenAtSelection = sessionRef.current;
         try {
@@ -228,6 +276,8 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
           });
           if (!res.ok) throw new Error(`Details ${res.status}`);
           const data = await res.json();
+          // Successfully billed — record it.
+          void trackClientSku('places_place_details_essentials', 1);
           const lat = data?.location?.latitude;
           const lng = data?.location?.longitude;
           if (typeof lat !== 'number' || typeof lng !== 'number') {
@@ -251,8 +301,9 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
           console.warn('[PlacesAutocomplete] details failed:', err);
         } finally {
           setIsResolving(false);
-          // End of session — rotate token for the next search
+          // End of session — rotate token for the next search.
           sessionRef.current = newSessionToken();
+          sessionTrackedRef.current = false;
         }
       },
       [onPlaceChange],

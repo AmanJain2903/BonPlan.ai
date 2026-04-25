@@ -15,6 +15,8 @@ import pathlib
 from app.agent.mcp_server.tools.geocoding import get_address
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import resolve_get_route_sku
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -159,6 +161,21 @@ async def get_route(
 
     origin_flat = origin.model_dump(exclude_none=True)
     destination_flat = destination.model_dump(exclude_none=True)
+
+    # Context-aware SKU: branches on routing_preference + optimize_waypoint_order.
+    resolved_sku = resolve_get_route_sku(
+        routing_preference=routing_preference,
+        optimize_waypoint_order=optimize_waypoint_order,
+    )
+    try:
+        await get_rate_limiter().consume(resolved_sku)
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry this route call. Retry after {exc.retry_after_seconds}s, or request a simpler route.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
 
     url = f"https://routes.googleapis.com/directions/v2:computeRoutes"
 

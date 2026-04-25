@@ -21,3 +21,4 @@ openai==2.31.0
 langgraph==0.4.1
 langgraph-checkpoint-postgres==2.0.22
 pillow==12.2.0
+redis[hiredis]==6.1.0

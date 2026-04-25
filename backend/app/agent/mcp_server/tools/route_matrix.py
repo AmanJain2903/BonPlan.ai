@@ -14,6 +14,8 @@ import urllib.parse
 import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import resolve_get_route_matrix_sku
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -99,6 +101,18 @@ async def get_route_matrix(
                 f"destinations[{idx}]", wp.model_dump(exclude_none=True)
             )
         destinations_flat.append(wp.model_dump(exclude_none=True))
+
+    # Context-aware SKU: branches on routing_preference.
+    resolved_sku = resolve_get_route_matrix_sku(routing_preference=routing_preference)
+    try:
+        await get_rate_limiter().consume(resolved_sku)
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry this route-matrix call. Retry after {exc.retry_after_seconds}s, or reduce origin/destination counts.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
 
     url = f"https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
 

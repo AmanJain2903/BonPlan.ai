@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -103,7 +105,18 @@ async def get_timezone(lat: Annotated[float, Field(ge=-90.0, le=90.0, descriptio
         no_timestamp = True
         timestamp = int(time.time())
         url = f"https://maps.googleapis.com/maps/api/timezone/json?location={lat},{lng}&timestamp={timestamp}&key={api_key}"
-        
+
+    # Rate-limit the upstream Google Timezone call.
+    try:
+        await get_rate_limiter().consume(SKU["timezone"])
+    except RateLimitExceeded as exc:
+        return tool_error(
+            "Monthly Timezone SKU quota exhausted.",
+            fix_hint=f"Do not retry. Skip timezone lookup and proceed. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     try:
         client = get_http_client()
         response = await client.get(url, timeout=timeout_seconds)

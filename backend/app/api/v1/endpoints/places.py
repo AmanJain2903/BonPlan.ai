@@ -18,7 +18,10 @@ from app.utils.http import get_http_client
 from app.api.caching import retrieve_api_cache, insert_api_cache, generate_cache_key
 from app.database.database import Session
 from app.database.models.placePhotoCache import PlacePhotoCache
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
 
+from fastapi import HTTPException
 from PIL import Image
 from io import BytesIO
 import os
@@ -78,6 +81,14 @@ async def _build_proxy_url(resource_name: str, db: Session) -> str:
     else:
         if not API_KEY:
             return None
+        # Places Photos SKU: billed per Google Places Media API call. DB-cached
+        # photos skip this path entirely so we only consume on genuine fetches.
+        try:
+            await get_rate_limiter().consume(SKU["places_place_details_photos"])
+        except RateLimitExceeded:
+            # Fail-soft for photos — return None so the caller falls back to a
+            # placeholder rather than hard-erroring on quota exhaustion.
+            return settings.FALLBACK_IMAGE
         google_url = f"{BASE_URL}/{resource_name}/media?key={API_KEY}&maxWidthPx={maxWidth}"
         client = get_http_client()
         try:
@@ -146,6 +157,17 @@ async def get_destination_image_by_place_id(place_id: str = Query(..., descripti
         return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Place ID is required"}
     cache_key = await generate_cache_key("get_destination_image_by_place_id", {"place_id": place_id})
     cached_value = await retrieve_api_cache(cache_key, expires_in=31)
+
+    # SKU is IDs-only field mask => unlimited per spec; consume() short-circuits,
+    # but we still register the call for observability.
+    try:
+        await get_rate_limiter().consume(
+            SKU["places_place_details_essentials_ids_only"],
+            cache_hit=bool(cached_value),
+        )
+    except RateLimitExceeded as exc:
+        return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Rate limit exceeded."}
+
     if cached_value:
         photos = cached_value.get("photos", [])
     else:
@@ -188,6 +210,16 @@ async def get_destination_images_by_name(destination: str = Query(..., descripti
         return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Destination is required"}
     cache_key = await generate_cache_key("get_destination_images_by_name", {"destination": destination.lower().strip()})
     cached_value = await retrieve_api_cache(cache_key, expires_in=31)
+
+    # Text-search IDs-only field mask SKU — unlimited but cache-aware.
+    try:
+        await get_rate_limiter().consume(
+            SKU["places_text_search_essentials_ids_only"],
+            cache_hit=bool(cached_value),
+        )
+    except RateLimitExceeded as exc:
+        return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Rate limit exceeded."}
+
     if cached_value:
         placeId = cached_value.get("placeId", "")
     else:

@@ -65,6 +65,11 @@ From `backend/`:
 uvicorn app.ai:app --port 8001 --workers 2 # Or -- reload but this will ignore workers flag. You can choose any number of workers.
 ```
 
+#### 6 Start redis
+```bash
+brew services start redis
+```
+
 #### 6 Run MCP Inspector (Optional - Just for local testing the MCP Sever)
 From `backend/`:
 ```bash

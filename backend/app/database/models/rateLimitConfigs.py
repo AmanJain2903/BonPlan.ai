@@ -27,6 +27,7 @@ class RateLimitConfigs(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False, index=True, unique=True)
     sku = Column(String, nullable=False, unique=True, index=True)
+    service = Column(String, nullable=False)
     description = Column(String, nullable=False, default="")
     provider = Column(String, nullable=False)
     limit = Column(Integer, nullable=False, default=-1)

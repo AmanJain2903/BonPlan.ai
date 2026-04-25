@@ -15,6 +15,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False, index=True)
+    is_admin = Column(Boolean, nullable=False, default=False)
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
@@ -38,4 +39,3 @@ class User(Base):
 
     trip_memberships = relationship("TripMember", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     owned_trips = relationship("Trip", back_populates="owner", cascade="all, delete-orphan", lazy="selectin")
-    usage = relationship("RateLimitUsage", back_populates="user", cascade="all, delete-orphan", lazy="selectin")

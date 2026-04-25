@@ -8,6 +8,7 @@ import {
   eventKey,
 } from './constants';
 import { GOOGLE_MAPS_MAP_ID } from '../../apis/config';
+import { checkSkuQuota, trackClientSku } from '../../utils/rateLimiter';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -284,21 +285,37 @@ function routeCacheKey(
   return `${origin.lat},${origin.lng}|${dest.lat},${dest.lng}|${mode}`;
 }
 
-function fetchRoutePolyline(
+// Once the `directions` SKU flips to red we hold off issuing further
+// DirectionsService calls for the rest of the page lifetime — the JS
+// SDK would bill each one regardless.
+let directionsQuotaExhausted = false;
+
+async function fetchRoutePolyline(
   origin: { lat: number; lng: number },
   destination: { lat: number; lng: number },
   travelMode: string,
   onResolve: (encoded: string) => void,
-): void {
+): Promise<void> {
   const key = routeCacheKey(origin, destination, travelMode);
   if (routeCache.has(key)) {
     onResolve(routeCache.get(key)!);
     return;
   }
   if (pendingRoutes.has(key)) return;
+  if (directionsQuotaExhausted) return;
 
   const maps = (window as any).google?.maps;
   if (!maps?.DirectionsService) return;
+
+  // Pre-flight the directions quota — this is a billable client-side call
+  // (Google bills the moment DirectionsService.route resolves). If the
+  // budget is gone, fall back to the straight-line render the consumer
+  // gets when no polyline arrives.
+  const status = await checkSkuQuota('directions');
+  if (!status.allowed && !status.skipped) {
+    directionsQuotaExhausted = true;
+    return;
+  }
 
   pendingRoutes.add(key);
   const svc = new maps.DirectionsService();
@@ -314,6 +331,10 @@ function fetchRoutePolyline(
     (result: any, status: any) => {
       pendingRoutes.delete(key);
       if (status === maps.DirectionsStatus.OK && result?.routes?.length > 0) {
+        // Bill the impression now that Google has actually served us a route.
+        void trackClientSku('directions', 1).then((tracked) => {
+          if (!tracked.allowed) directionsQuotaExhausted = true;
+        });
         const route = result.routes[0];
         let encoded = '';
         if (typeof route.overview_polyline === 'string') {
@@ -716,31 +737,49 @@ export default function DayMapViewBody({
     const maps = mapsLibRef.current;
     if (!maps?.Map) return;
 
-    try {
-      mapRef.current = new maps.Map(el, {
-        center: pins.length > 0 ? { lat: pins[0].lat, lng: pins[0].lng } : { lat: 20, lng: 0 },
-        zoom: pins.length > 0 ? 12 : 3,
-        mapId: GOOGLE_MAPS_MAP_ID,
-        disableDefaultUI: true,
-        fullscreenControl: true,
-        fullscreenControlOptions: { position: maps.ControlPosition?.TOP_RIGHT },
-        clickableIcons: false,
-        keyboardShortcuts: false,
-        gestureHandling: 'greedy',
-      });
-    } catch (err) {
-      console.error('[DayMapView] Map constructor threw:', err);
-      setMapError('Failed to initialize the map.');
-      return;
-    }
-
+    let cancelled = false;
     let ro: ResizeObserver | null = null;
-    try {
-      ro = new ResizeObserver(() => { maps.event?.trigger?.(mapRef.current, 'resize'); });
-      ro.observe(el);
-    } catch { /* unsupported */ }
 
-    return () => { try { ro?.disconnect(); } catch { /* noop */ } };
+    (async () => {
+      // Pre-flight: every Map() instantiation bills one Dynamic Maps impression.
+      const status = await checkSkuQuota('dynamic_maps');
+      if (cancelled) return;
+      if (!status.allowed && !status.skipped) {
+        setMapError('Map quota exhausted for this billing period.');
+        return;
+      }
+
+      try {
+        mapRef.current = new maps.Map(el, {
+          center: pins.length > 0 ? { lat: pins[0].lat, lng: pins[0].lng } : { lat: 20, lng: 0 },
+          zoom: pins.length > 0 ? 12 : 3,
+          mapId: GOOGLE_MAPS_MAP_ID,
+          disableDefaultUI: true,
+          fullscreenControl: true,
+          fullscreenControlOptions: { position: maps.ControlPosition?.TOP_RIGHT },
+          clickableIcons: false,
+          keyboardShortcuts: false,
+          gestureHandling: 'greedy',
+        });
+      } catch (err) {
+        console.error('[DayMapView] Map constructor threw:', err);
+        setMapError('Failed to initialize the map.');
+        return;
+      }
+
+      // Bill the impression after a successful mount.
+      void trackClientSku('dynamic_maps', 1);
+
+      try {
+        ro = new ResizeObserver(() => { maps.event?.trigger?.(mapRef.current, 'resize'); });
+        ro.observe(el);
+      } catch { /* unsupported */ }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { ro?.disconnect(); } catch { /* noop */ }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libsReady]);
 
