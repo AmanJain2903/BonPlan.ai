@@ -74,6 +74,13 @@ class RateLimitConfigSnapshot:
     limit: int  # -1 == unlimited
     period: Period
     scope: Scope
+    # Per-SKU reset anchor (in RATE_LIMITER_RESET_TZ). Interpreted by period:
+    # DAILY uses (hour, minute); WEEKLY adds day (1=Mon..7=Sun); MONTHLY adds
+    # day-of-month; YEARLY adds month + day-of-month. See _compute_period_window.
+    reset_minute: int = 0
+    reset_hour: int = 0
+    reset_day: int = 1
+    reset_month: int = 1
 
 
 @dataclass(frozen=True)
@@ -130,84 +137,94 @@ return {1, current, ttl_remaining}
 """
 
 
-def _period_bucket_label(period: Period, now_local: datetime) -> str:
+def _anchor_in_month(year: int, month: int, day: int, hour: int, minute: int, tz: ZoneInfo) -> datetime:
+    """Build a tz-aware datetime, clamping `day` to the last valid day of the month."""
+    last_day = calendar.monthrange(year, month)[1]
+    safe_day = min(day, last_day)
+    return datetime(year, month, safe_day, hour, minute, 0, 0, tzinfo=tz)
+
+
+def _compute_period_window(
+    period: Period,
+    reset_month: int,
+    reset_day: int,
+    reset_hour: int,
+    reset_minute: int,
+    now_local: datetime,
+) -> tuple[datetime, datetime]:
     """
-    Human-readable bucket label baked into the Redis key so that if we ever
-    change the reset boundary, old buckets don't get accidentally reused.
+    Return (period_start, period_end) — both tz-aware in `now_local.tzinfo` —
+    such that period_start <= now_local < period_end. The boundaries are
+    derived from the per-SKU anchor.
+
+    For weekly, `reset_day` follows ISO weekday (1 = Monday … 7 = Sunday).
+    """
+    tz = now_local.tzinfo  # type: ignore[assignment]
+
+    if period == Period.DAILY:
+        candidate = now_local.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+        start = candidate if candidate <= now_local else candidate - timedelta(days=1)
+        end = start + timedelta(days=1)
+        return start, end
+
+    if period == Period.WEEKLY:
+        anchor_dow = max(1, min(7, reset_day))  # ISO 1..7
+        days_back = (now_local.isoweekday() - anchor_dow) % 7
+        candidate = (now_local - timedelta(days=days_back)).replace(
+            hour=reset_hour, minute=reset_minute, second=0, microsecond=0
+        )
+        start = candidate if candidate <= now_local else candidate - timedelta(days=7)
+        end = start + timedelta(days=7)
+        return start, end
+
+    if period == Period.MONTHLY:
+        candidate = _anchor_in_month(now_local.year, now_local.month, reset_day, reset_hour, reset_minute, tz)  # type: ignore[arg-type]
+        if candidate <= now_local:
+            start = candidate
+            ny, nm = (start.year, start.month + 1) if start.month < 12 else (start.year + 1, 1)
+            end = _anchor_in_month(ny, nm, reset_day, reset_hour, reset_minute, tz)  # type: ignore[arg-type]
+        else:
+            py, pm = (now_local.year, now_local.month - 1) if now_local.month > 1 else (now_local.year - 1, 12)
+            start = _anchor_in_month(py, pm, reset_day, reset_hour, reset_minute, tz)  # type: ignore[arg-type]
+            end = candidate
+        return start, end
+
+    if period == Period.YEARLY:
+        m = max(1, min(12, reset_month))
+        candidate = _anchor_in_month(now_local.year, m, reset_day, reset_hour, reset_minute, tz)  # type: ignore[arg-type]
+        if candidate <= now_local:
+            start = candidate
+            end = _anchor_in_month(start.year + 1, m, reset_day, reset_hour, reset_minute, tz)  # type: ignore[arg-type]
+        else:
+            start = _anchor_in_month(now_local.year - 1, m, reset_day, reset_hour, reset_minute, tz)  # type: ignore[arg-type]
+            end = candidate
+        return start, end
+
+    raise ValueError(f"Unknown period: {period}")
+
+
+def _period_bucket_label(period: Period, period_start: datetime) -> str:
+    """
+    Bucket label derived from the *period_start*, not "now". This keeps the
+    historic format (YYYYMMDD / YYYYWXX / YYYYMM / YYYY) — which
+    `usage_cleanup` relies on — but stays correct for per-SKU anchors that
+    don't fall on the canonical day of the period.
     """
     if period == Period.DAILY:
-        return now_local.strftime("%Y%m%d")
+        return period_start.strftime("%Y%m%d")
     if period == Period.WEEKLY:
-        iso_year, iso_week, _ = now_local.isocalendar()
+        iso_year, iso_week, _ = period_start.isocalendar()
         return f"{iso_year}W{iso_week:02d}"
     if period == Period.MONTHLY:
-        return now_local.strftime("%Y%m")
+        return period_start.strftime("%Y%m")
     if period == Period.YEARLY:
-        return now_local.strftime("%Y")
+        return period_start.strftime("%Y")
     raise ValueError(f"Unknown period: {period}")
 
 
-def _next_reset(period: Period, tz: ZoneInfo, reset_hour: int) -> datetime:
-    """
-    Compute the next reset boundary in local time.
-
-    - DAILY: the next `reset_hour` that has not yet passed.
-    - WEEKLY: next Monday at `reset_hour`.
-    - MONTHLY: 1st of next month at `reset_hour`.
-    - YEARLY: Jan 1 of next year at `reset_hour`.
-    """
-    now = datetime.now(tz)
-    anchor = now.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
-
-    if period == Period.DAILY:
-        return anchor if now < anchor else anchor + timedelta(days=1)
-
-    if period == Period.WEEKLY:
-        # Monday == 0 in .weekday()
-        days_until_monday = (0 - now.weekday()) % 7
-        candidate = anchor + timedelta(days=days_until_monday)
-        if now >= candidate:
-            candidate += timedelta(days=7)
-        return candidate
-
-    if period == Period.MONTHLY:
-        # Walk to the 1st of next month at reset_hour.
-        if now.day == 1 and now < anchor:
-            return anchor
-        if now.month == 12:
-            year, month = now.year + 1, 1
-        else:
-            year, month = now.year, now.month + 1
-        return now.replace(
-            year=year,
-            month=month,
-            day=1,
-            hour=reset_hour,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-
-    if period == Period.YEARLY:
-        if now.month == 1 and now.day == 1 and now < anchor:
-            return anchor
-        return now.replace(
-            year=now.year + 1,
-            month=1,
-            day=1,
-            hour=reset_hour,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-
-    raise ValueError(f"Unknown period: {period}")
-
-
-def _ttl_seconds(period: Period, tz: ZoneInfo, reset_hour: int) -> int:
-    now = datetime.now(tz)
-    delta = _next_reset(period, tz, reset_hour) - now
-    # Clamp to >=1 so we never EXPIRE with 0 (which would delete immediately).
+def _ttl_seconds_from_window(period_end: datetime, now_local: datetime) -> int:
+    delta = period_end - now_local
+    # Clamp to >=1 so we never EXPIRE with 0 (which deletes immediately).
     return max(1, int(delta.total_seconds()))
 
 
@@ -244,6 +261,10 @@ class _ConfigCache:
                 limit=row.limit,
                 period=row.period,
                 scope=row.scope,
+                reset_minute=getattr(row, "reset_minute", 0) or 0,
+                reset_hour=getattr(row, "reset_hour", 0) or 0,
+                reset_day=getattr(row, "reset_day", 1) or 1,
+                reset_month=getattr(row, "reset_month", 1) or 1,
             )
             for row in rows
         }
@@ -270,15 +291,26 @@ class RateLimiter:
 
     # --- key building --------------------------------------------------------
 
+    def _window_for(self, snap: RateLimitConfigSnapshot) -> tuple[datetime, datetime]:
+        return _compute_period_window(
+            snap.period,
+            snap.reset_month,
+            snap.reset_day,
+            snap.reset_hour,
+            snap.reset_minute,
+            datetime.now(self._tz),
+        )
+
     def _build_key(
         self,
         sku: str,
         scope: Scope,
         user_id: Optional[UUID],
         period: Period,
+        period_start: datetime,
     ) -> str:
         owner = str(user_id) if scope == Scope.USER and user_id is not None else "global"
-        bucket = _period_bucket_label(period, datetime.now(self._tz))
+        bucket = _period_bucket_label(period, period_start)
         return f"{settings.REDIS_RATE_LIMIT_PREFIX}:{sku}:{scope.value}:{owner}:{bucket}"
 
     # --- public API ----------------------------------------------------------
@@ -336,8 +368,9 @@ class RateLimiter:
         # back to a synthetic "anonymous" bucket so unauthenticated callers
         # still get limited instead of bypassing the quota.
         effective_user_id = user_id if config.scope == Scope.USER else None
-        key = self._build_key(sku_normalized, config.scope, effective_user_id, config.period)
-        ttl = _ttl_seconds(config.period, self._tz, settings.RATE_LIMITER_RESET_HOUR)
+        period_start, period_end = self._window_for(config)
+        key = self._build_key(sku_normalized, config.scope, effective_user_id, config.period, period_start)
+        ttl = _ttl_seconds_from_window(period_end, datetime.now(self._tz))
 
         try:
             sha = await self._ensure_script()
@@ -386,6 +419,7 @@ class RateLimiter:
                     sku=sku_normalized,
                     user_id=effective_user_id,
                     period=config.period,
+                    period_start=period_start,
                     current=current,
                 )
             )
@@ -439,7 +473,8 @@ class RateLimiter:
             )
 
         effective_user_id = user_id if config.scope == Scope.USER else None
-        key = self._build_key(sku_normalized, config.scope, effective_user_id, config.period)
+        period_start, _ = self._window_for(config)
+        key = self._build_key(sku_normalized, config.scope, effective_user_id, config.period, period_start)
 
         try:
             client = get_redis()
@@ -488,7 +523,8 @@ class RateLimiter:
             return False
 
         effective_user_id = user_id if config.scope == Scope.USER else None
-        key = self._build_key(sku_normalized, config.scope, effective_user_id, config.period)
+        period_start, _ = self._window_for(config)
+        key = self._build_key(sku_normalized, config.scope, effective_user_id, config.period, period_start)
 
         try:
             client = get_redis()
@@ -511,6 +547,7 @@ class RateLimiter:
         sku: str,
         user_id: Optional[UUID],
         period: Period,
+        period_start: datetime,
         current: int,
     ) -> None:
         """
@@ -522,7 +559,7 @@ class RateLimiter:
         consume in the same bucket will overwrite the stale value.
         """
         try:
-            bucket = _period_bucket_label(period, datetime.now(self._tz))
+            bucket = _period_bucket_label(period, period_start)
             owner = user_id if user_id is not None else GLOBAL_USER_SENTINEL
             insert_stmt = pg_insert(RateLimitUsage).values(
                 sku_id=sku_id,
@@ -561,12 +598,6 @@ class RateLimiter:
         if not configs_by_id:
             return 0
 
-        # Compute the active bucket label for each period only once.
-        now_local = datetime.now(self._tz)
-        active_bucket = {
-            period: _period_bucket_label(period, now_local) for period in Period
-        }
-
         async with Session() as db:
             rows = (await db.execute(select(RateLimitUsage))).scalars().all()
 
@@ -579,15 +610,23 @@ class RateLimiter:
         restored = 0
         for row in rows:
             snap = configs_by_id.get(row.sku_id)
-            if snap is None or snap.limit < 0:
+            if snap is None:
                 continue
-            if row.period_bucket != active_bucket[snap.period]:
+            # Per-SKU active bucket — different SKUs of the same period can
+            # land in different buckets when their reset anchors differ.
+            period_start, period_end = self._window_for(snap)
+            active_bucket = _period_bucket_label(snap.period, period_start)
+            if row.period_bucket != active_bucket:
                 continue  # stale bucket — skip
+            if snap.limit < 0:
+                # Unlimited SKUs are tracked but never enforced; we still
+                # restore so observability counts don't drop on Redis restart.
+                pass
 
             user_id = None if row.user_id == GLOBAL_USER_SENTINEL else row.user_id
             effective_user_id = user_id if snap.scope == Scope.USER else None
-            key = self._build_key(snap.sku, snap.scope, effective_user_id, snap.period)
-            ttl = _ttl_seconds(snap.period, self._tz, settings.RATE_LIMITER_RESET_HOUR)
+            key = self._build_key(snap.sku, snap.scope, effective_user_id, snap.period, period_start)
+            ttl = _ttl_seconds_from_window(period_end, datetime.now(self._tz))
 
             try:
                 # SET with EX so we don't clobber a higher live counter — only

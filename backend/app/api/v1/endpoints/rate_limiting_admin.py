@@ -29,6 +29,12 @@ class CreateRateLimitConfigBody(BaseModel):
     limit: int
     period: Period
     scope: Scope
+    # Per-SKU reset anchor (interpreted in RATE_LIMITER_RESET_TZ).
+    # Defaults reproduce the historic global behavior: midnight on the 1st.
+    reset_minute: Optional[int] = 0
+    reset_hour: Optional[int] = 0
+    reset_day: Optional[int] = 1
+    reset_month: Optional[int] = 1
 
 class GetRateLimitConfigBody(BaseModel):
     sku: Optional[str] = None
@@ -43,6 +49,37 @@ class UpdateRateLimitConfigBody(BaseModel):
     limit: Optional[int] = None
     period: Optional[Period] = None
     scope: Optional[Scope] = None
+    reset_minute: Optional[int] = None
+    reset_hour: Optional[int] = None
+    reset_day: Optional[int] = None
+    reset_month: Optional[int] = None
+
+
+def _validate_reset_fields(
+    period: Optional[Period],
+    reset_minute: Optional[int],
+    reset_hour: Optional[int],
+    reset_day: Optional[int],
+    reset_month: Optional[int],
+) -> None:
+    """
+    Range-check whatever reset_* fields are supplied. We don't require a
+    period to be present — partial updates may only touch hour/minute, etc.
+    Day-of-month >28 is allowed; the limiter clamps to month length at runtime.
+    """
+    if reset_minute is not None and not (0 <= reset_minute <= 59):
+        raise HTTPException(status_code=400, detail="reset_minute must be 0–59.")
+    if reset_hour is not None and not (0 <= reset_hour <= 23):
+        raise HTTPException(status_code=400, detail="reset_hour must be 0–23.")
+    if reset_day is not None:
+        if period == Period.WEEKLY and not (1 <= reset_day <= 7):
+            raise HTTPException(status_code=400, detail="reset_day for weekly must be 1 (Mon) – 7 (Sun).")
+        if period in (Period.MONTHLY, Period.YEARLY) and not (1 <= reset_day <= 31):
+            raise HTTPException(status_code=400, detail="reset_day must be 1–31.")
+        if period is None and not (1 <= reset_day <= 31):
+            raise HTTPException(status_code=400, detail="reset_day must be 1–31.")
+    if reset_month is not None and not (1 <= reset_month <= 12):
+        raise HTTPException(status_code=400, detail="reset_month must be 1–12.")
 
 class DeleteRateLimitConfigBody(BaseModel):
     sku: Optional[str] = None
@@ -86,12 +123,21 @@ async def create_rate_limit_config(data: CreateRateLimitConfigBody):
     if not description:
         description = ""
 
+    _validate_reset_fields(period, data.reset_minute, data.reset_hour, data.reset_day, data.reset_month)
+
     async with Session() as db:
         try:
             existing_config = (await db.execute(select(RateLimitConfigs).where(RateLimitConfigs.sku == sku))).scalar_one_or_none()
             if existing_config:
                 raise HTTPException(status_code=400, detail="Rate limit config already exists.")
-            new_config = RateLimitConfigs(sku=sku, service=service, description=description, provider=provider, limit=limit, period=period, scope=scope)
+            new_config = RateLimitConfigs(
+                sku=sku, service=service, description=description, provider=provider,
+                limit=limit, period=period, scope=scope,
+                reset_minute=data.reset_minute if data.reset_minute is not None else 0,
+                reset_hour=data.reset_hour if data.reset_hour is not None else 0,
+                reset_day=data.reset_day if data.reset_day is not None else 1,
+                reset_month=data.reset_month if data.reset_month is not None else 1,
+            )
             db.add(new_config)
             await db.commit()
         except HTTPException:
@@ -131,6 +177,10 @@ async def get_rate_limit_config(sku: Optional[str] = None, sku_id: Optional[str]
         "limit": config.limit,
         "period": config.period.value,
         "scope": config.scope.value,
+        "reset_minute": config.reset_minute,
+        "reset_hour": config.reset_hour,
+        "reset_day": config.reset_day,
+        "reset_month": config.reset_month,
     }
 
     return {"message": "Rate limit config retrieved successfully.", "status_code": 200, "config": config_dict}
@@ -149,6 +199,8 @@ async def update_rate_limit_config(data: UpdateRateLimitConfigBody):
         raise HTTPException(status_code=400, detail="SKU name or SKU ID is required.")
     if limit is not None and limit < 0 and limit != -1:
         raise HTTPException(status_code=400, detail="Limit must be a non-negative integer or -1 for unlimited.")
+
+    _validate_reset_fields(period, data.reset_minute, data.reset_hour, data.reset_day, data.reset_month)
 
     async with Session() as db:
         try:
@@ -174,6 +226,14 @@ async def update_rate_limit_config(data: UpdateRateLimitConfigBody):
                 config.period = period
             if scope:
                 config.scope = scope
+            if data.reset_minute is not None:
+                config.reset_minute = data.reset_minute
+            if data.reset_hour is not None:
+                config.reset_hour = data.reset_hour
+            if data.reset_day is not None:
+                config.reset_day = data.reset_day
+            if data.reset_month is not None:
+                config.reset_month = data.reset_month
             await db.commit()
         except HTTPException:
             raise
@@ -224,6 +284,10 @@ async def get_all_configs():
                     "limit": c.limit,
                     "period": c.period.value,
                     "scope": c.scope.value,
+                    "reset_minute": c.reset_minute,
+                    "reset_hour": c.reset_hour,
+                    "reset_day": c.reset_day,
+                    "reset_month": c.reset_month,
                 } for c in configs
             ]
             return {"status_code": 200, "configs": config_list}
