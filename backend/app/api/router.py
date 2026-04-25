@@ -11,6 +11,8 @@ from app.api.v1.endpoints.utils import router as utils_router
 from app.api.v1.endpoints.plan import router as plan_router
 from app.api.v1.endpoints.places import router as places_router
 from app.api.v1.endpoints.api_cache import router as api_cache_router
+from app.api.v1.endpoints.rate_limiting import router as rate_limiting_router
+from app.api.v1.endpoints.rate_limiting_admin import router as rate_limiting_admin_router
 
 router = APIRouter()
 
@@ -19,3 +21,5 @@ router.include_router(utils_router, prefix="/utils", tags=["utils"])
 router.include_router(plan_router, prefix="/plan", tags=["plan"])
 router.include_router(places_router, prefix="/places", tags=["places"])
 router.include_router(api_cache_router, prefix="/api-cache", tags=["api-cache"])
+router.include_router(rate_limiting_router, prefix="/rate-limiting", tags=["rate-limiting"])
+router.include_router(rate_limiting_admin_router, prefix="/rate-limiting-admin", tags=["rate-limiting-admin"])

@@ -7,6 +7,21 @@ from datetime import datetime, timezone, timedelta
 import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import SKU
+
+
+async def _air_quality_consume_or_error() -> Optional[Dict]:
+    try:
+        await get_rate_limiter().consume(SKU["air_quality_usage"])
+        return None
+    except RateLimitExceeded as exc:
+        return tool_error(
+            "Monthly Air Quality SKU quota exhausted.",
+            fix_hint=f"Do not retry. Skip air-quality data. Retry after {exc.retry_after_seconds}s.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -19,6 +34,10 @@ async def get_current_air_quality(lat: Annotated[float, Field(ge=-90.0, le=90.0,
             "Google Maps API key is not configured on the server.",
             fix_hint="This is a server-side configuration issue — do not retry. Proceed without air-quality data.",
         )
+
+    rl_error = await _air_quality_consume_or_error()
+    if rl_error:
+        return rl_error
 
     url = f"https://airquality.googleapis.com/v1/currentConditions:lookup?key={api_key}"
 
@@ -109,6 +128,10 @@ async def get_air_quality_forecast(lat: Annotated[float, Field(ge=-90.0, le=90.0
             fix_hint="Retry with `point_in_time` no more than 96 hours in the future. For trips further out, use climatology heuristics instead of forecast data.",
             extra={"received": point_in_time},
         )
+
+    rl_error = await _air_quality_consume_or_error()
+    if rl_error:
+        return rl_error
 
     url = f"https://airquality.googleapis.com/v1/forecast:lookup?key={api_key}"
     body = {

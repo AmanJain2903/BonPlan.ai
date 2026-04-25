@@ -33,6 +33,19 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "bonplan_db")
 
+    # Redis settings (used by the SKU rate limiter)
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # Key prefix lets multiple environments share a single Redis instance safely.
+    REDIS_RATE_LIMIT_PREFIX: str = os.getenv("REDIS_RATE_LIMIT_PREFIX", "rl")
+    # When Redis is unreachable we fail-open by default so a Redis outage
+    # doesn't take the whole app down. Flip to "strict" in prod to fail-closed.
+    RATE_LIMITER_MODE: str = os.getenv("RATE_LIMITER_MODE", "lenient")
+    # Short in-process TTL for SKU config lookups so we don't hammer Postgres.
+    RATE_LIMITER_CONFIG_TTL_SECONDS: int = int(os.getenv("RATE_LIMITER_CONFIG_TTL_SECONDS", "60"))
+    # Hard reset hour (local time in RATE_LIMITER_RESET_TZ).
+    RATE_LIMITER_RESET_HOUR: int = int(os.getenv("RATE_LIMITER_RESET_HOUR", "7"))
+    RATE_LIMITER_RESET_TZ: str = os.getenv("RATE_LIMITER_RESET_TZ", "America/Los_Angeles")
+
     # Google Cloud Platform settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -41,11 +54,18 @@ class Settings(BaseSettings):
     # Gemini API Keys
     SERPER_CONTENT_PARSER_API_KEY: str = os.getenv("SERPER_CONTENT_PARSER_API_KEY")
     PLANNER_AGENT_API_KEY: str = os.getenv("PLANNER_AGENT_API_KEY")
+    CONTEXT_PRUNING_API_KEY: str = os.getenv("CONTEXT_PRUNING_API_KEY")
 
     # Gemini Models
-    SERPER_CONTENT_PARSER_MODEL: str = "gemma-4-26b-a4b-it"
-    PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"#"gemma-4-31b-it" #"gemini-3.1-flash-lite-preview" #"gemma-4-26b-a4b-it" #"gemini-2.5-flash-lite"
+    # "gemma-4-31b-it" #"gemini-3.1-flash-lite-preview" #"gemma-4-26b-a4b-it" #"gemini-2.5-flash-lite"
+    SERPER_CONTENT_PARSER_MODEL: str = "gemma-4-31b-it"
+    SERPER_CONTENT_PARSER_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+
+    PLANNER_AGENT_MODEL: str = "gemma-4-26b-a4b-it"
     PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+
+    CONTEXT_PRUNING_MODEL: str = "gemini-3.1-flash-lite-preview"
+    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 1024000 # 1M
 
     # Serper API key
     SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")

@@ -15,12 +15,14 @@ import pathlib
 from app.agent.mcp_server.tools.geocoding import get_address
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import resolve_get_route_sku
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
 
 # Types
-travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT", "TWO_WHEELER"]
+travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT"]
 
 routingPreferences = Literal["TRAFFIC_AWARE", "TRAFFIC_UNAWARE", "TRAFFIC_AWARE_OPTIMAL"]
 
@@ -115,7 +117,7 @@ async def get_route_leg(leg: dict) -> dict:
 async def get_route(
     origin: Annotated[Waypoint, Field(description="The origin waypoint. Provide ONE of: `address` (string), both `lat`+`lng` (floats), or `place_id` (Google Place ID).")],
     destination: Annotated[Waypoint, Field(description="The destination waypoint. Same shape as `origin`.")],
-    intermediate_waypoints: Annotated[Optional[List[Waypoint]], Field(description="(Optional) Ordered list of intermediate waypoints to pass through. Same shape as `origin`.", default=None)],
+    intermediate_waypoints: Annotated[Optional[List[Waypoint]], Field(max_length=10, description="(Optional) Ordered list of intermediate waypoints to pass through. Same shape as `origin`. Must be less than 11 waypoints.", default=None)],
     travel_mode: Annotated[travelModes, Field(description="The primary mode of travel (e.g., 'DRIVE', 'WALK', 'TRANSIT').", default="DRIVE")],
     routing_preference: Annotated[routingPreferences, Field(description="The strategy for route calculation. Determines if traffic should be considered.", default="TRAFFIC_AWARE")],
     departure_time: Annotated[Optional[str], Field(description="(Optional) The exact future departure time as a UTC ISO 8601 string.", default=None)],
@@ -160,6 +162,21 @@ async def get_route(
     origin_flat = origin.model_dump(exclude_none=True)
     destination_flat = destination.model_dump(exclude_none=True)
 
+    # Context-aware SKU: branches on routing_preference + optimize_waypoint_order.
+    resolved_sku = resolve_get_route_sku(
+        routing_preference=routing_preference,
+        optimize_waypoint_order=optimize_waypoint_order,
+    )
+    try:
+        await get_rate_limiter().consume(resolved_sku)
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry this route call. Retry after {exc.retry_after_seconds}s, or request a simpler route.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     url = f"https://routes.googleapis.com/directions/v2:computeRoutes"
 
     headers = {
@@ -176,18 +193,18 @@ async def get_route(
         "computeAlternativeRoutes": compute_alternative_routes,
         "optimizeWaypointOrder": optimize_waypoint_order,
     }
-    if travel_mode in ["DRIVE", "TWO_WHEELER"] and routing_preference:
+    if travel_mode in ["DRIVE"] and routing_preference:
         body["routingPreference"] = routing_preference
 
     if departure_time:
         body["departureTime"] = departure_time
-        if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE", "TWO_WHEELER"]:
+        if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE"]:
             body["routingPreference"] = "TRAFFIC_AWARE"
 
     if intermediates_google and travel_mode != "TRANSIT":
         body["intermediates"] = intermediates_google
 
-    if travel_mode in ["DRIVE", "TWO_WHEELER"] and route_modifiers:
+    if travel_mode in ["DRIVE"] and route_modifiers:
         body["routeModifiers"] = route_modifiers.model_dump(exclude_none=True)
 
     try:
@@ -207,15 +224,9 @@ async def get_route(
             r = {
                 "routeLabels": route.get("routeLabels", []),
                 "description": route.get("description", ""),
-                "distance" : {
-                    "logicalValueMeters": route.get("distanceMeters", None)
-                },
-                "durationWithoutTraffic" : {
-                    "logicalValueSeconds": int(route.get("staticDuration", None).rstrip('s')) if route.get("staticDuration", None) else None
-                },
-                "durationWithTraffic" : {
-                    "logicalValueSeconds": int(route.get("duration", None).rstrip('s')) if route.get("duration", None) else None
-                },
+                "distanceMeters": route.get("distanceMeters", None),
+                "durationWithoutTrafficSeconds": int(route.get("staticDuration", None).rstrip('s')) if route.get("staticDuration", None) else None,
+                "durationWithTrafficSeconds": int(route.get("duration", None).rstrip('s')) if route.get("duration", None) else None,
                 "routeLegs": [await get_route_leg(leg) for leg in route.get("legs", [])],
                 "warnings": route.get("warnings", []),
                 "travelAdvisory": route.get("travelAdvisory", {}),

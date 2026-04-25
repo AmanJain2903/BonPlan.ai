@@ -144,7 +144,7 @@ async def google_login(token: str):
             }
             jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
             prefs = existingUser.preferences or TripPreferencesSchema().model_dump()
-            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email, "preferences": prefs, "is_new_user": existingUser.is_new_user}
+            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email, "preferences": prefs, "is_new_user": existingUser.is_new_user, "is_admin": existingUser.is_admin}
         else:
             try:
                 newUser = User(
@@ -164,7 +164,7 @@ async def google_login(token: str):
                     "exp": datetime.now(timezone.utc) + timedelta(days=7)
                 }
                 jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-                return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True}
+                return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True, "is_admin": newUser.is_admin}
             except Exception as e:
                 await db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
@@ -257,7 +257,7 @@ async def local_login(email: str, password: str):
             }
             jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
             prefs = user.preferences or TripPreferencesSchema().model_dump()
-            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": user.first_name, "last_name": user.last_name, "email": user.email, "preferences": prefs, "is_new_user": is_new}
+            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": user.first_name, "last_name": user.last_name, "email": user.email, "preferences": prefs, "is_new_user": is_new, "is_admin": user.is_admin}
         except HTTPException:
             raise
         except Exception as e:

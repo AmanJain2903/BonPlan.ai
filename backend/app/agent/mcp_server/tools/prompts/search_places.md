@@ -1,29 +1,28 @@
 # search_places
 
-## Purpose
-Searches for real-world places (businesses, landmarks, points of interest) based on a text query using the Google Places API v1 text search. Returns a single place at the requested `place_index` with the full Google Places payload including accessibility, amenity options, opening hours, pricing, and URLs.
+Find a real-world place (business, landmark, POI) from a free-text query.
 
-## When to use
-Use this tool to find specific places or types of places globally based on a textual description, like `"pizza in New York"` or `"Eiffel Tower"`.
+### When to use
+- You have a descriptive phrase but no coordinates or Place ID (e.g. `"pizza near Times Square"`, `"Eiffel Tower"`).
+- For coordinate-centric searches prefer `search_places_nearby`.
 
-## Arguments
-- `query` (str): The search string. Keep it focused — one concept plus a location works best.
-  - Example: `"Spicy ramen near Times Square"`
-- `max_results` (int, optional): Per-request fetch size (1 to 10). This is the page size, not a total cap across pages. Default `5`.
-- `next_page_token` (str, optional): The `nextPageToken` value returned by a previous call. Supply it to fetch the next page of results for the same query.
-- `place_index` (int, optional): Zero-based index into the fetched page. Valid range is `[0, len(page) - 1]`; defaults to `0`.
-- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 15 seconds.
-  - Example: `20`
+### Arguments
+- **`query`** (str, required): one subject + locality works best.
+- **`include_dining_options`** (bool, optional): whether to include dining options in the response. Default false.
+- **`include_amenities`** (bool, optional): whether to include amenities in the response. Default false.
+- **`max_results`** (int 1..10, optional): upstream page size. Default 5.
+- **`place_index`** (int, optional): which place on the page to return. Default 0.
+- **`nextPageToken`** (str, optional): fetch a further page (reset `place_index` to 0).
+- **`timeout_seconds`** (int, optional): Only raise after a prior timeout.
 
-## Pagination semantics
-One call fetches up to `max_results` places and returns the one at `place_index`. To walk the current page, re-call with `place_index = nextIndex` until `hasNext` is `false`. To fetch a further batch, re-call with the same `query` and supply `next_page_token` from the previous response (and reset `place_index = 0`).
+### Returns
+One `place` + `{ nextPageToken, hasNext, nextIndex }`. Place fields: `id`, `name`, `type`, `location`, `urls{googleMapsUrl,websiteUrl}`, `reviews`, `priceLevel`, `priceRange`, `openingHours`, `accessibilityOptions`, `diningOptions`?, `amenities`?.
 
-## Recommended workflow
-1. Call with `max_results=5` to get a quick first result.
-2. If the first result isn't ideal, iterate through more results using `place_index` (0 → 1 → 2 …) to compare options — each result includes ratings, amenities, accessibility, opening hours, and pricing.
-3. To view more results beyond the current page, re-call with the returned `nextPageToken`.
-4. Each result already includes `urls.googleMapsUrl` and `urls.websiteUrl`, so you can use those directly in your itinerary events without an extra tool call.
-
-## Returns
-- **Success**: `{"place": {...}, "nextPageToken": str | null, "hasNext": bool, "nextIndex": int | null}`. The `place` object contains: `id`, `name`, `type`, `placeSummary`, `location` (address, lat, lng), `urls` (googleMapsUrl, websiteUrl), `reviews` (rating, reviewSummary), `accessibilityOptions`, `businessStatus`, `openingHours` (current, regular, secondary), `priceRange`, `priceLevel`, `parkingOptions`, `paymentOptions`, `fuelOptions`, `evChargeOptions`, and `otherOptions` (dineIn, takeout, delivery, outdoorSeating, reservable, allowsDogs, goodForChildren, goodForGroups, liveMusic, etc.).
-- **Error**: `{"error": str, "fix_hint": str, ...}` — follow the `fix_hint` to retry. Out-of-range `place_index` errors include `page_length` so you can pick a valid index.
+### Notes
+- Walk the current page with `place_index = nextIndex` until `hasNext` is false.
+- If the first 1–2 pages have no fit, rephrase the query instead of paginating further.
+- `urls.*` are safe to use directly in itinerary events — no extra lookup needed.
+- If `include_dining_options` is true, `diningOptions` will be included in the response.
+- If `include_amenities` is true, `amenities` will be included in the response.
+- Prefer keeping `include_dining_options` and `include_amenities` as false unless you explicitly need those fields for place selction. Keeping these fields false, you can get them if you need by calling the `get_place_info` tool with the `id`.
+- Once the place is selected, feed `id` to `get_place_info` only if you need deeper detail beyond what's returned here. This will be default include as much infrmation as it can including all the optional fields from this request.

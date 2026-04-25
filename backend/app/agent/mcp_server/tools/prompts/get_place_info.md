@@ -1,17 +1,14 @@
 # get_place_info
 
-## Purpose
-Retrieves comprehensive details and information about a specific place using its unique Google Place ID.
+Full details for a specific place by Google Place ID.
 
-## When to use
-Use this tool when you have a `place_id` from any source (geocoding, routing, or any other context) and need detailed information about that place — such as name, type, location, business hours, website, reviews, phone number, accessibility, amenities, generative summaries, and more.
+### When to use
+- You have a `place_id` and need more detail than `search_places` already returned (phone number, parking, EV charging, secondary hours, generative summaries).
+- Don't call this just to re-fetch fields `search_places` already gave you.
 
-## Arguments
-- `place_id` (str): The Google Place ID.
-  - Example: `"ChIJD7fiBh9u5kcRYJSMaMOCCwQ"`
-- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 15 seconds.
-  - Example: `20`
+### Arguments
+- **`place_id`** (str, required).
+- **`timeout_seconds`** (int, optional): Only raise after a prior timeout.
 
-## Returns
-- **Success**: A dictionary containing a `place` object with: `id`, `name`, `type`, all `types`, `placeSummaries` (editorial, generative, neighborhood), `location` (address, lat, lng), `phoneNumber`, `reviews` (rating, userRatingCount, reviewSummary), `urls` (googleMapsUrl, websiteUrl), `accessibilityOptions`, `businessStatus`, `openingHours` (current, regular, secondary), `priceRange`, `priceLevel`, `parkingOptions`, `paymentOptions`, `fuelOptions`, `evChargeOptions`, and `otherOptions` (dineIn, takeout, delivery, outdoorSeating, reservable, allowsDogs, goodForChildren, goodForGroups, liveMusic, etc.).
-- **Error**: A dictionary containing an `error` key.
+### Returns
+`{ place: { id, name, type, types, placeSummaries{editorial,generative,neighborhood}, location, phoneNumber, reviews, urls, accessibilityOptions, businessStatus, openingHours, priceRange, priceLevel, parkingOptions, paymentOptions, fuelOptions, evChargeOptions, otherOptions } }`

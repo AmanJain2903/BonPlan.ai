@@ -163,6 +163,18 @@ async def generate_solo_plan(request: Request, id: str):
                 else plan.end_date
             )
 
+            # Derive the outer SSE timeout budget: 6 minutes per trip day with
+            # a 2-minute floor and a 60-minute hard ceiling. This protects us
+            # from a stuck run tying up a connection indefinitely while still
+            # letting long multi-city trips finish.
+            try:
+                _s_ts = int(start_date.get("utcTimestamp", 0)) if isinstance(start_date, dict) else 0
+                _e_ts = int(end_date.get("utcTimestamp", 0)) if isinstance(end_date, dict) else 0
+                _trip_days = max(1, (_e_ts - _s_ts) // 86400)
+            except Exception:
+                _trip_days = 1
+            sse_timeout_seconds = max(120, min(6 * 60 * _trip_days, 60 * 60))
+
             trip_payload = {
                 "hasMultipleDestinations": len(destinations_list) > 1,
                 "planning_type": plan.planning_type.value
@@ -271,14 +283,43 @@ async def generate_solo_plan(request: Request, id: str):
                 )
 
         try:
-            async for chunk in generate_trip_itinerary(
+            gen = generate_trip_itinerary(
                 trip_payload,
                 mode=mode,
                 current_trip_itinerary=current_trip_itinerary,
                 owner_id=str(user_id),
                 trip_id=str(id),
                 cancellation_callback=request.is_disconnected,
-            ):
+            )
+
+            # Outer timeout: each `anext()` bounded by `sse_timeout_seconds`.
+            # Framing it as a per-iteration timeout is more useful than one
+            # global deadline because it surfaces stuck turns quickly while
+            # letting healthy runs proceed naturally for long trips.
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        gen.__anext__(), timeout=sse_timeout_seconds
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    print(
+                        f"[SOLO_PLANNER_SSE] Stream idle > {sse_timeout_seconds}s "
+                        f"for trip {id} — aborting.",
+                        flush=True,
+                    )
+                    success = False
+                    try:
+                        yield f"data: {json.dumps({'type': 'error', 'content': 'Generation timed out — please try again.'})}\n\n"
+                    except Exception:
+                        pass
+                    try:
+                        await gen.aclose()
+                    except Exception:
+                        pass
+                    break
+
                 chunk_type = chunk.get("type")
 
                 # Forward first — never block the stream on DB work.

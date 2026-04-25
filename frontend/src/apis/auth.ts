@@ -18,6 +18,7 @@ export type LoginResponse = {
   email?: string;
   preferences?: any;
   is_new_user?: boolean;
+  is_admin?: boolean;
 };
 
 export type VerifyEmailResponse = {
@@ -84,6 +85,7 @@ export type GoogleLoginResponse = {
   email?: string;
   preferences?: any;
   is_new_user?: boolean;
+  is_admin?: boolean;
 };
 
 export const api = {

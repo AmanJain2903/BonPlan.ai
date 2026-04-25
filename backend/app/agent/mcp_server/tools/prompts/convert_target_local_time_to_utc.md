@@ -1,17 +1,14 @@
 # convert_target_local_time_to_utc
 
-## Purpose
-Converts a valid local "wall-clock" time at a specific timezone into its absolute UTC counterpart (both string and epoch timestamp).
+Convert a local wall-clock time at a specific IANA timezone to its UTC counterpart (both ISO string and epoch seconds).
 
-## When to use
-Use this tool whenever a user asks to schedule an event in their local time zone, and you need to supply UTC timings strictly formatted for internal calculations or other apis.
+### When to use
+- The user wants an event at a specific local time (e.g. "dinner at 8 PM Paris time") and you need the equivalent UTC for scheduling or API calls.
+- Crossing timezones: convert the destination's local time to UTC before comparing against origin-local times.
 
-## Arguments
-- `local_time_string` (str): Local formatted time (without trailing 'Z').
-  - Example: `"2026-04-25T20:00:00"`
-- `timezone_id` (str): Valid IANA Timezone ID.
-  - Example: `"Europe/Paris"`
+### Arguments
+- **`local_time_string`** (str, required): Naive local time `YYYY-MM-DDTHH:MM:SS` — NO trailing `Z` or offset.
+- **`timezone_id`** (str, required): IANA zone such as `"Europe/Paris"` or `"Asia/Kolkata"`. If unknown, resolve via `get_timezone` first.
 
-## Returns
-- **Success**: A dictionary containing `original_local_time`, `utc_string`, and `utc_timestamp`.
-- **Error**: A dictionary containing an `error` key.
+### Returns
+`{ "original_local_time": ..., "utc_string": ..., "utc_timestamp": <int> }`

@@ -1,21 +1,14 @@
 # get_current_weather
 
-## Purpose
-Retrieves the current weather conditions, temperature, visibility, and precipitation for a specific latitude and longitude coordinate using the Google Weather API.
+Current weather conditions at a lat/lng.
 
-## When to use
-Use this tool when you need to know what the weather is like right now at a specific location to give recommendations or answer user queries.
+### When to use
+- You need the weather RIGHT NOW at a specific coordinate — e.g. to decide if an outdoor activity is sensible for the current event.
 
-## Arguments
-- `lat` (float): The latitude of the location.
-  - Example: `40.7128`
-- `lng` (float): The longitude of the location.
-  - Example: `-74.0060`
-- `units_system` (Literal, optional): Distance output unit ("IMPERIAL" or "METRIC"). Default is "IMPERIAL".
-  - Example: `"IMPERIAL"`
-- `timeout_seconds` (int, optional): Timeout in seconds. Only increase if previous call timed out. Default `5`.
-  - Example: `10`
+### Arguments
+- **`lat`** / **`lng`** (float, required).
+- **`units_system`** (`"IMPERIAL"` | `"METRIC"`, optional): default `"IMPERIAL"`.
+- **`timeout_seconds`** (int, optional): Only raise after a prior timeout.
 
-## Returns
-- **Success**: A dictionary containing `isDaytime`, `weatherCondition`, `currentTemperature`, `maxTemperature`, `minTemperature`, `feelsLike`, `precipitation`, `thunderstormProbability`, and `visibility`.
-- **Error**: A dictionary containing an `error` key.
+### Returns
+`{ isDaytime, weatherCondition, currentTemperature, maxTemperature, minTemperature, feelsLike, precipitation, thunderstormProbability, visibility }`

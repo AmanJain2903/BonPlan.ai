@@ -51,41 +51,6 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
   // Stable string key — only re-fetch when the actual set of place IDs changes
   const placeIdsKey = useMemo(() => places.map((p) => p.placeId).join(','), [places]);
 
-  const isImageTooDarkOrTooLight = (url: string, darkThreshold = 40, lightThreshold = 200): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous"; // CRITICAL for Google/External URLs
-      img.src = url;
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(false);
-
-        // Draw a tiny version (10x10) to save processing power
-        canvas.width = 10;
-        canvas.height = 10;
-        ctx.drawImage(img, 0, 0, 10, 10);
-
-        const imageData = ctx.getImageData(0, 0, 10, 10).data;
-        let totalLuminance = 0;
-
-        for (let i = 0; i < imageData.length; i += 4) {
-          const r = imageData[i];
-          const g = imageData[i + 1];
-          const b = imageData[i + 2];
-          // Relative Luminance formula
-          totalLuminance += (0.2126 * r + 0.7152 * g + 0.0722 * b);
-        }
-
-        const avgLuminance = totalLuminance / (imageData.length / 4);
-        resolve(avgLuminance < darkThreshold || avgLuminance > lightThreshold);
-      };
-
-      img.onerror = () => resolve(false); // Skip filtering if image fails to load
-    });
-  };
-
   useEffect(() => {
     let mounted = true;
     const fetchImages = async () => {
@@ -93,14 +58,10 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
       try {
         const rawImageSets = await Promise.all(
           places.map(async (place) => {
-            const urls = await api.places.getDestinationImagesByPlaceId(place.placeId, 10, 1.5);
+            const urls = await api.places.getDestinationImagesByPlaceId(place.placeId, 1, 1.5);
             // Filter out fallback placeholder images
             const validUrls = (urls || []).filter((url) => url && url !== FALLBACK_IMAGE);
-            // Async filter: check brightness for each image in parallel
-            const brightnessChecks = await Promise.all(
-              validUrls.map((url) => isImageTooDarkOrTooLight(url))
-            );
-            return validUrls.filter((_, i) => !brightnessChecks[i]);
+            return validUrls;
           })
         );
 
@@ -150,7 +111,7 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
   const currentImage = currentPlaceImages[currentImageIndex];
   const currentName = filteredPlacesRef.current[placeIndex]?.placeName || '';
 
-  // Auto-rotate: image every 3s, place every 6s
+  // Auto-rotate: image every 1.5s, place every 3s
   useEffect(() => {
     if (loading || allImages.length === 0) return;
 
@@ -179,7 +140,7 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
           return next;
         });
       }
-    }, 3000);
+    }, 1500);
 
     return () => window.clearInterval(intervalId);
   }, [loading, allImages, placeIndex]);

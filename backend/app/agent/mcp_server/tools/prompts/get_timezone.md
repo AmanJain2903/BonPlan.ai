@@ -1,21 +1,17 @@
 # get_timezone
 
-## Purpose
-Retrieves the timezone name, unique ID, daylight saving data, and local time for a specific latitude and longitude coordinate.
+Return the IANA timezone data (and optionally local wall-clock time) for a lat/lng pair.
 
-## When to use
-Use this tool when you know the coordinates of a location and need to determine its IANA timezone ID to properly calculate time-based events.
+### When to use
+- You need the IANA zone (`timeZoneId`) of a place before scheduling or time conversion.
+- You need the local date/time at a coordinate for a specific moment — pass `timestamp`.
 
-## Arguments
-- `lat` (float): The latitude of the location.
-  - Example: `48.8566`
-- `lng` (float): The longitude of the location.
-  - Example: `2.3522`
-- `timestamp` (int, optional): An epoch time in seconds. If omitted, uses current time and skips returning offset details.
-  - Example: `1700000000`
-- `timeout_seconds` (int): (Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout. Default is 10 seconds.
-  - Example: `15`
+### Arguments
+- **`lat`** (float, required): −90..90.
+- **`lng`** (float, required): −180..180.
+- **`timestamp`** (int, optional): Unix seconds at which to resolve. If omitted, only `timeZoneId` / `timeZoneName` are returned — no offset or local time.
+- **`timeout_seconds`** (int, optional): Only raise if a prior call timed out.
 
-## Returns
-- **Success**: A dictionary containing `timeZoneId`, `timeZoneName`, and (optionally) `dstOffset`, `rawOffset`, and `localDateTimeString`.
-- **Error**: A dictionary containing an `error` key.
+### Returns
+- Without `timestamp`: `{ timeZoneId, timeZoneName }` (each wrapped in `{value, description}`).
+- With `timestamp`: adds `dstOffset` (sec), `rawOffset` (sec), `localDateTimeString`.

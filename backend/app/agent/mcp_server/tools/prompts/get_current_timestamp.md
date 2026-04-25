@@ -1,14 +1,9 @@
 # get_current_timestamp
 
-## Purpose
-Gets the current absolute Unix timestamp in seconds along with the corresponding UTC ISO string.
+Return the current UTC timestamp plus its ISO string. No arguments.
 
-## When to use
-Use this tool whenever you need the exact present time, whether to validate future inputs, to calculate offsets, or to supply a current timestamp to other chronological APIs.
+### When to use
+- You need "now" as a reference point — e.g. sanity-check that a computed departure time is in the future, or anchor a cost calculation.
 
-## Arguments
-This tool takes no arguments.
-
-## Returns
-- **Success**: A dictionary containing `timestamp` (e.g., `1712953200`) and `utc_string` (e.g., `'2024-04-12T20:20:00Z'`).
-- **Error**: A dictionary containing an `error` key.
+### Returns
+`{ "timestamp": <int seconds>, "utc_string": "YYYY-MM-DDTHH:MM:SSZ" }`

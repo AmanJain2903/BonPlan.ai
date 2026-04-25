@@ -1,77 +1,44 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { MapPin, PlaneTakeoff, Navigation, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTrip, type Place } from '../../../context/TripContext';
-import { PlacePicker } from '@googlemaps/extended-component-library/react';
 import GoogleMapsApiLoader from '../../shared/GoogleMapsApiLoader.tsx';
-
-// Route building blocks (used for multi-hop connected lines)
-import '@googlemaps/extended-component-library/route_building_blocks/route_data_provider.js';
-import '@googlemaps/extended-component-library/route_building_blocks/route_polyline.js';
+import PlacesAutocomplete, {
+  type PlacesAutocompleteHandle,
+  type ParsedPlace,
+} from '../../shared/PlacesAutocomplete.tsx';
+import { GOOGLE_MAPS_MAP_ID } from '../../../apis/config';
+import { useDynamicMapImpression } from '../../../utils/useDynamicMapImpression';
 
 type Step3Props = {
   onNext?: () => void;
   registerCommit?: (fn: () => void) => void;
 };
 
-// --- 1. Reusable Google Place Parser ---
-const parseGooglePlace = (e: any, onUpdate: (data: any) => void) => {
-  const place = e.target?.value;
-
-  if (place && place.location) {
-    const lat = place.location.lat();
-    const lng = place.location.lng();
-    const name = place.displayName;
-
-    let city = '';
-    let state = '';
-    let country = '';
-    if (place.addressComponents) {
-      place.addressComponents.forEach((component: any) => {
-        const types = component.types;
-
-        if (types.includes('locality') || types.includes('postal_town')) {
-          city = component.longText;
-        }
-        if (types.includes('administrative_area_level_1')) {
-          state = component.shortText;
-        }
-        if (types.includes('country')) {
-          country = component.longText;
-        }
-      });
-    }
-
-    if (!city) {
-      city = name;
-    }
-
-    onUpdate({ city, state, country, lat, lng });
-  }
-};
-
-// --- 2. Reusable Location Card Component ---
+// --- 1. Reusable Location Card Component ---
 type LocationCardProps = {
   title: string;
   subtitle: string;
   Icon: any;
   gradientPos: string;
   inputValue: any;
-  onPlaceChange: (val: any) => void;
+  onPlaceChange: (val: ParsedPlace) => void;
   showMap: boolean;
   animCondition: boolean;
   animKey: string;
   animName: string;
   onAnimEnd: () => void;
   belowMap?: ReactNode;
-  placePickerRef?: any; // <-- NEW
-  placePickerKey?: number; // <-- NEW: used to force-remount and clear PlacePicker input
+  placePickerRef?: Ref<PlacesAutocompleteHandle>;
 };
 
 const LocationCard = ({
   title, subtitle, Icon, gradientPos, inputValue, onPlaceChange, showMap,
-  animCondition, animKey, animName, onAnimEnd, belowMap, placePickerRef, placePickerKey // <-- NEW
-}: LocationCardProps) => (
+  animCondition, animKey, animName, onAnimEnd, belowMap, placePickerRef,
+}: LocationCardProps) => {
+  const mapVisible = showMap && inputValue?.lat != null && inputValue?.lng != null;
+  const allowMap = useDynamicMapImpression(mapVisible);
+  return (
   <div className="group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-8 overflow-hidden">
     {/* Background Glow */}
     <div className="pointer-events-none absolute -inset-24 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-3xl">
@@ -116,7 +83,7 @@ const LocationCard = ({
 
     {/* Mini Map (Renders when BOTH fields are selected globally) */}
     <AnimatePresence>
-      {showMap && inputValue?.lat != null && inputValue?.lng != null && (
+      {mapVisible && allowMap && (
         <motion.div
           initial={{ height: 0, opacity: 0, marginBottom: 0 }}
           animate={{ height: 170, opacity: 1, marginBottom: 16 }} // 16px is mb-4
@@ -127,7 +94,7 @@ const LocationCard = ({
           <gmp-map
             center={`${inputValue.lat},${inputValue.lng}`}
             zoom="11"
-            map-id="DEMO_MAP_ID"
+            map-id={GOOGLE_MAPS_MAP_ID}
             style={{ height: '100%', width: '100%' }}
           >
             <gmp-advanced-marker
@@ -142,18 +109,16 @@ const LocationCard = ({
 
     {belowMap}
 
-    {/* Google Place Picker */}
-    <div className="relative placepicker-shell">
-      <PlacePicker
-        ref={placePickerRef}
-        key={placePickerKey}
-        placeholder="Search for a city or airport"
-        className="w-full"
-        onPlaceChange={(e: any) => parseGooglePlace(e, onPlaceChange)}
-      />
-    </div>
+    {/* Places (New) Autocomplete — session-token, Essentials tier */}
+    <PlacesAutocomplete
+      ref={placePickerRef}
+      placeholder="Search for a city or airport"
+      className="w-full"
+      onPlaceChange={onPlaceChange}
+    />
   </div>
-);
+  );
+};
 
 function Step3SingleHub({ onNext, registerCommit }: Step3Props) {
   const { trip, updateTripData } = useTrip();
@@ -277,10 +242,11 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
   const [animTick, setAnimTick] = useState(0);
 
   const mapRef = useRef<any>(null);
-  const destPickerRef = useRef<any>(null); // To bind ref if needed
-  const [destPickerKey, setDestPickerKey] = useState(0);
+  const destPickerRef = useRef<PlacesAutocompleteHandle>(null);
 
   const canContinue = Boolean(originInput && destinationsInput.length > 0);
+  const multiMapVisible = canContinue && destinationsInput.length > 0;
+  const allowMultiMap = useDynamicMapImpression(multiMapVisible);
 
   useEffect(() => {
     registerCommit?.(() => {
@@ -307,8 +273,8 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
       if (exists) return prev;
       return [...prev, place];
     });
-    // Force-remount the PlacePicker so the textbox is cleared after selection.
-    setDestPickerKey((k) => k + 1);
+    // Clear the autocomplete input + rotate the session token.
+    destPickerRef.current?.clear();
   };
 
   const removeStop = (index: number) => {
@@ -383,7 +349,6 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
           Icon={MapPin}
           gradientPos="70% 20%"
           placePickerRef={destPickerRef} // Binds the ref for auto-clearing
-          placePickerKey={destPickerKey} // Forces PlacePicker remount so textbox clears
           inputValue={null} // By passing null, we prevent LocationCard's default single map
           onPlaceChange={addStop}
           showMap={false} // Prevent default map
@@ -398,7 +363,7 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
             <>
               {/* Custom Multi-Map (Same 170px height as SingleHub) */}
               <AnimatePresence>
-                {canContinue && destinationsInput.length > 0 && (
+                {multiMapVisible && allowMultiMap && (
                   <motion.div
                     initial={{ height: 0, opacity: 0, marginBottom: 0 }}
                     animate={{ height: 170, opacity: 1, marginBottom: 16 }} // 16px is mb-4
@@ -410,7 +375,7 @@ function Step3MultiHop({ onNext, registerCommit }: Step3Props) {
                       ref={mapRef}
                       center={`${destinationsInput[0].lat},${destinationsInput[0].lng}`}
                       zoom="11"
-                      map-id="DEMO_MAP_ID"
+                      map-id={GOOGLE_MAPS_MAP_ID}
                       style={{ height: '100%', width: '100%' }}
                     >
                       {/* ONLY iterate destinations. No lines. No source pin. */}

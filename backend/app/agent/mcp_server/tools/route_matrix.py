@@ -14,12 +14,14 @@ import urllib.parse
 import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
+from app.services.rate_limiter.sku_resolver import resolve_get_route_matrix_sku
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
 
 # Types
-travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT", "TWO_WHEELER"]
+travelModes = Literal["DRIVE", "WALK", "BICYCLE", "TRANSIT"]
 
 routingPreferences = Literal["TRAFFIC_AWARE", "TRAFFIC_UNAWARE", "TRAFFIC_AWARE_OPTIMAL"]
 
@@ -100,6 +102,18 @@ async def get_route_matrix(
             )
         destinations_flat.append(wp.model_dump(exclude_none=True))
 
+    # Context-aware SKU: branches on routing_preference.
+    resolved_sku = resolve_get_route_matrix_sku(routing_preference=routing_preference)
+    try:
+        await get_rate_limiter().consume(resolved_sku)
+    except RateLimitExceeded as exc:
+        return tool_error(
+            f"Monthly quota exhausted for SKU '{exc.sku}'.",
+            fix_hint=f"Do not retry this route-matrix call. Retry after {exc.retry_after_seconds}s, or reduce origin/destination counts.",
+            status_code=429,
+            extra={"sku": exc.sku, "retry_after_seconds": exc.retry_after_seconds},
+        )
+
     url = f"https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
 
     headers = {
@@ -114,17 +128,17 @@ async def get_route_matrix(
         "travelMode": travel_mode,
         "units": units_system,
     }
-    if route_modifiers and travel_mode in ["DRIVE", "TWO_WHEELER"]:
+    if route_modifiers and travel_mode in ["DRIVE"]:
         modifiers_payload = route_modifiers.model_dump(exclude_none=True)
         for origin_entry in body["origins"]:
             origin_entry["routeModifiers"] = modifiers_payload
 
-    if travel_mode in ["DRIVE", "TWO_WHEELER"] and routing_preference:
+    if travel_mode in ["DRIVE"] and routing_preference:
         body["routingPreference"] = routing_preference
     
     if departure_time:
         body["departureTime"] = departure_time
-        if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE", "TWO_WHEELER"]:
+        if routing_preference == "TRAFFIC_UNAWARE" and travel_mode in ["DRIVE"]:
             body["routingPreference"] = "TRAFFIC_AWARE"
 
     try:
@@ -180,25 +194,14 @@ async def get_route_matrix(
                 "destinationIndex": destination_index,
                 "origin": origin_flat,
                 "destination": destination_flat,
-                "distance" : {
-                    "logicalValueMeters": route.get("distanceMeters", None)
-                },
-                "durationWithoutTraffic" : {
-                    "logicalValueSeconds": int(route["staticDuration"].rstrip('s')) if route.get("staticDuration", None) else None
-                },
-                "durationWithTraffic" : {
-                    "logicalValueSeconds": int(route["duration"].rstrip('s')) if route.get("duration", None) else None
-                },
-                "travelAdvisory": route.get("travelAdvisory", {}),
-                "mapsUrl" : await generate_maps_app_url(origin_google, destination_google),
-                "transitPreferenceFallbackInfo": route.get("fallbackInfo", {}),
+                "distanceMeters": route.get("distanceMeters"),
+                "durationWithoutTrafficSeconds": int(route["staticDuration"].rstrip('s')) if route.get("staticDuration") else None,
+                "durationWithTrafficSeconds": int(route["duration"].rstrip('s')) if route.get("duration") else None,
+                "mapsUrl": await generate_maps_app_url(origin_google, destination_google),
             }
 
             if travel_mode == "TRANSIT":
-                r["transitFare"] = {
-                    "logicalObject" : route.get("travelAdvisory", {}).get("transitFare", {}),
-                    "humanReadableValue" : route.get("localizedValues", {}).get("transitFare", {}).get("text", ""),
-                }
+                r["transitFare"] = route.get("localizedValues", {}).get("transitFare", {}).get("text", "")
 
             routes.append(r)
 

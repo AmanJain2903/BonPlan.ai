@@ -169,50 +169,6 @@ body {
   }
 }
 
-/* PlacePicker styling (extended component library) */
-.placepicker-shell gmpx-place-picker {
-  width: 100%;
-  --gmpx-color-surface: rgba(255, 255, 255, 0.03);
-  --gmpx-color-on-surface: rgba(255, 255, 255, 0.92);
-  --gmpx-color-outline: rgba(255, 255, 255, 0.10);
-  --gmpx-color-outline-variant: rgba(255, 255, 255, 0.12);
-  --gmpx-color-primary: rgba(102, 252, 241, 0.85);
-  --gmpx-elevation: 0;
-  --gmpx-font-family: var(--font-sans);
-  --gmpx-border-radius: 12px;
-}
-
-/* Style exposed parts when supported */
-.placepicker-shell gmpx-place-picker::part(input) {
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 12px;
-  padding: 12px 14px;
-  outline: none;
-}
-
-.placepicker-shell gmpx-place-picker::part(input):focus {
-  border-color: rgba(102, 252, 241, 0.40);
-  box-shadow: 0 0 0 1px rgba(102, 252, 241, 0.20);
-}
-
-.placepicker-shell gmpx-place-picker::part(listbox) {
-  background: rgba(11, 12, 16, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 12px;
-  backdrop-filter: blur(18px);
-}
-
-.placepicker-shell gmpx-place-picker::part(listbox-option) {
-  color: rgba(255, 255, 255, 0.70);
-}
-
-.placepicker-shell gmpx-place-picker::part(listbox-option):hover {
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(255, 255, 255, 0.04);
-}
-
 ::selection {
   background-color: rgba(102, 252, 241, 0.25);
   color: #fff;

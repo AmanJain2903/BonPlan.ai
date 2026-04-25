@@ -1,2 +1,3 @@
 brew "python@3.13"
 brew "postgresql@15"
+brew "redis"

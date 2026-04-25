@@ -6,12 +6,14 @@ type UserInfo = {
   email: string;
   authProvider?: 'local' | 'google';
   preferences?: any;
+  isAdmin: boolean;
 };
 
 type AuthState = {
   token: string | null;
   user: UserInfo | null;
   isLoggedIn: boolean;
+  isAdmin: boolean;
   login: (token: string, remember: boolean, user?: Partial<UserInfo>) => void;
   logout: () => void;
 };
@@ -20,6 +22,7 @@ const AuthContext = createContext<AuthState>({
   token: null,
   user: null,
   isLoggedIn: false,
+  isAdmin: false,
   login: () => {},
   logout: () => {},
 });
@@ -29,7 +32,19 @@ const USER_KEY = 'user';
 function loadUser(): UserInfo | null {
   const raw = localStorage.getItem(USER_KEY) ?? sessionStorage.getItem(USER_KEY);
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserInfo> & { is_admin?: boolean };
+    return {
+      firstName: parsed.firstName ?? '',
+      lastName: parsed.lastName ?? '',
+      email: parsed.email ?? '',
+      authProvider: parsed.authProvider,
+      preferences: parsed.preferences,
+      isAdmin: parsed.isAdmin ?? parsed.is_admin ?? false,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -46,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: info?.email ?? '',
       authProvider: info?.authProvider,
       preferences: info?.preferences,
+      isAdmin: info?.isAdmin ?? false,
     };
     setUser(userInfo);
     const store = remember ? localStorage : sessionStorage;
@@ -72,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ token, user, isLoggedIn: !!token, login, logout }}>
+    <AuthContext.Provider value={{ token, user, isLoggedIn: !!token, isAdmin: user?.isAdmin ?? false, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -51,6 +51,7 @@ async def pre_process_content(content):
         response = await asyncio.to_thread(
             client.models.generate_content,
             model=serper_content_parser_model,
+            max_output_tokens=512,
             contents=f"INSTRUCTIONS: {SERPER_CONTENT_PARSER_PROMPT}\n\nCONTENT TO PROCESS:\n{content}",
             config={
                 "response_mime_type": "application/json",
@@ -106,11 +107,18 @@ async def get_content_from_url(url: Annotated[str, Field(description="The URL to
             status_code=content.status_code,
             extra={"upstream": content.text[:300], "url": url},
         )
+    _CONTENT_MAX_CHARS = 4000
     try:
         processed_content = await pre_process_content(content.text)
-        if processed_content.get("status", None) == "Success":
-            await insert_api_cache(cache_key, {"title": processed_content.get("title", "Unknown Title"), "content": processed_content.get("content", content.text), "external_links": processed_content.get("external_links", []), "status": processed_content.get("status", None)})
-        return processed_content
+        trimmed_content = (processed_content.get("content", "") or "")[:_CONTENT_MAX_CHARS]
+        result = {
+            "title": processed_content.get("title", "Unknown Title"),
+            "content": trimmed_content,
+            "status": processed_content.get("status"),
+        }
+        if processed_content.get("status") == "Success":
+            await insert_api_cache(cache_key, result)
+        return result
     except Exception as e:
         return tool_error(
             f"Could not pre-process content from {url}.",
@@ -191,8 +199,7 @@ async def search_web(query: Annotated[str, Field(description="The query to searc
             "pageLink": result.get("link"),
             "pageSnippet": result.get("snippet"),
             "pageContent": content.get("content", ""),
-            "pageExternalLinks": content.get("external_links", []),
-            "pageStatus": content.get("status", None),
+            "pageStatus": content.get("status"),
             "hasNext": page_length > search_index + 1,
             "nextIndex": search_index + 1 if page_length > search_index + 1 else None,
         }

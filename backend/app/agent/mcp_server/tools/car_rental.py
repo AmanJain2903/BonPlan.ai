@@ -91,9 +91,18 @@ async def search_rental_cars(pickupCoordinates: Annotated[Coordinates, Field(des
             "Rental-car search provider is not configured on the server.",
             fix_hint="This is a server-side configuration issue — do not retry. Proceed with the trip plan without this rental-car search.",
         )
-    if not pickupCoordinates or not pickupDateTime or not dropOffDateTime:
+    missing = [
+        name
+        for name, val in (
+            ("pickupCoordinates", pickupCoordinates),
+            ("pickupDateTime", pickupDateTime),
+            ("dropOffDateTime", dropOffDateTime),
+        )
+        if not val
+    ]
+    if missing:
         return tool_error(
-            "Required parameters are missing.",
+            f"Required parameters are missing: {missing}.",
             fix_hint="Retry with `pickupCoordinates`, `pickupDateTime`, and `dropOffDateTime` all populated.",
         )
     url = "https://booking-com18.p.rapidapi.com/car/search-coordinates"
