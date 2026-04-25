@@ -17,6 +17,9 @@ from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_l
 from app.services.rate_limiter.sku_resolver import SKU
 
 
+
+from app.logging import get_mcp_logger
+logger = get_mcp_logger("tools.flights")
 def _flight_quota_error(exc: "RateLimitExceeded") -> Dict:
     return tool_error(
         f"Monthly quota exhausted for SKU '{exc.sku}'.",

@@ -1,7 +1,6 @@
 # backend/app/services/rate_limiter/usage_cleanup.py
 
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, delete
@@ -10,8 +9,9 @@ from app.core.config import settings
 from app.database.database import Session
 from app.database.models.rateLimitConfigs import RateLimitConfigs, Period
 from app.database.models.rateLimitUsage import RateLimitUsage
+from app.logging import get_rate_limiter_logger
 
-logger = logging.getLogger(__name__)
+logger = get_rate_limiter_logger("usage_cleanup")
 
 def _get_threshold_bucket(period: Period, tz: ZoneInfo) -> str:
     """
@@ -70,16 +70,19 @@ async def cleanup_old_usage():
             await db.commit()
             
         if deleted_count > 0:
-            logger.info("Usage cleanup deleted %d old entries.", deleted_count)
-            
+            logger.info("Usage cleanup deleted old entries", deleted=deleted_count)
+        else:
+            logger.debug("Usage cleanup ran — nothing to delete")
+
     except Exception as e:
-        logger.error("Usage cleanup failed: %s", e)
+        logger.exception("Usage cleanup failed", error=str(e))
 
 async def usage_cleanup_task():
     """
     Background task that runs the cleanup periodically.
     Runs once on startup, then every 24 hours.
     """
+    logger.info("Usage cleanup task started")
     while True:
         await cleanup_old_usage()
         # Sleep for 24 hours

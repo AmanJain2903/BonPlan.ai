@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import calendar
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -41,8 +40,9 @@ from app.core.redis_client import get_redis
 from app.database.database import Session
 from app.database.models.rateLimitConfigs import Period, RateLimitConfigs, Scope
 from app.database.models.rateLimitUsage import RateLimitUsage, GLOBAL_USER_SENTINEL
+from app.logging import get_rate_limiter_logger
 
-logger = logging.getLogger(__name__)
+logger = get_rate_limiter_logger("rate_limiter")
 
 
 class RateLimitExceeded(Exception):
@@ -351,7 +351,7 @@ class RateLimiter:
         if config is None:
             # No config row => no enforcement. Log once per SKU so missing
             # seed data is visible without spamming on every request.
-            logger.warning("Rate-limit config missing for SKU '%s' — allowing.", sku_normalized)
+            logger.warning("Rate-limit config missing for SKU — allowing.", sku=sku_normalized)
             return ConsumeResult(
                 allowed=True,
                 sku=sku_normalized,
@@ -481,7 +481,7 @@ class RateLimiter:
             current_raw = await client.get(key)
             ttl_remaining = await client.ttl(key)
         except RedisError as e:
-            logger.warning("Rate limiter status read failed for %s: %s", sku_normalized, e)
+            logger.warning("Rate limiter status read failed", sku=sku_normalized, user_id=str(user_id) if user_id else None, error=str(e))
             return ConsumeResult(
                 allowed=True,
                 sku=sku_normalized,
@@ -531,7 +531,7 @@ class RateLimiter:
             deleted = await client.delete(key)
             return bool(deleted)
         except RedisError as e:
-            logger.warning("Rate limiter reset failed for %s: %s", sku_normalized, e)
+            logger.warning("Rate limiter reset failed", sku=sku_normalized, error=str(e))
             return False
 
     async def invalidate_config_cache(self) -> None:
@@ -580,8 +580,8 @@ class RateLimiter:
                 await db.commit()
         except Exception as e:  # noqa: BLE001 — fire-and-forget by design
             logger.warning(
-                "Failed to persist rate-limit usage (sku_id=%s, user_id=%s): %s",
-                sku_id, user_id, e,
+                "Failed to persist rate-limit usage",
+                sku_id=str(sku_id), user_id=str(user_id) if user_id else None, error=str(e),
             )
 
     async def restore_counters_from_db(self) -> int:
@@ -604,7 +604,7 @@ class RateLimiter:
         try:
             client = get_redis()
         except Exception as e:  # noqa: BLE001
-            logger.warning("Cannot restore counters — Redis unavailable: %s", e)
+            logger.warning("Cannot restore counters — Redis unavailable", error=str(e))
             return 0
 
         restored = 0
@@ -635,8 +635,8 @@ class RateLimiter:
                 await client.set(key, row.usage, ex=ttl, nx=True)
                 restored += 1
             except RedisError as e:
-                logger.warning("Failed to restore key %s: %s", key, e)
-
+                logger.warning("Failed to restore key", key=key, error=str(e))
+        logger.info("Redis counters restored from DB", rows_read_from_db=len(rows), rows_restored=restored)
         return restored
 
     # --- fail-open / fail-closed helper --------------------------------------
@@ -647,8 +647,9 @@ class RateLimiter:
         sku: str,
         config: RateLimitConfigSnapshot,
     ) -> ConsumeResult:
-        logger.error("Rate limiter Redis error for SKU '%s': %s", sku, error)
+        logger.error("Rate limiter Redis error", sku=sku, error=str(error))
         if settings.RATE_LIMITER_MODE == "strict":
+            logger.error("Rate limiter in strict mode, raising RateLimitExceeded")
             raise RateLimitExceeded(
                 sku=sku,
                 limit=config.limit,
@@ -657,6 +658,7 @@ class RateLimiter:
                 scope=config.scope.value,
             )
         # lenient: fail-open
+        logger.info("Rate limiter in lenient mode, failing open")
         return ConsumeResult(
             allowed=True,
             sku=sku,

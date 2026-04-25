@@ -1,6 +1,7 @@
 # backend/app/api/v1/endpoints/places.py
 
 """
+
 This file contains the places endpoints for the v1 version of the API.
 
 Includes a server-side image proxy that downloads Google Places photos once,
@@ -25,6 +26,10 @@ from fastapi import HTTPException
 from PIL import Image
 from io import BytesIO
 import os
+
+from app.logging import get_api_logger
+
+logger = get_api_logger("api.places")
 
 router = APIRouter()
 
@@ -60,7 +65,8 @@ async def _is_bright_enough(image_bytes: bytes, dark_threshold=40, light_thresho
             avg_luminance = sum(luminance_scores) / len(luminance_scores)
             
             return dark_threshold <= avg_luminance <= light_threshold
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to check image brightness. Returning True", error=str(e))
         return True
 
 async def _build_proxy_url(resource_name: str, db: Session) -> str:
@@ -93,9 +99,11 @@ async def _build_proxy_url(resource_name: str, db: Session) -> str:
         client = get_http_client()
         try:
             google_resp = await client.get(google_url, timeout=15, follow_redirects=True)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to fetch image from Google", error=str(e))
             return None
         if google_resp.status_code != 200:
+            logger.warning("Google returned non-200 status code", resource_name=resource_name, status_code=google_resp.status_code)
             return None
         imageBytes = google_resp.content
         content_type = google_resp.headers.get("content-type", "image/jpeg")
@@ -107,7 +115,8 @@ async def _build_proxy_url(resource_name: str, db: Session) -> str:
             )
             db.add(new_entry)
             await db.commit()
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to cache image.", resource_name=resource_name, error=str(e))
             await db.rollback()
     if not imageBytes:
         return None
@@ -139,6 +148,7 @@ async def get_place_photo(resource_name: str):
                 },
             )
         else:
+            logger.warning(f"Unable to fetch image for {resource_name}. Returning Fallback Image")
             with open(_FALLBACK_IMAGE_PATH, "rb") as f:
                 imageBytes = f.read()
             return Response(
@@ -201,6 +211,8 @@ async def get_destination_image_by_place_id(place_id: str = Query(..., descripti
                     media_url = await _build_proxy_url(resource_name, db)
                     if media_url:
                         photo_urls.append(media_url)
+    if not photo_urls:
+        return {"image_urls": [settings.FALLBACK_IMAGE]}
     return {"image_urls": photo_urls}
 
 @router.get("/destination-images-by-name")
@@ -247,6 +259,7 @@ async def get_destination_images_by_name(destination: str = Query(..., descripti
             if not placeId or placeId == "" or placeId == "N/A":
                 return {"image_urls": [settings.FALLBACK_IMAGE], "error": "No place ID found for the destination"}
             await insert_api_cache(cache_key, {"placeId": placeId})
-        except Exception:
+        except Exception as e:
+            logger.error("Failed to search for the destination name", destination=destination, error=str(e))
             return {"image_urls": [settings.FALLBACK_IMAGE], "error": "Failed to search for the destination"}
     return await get_destination_image_by_place_id(placeId, count, min_ratio)

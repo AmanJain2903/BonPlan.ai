@@ -14,6 +14,9 @@ from app.services.rate_limiter.sku_resolver import (
     resolve_search_places_nearby_sku,
     resolve_search_places_sku,
 )
+from app.logging import get_mcp_logger
+
+logger = get_mcp_logger("tools.places")
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 

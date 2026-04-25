@@ -13,6 +13,9 @@ from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
 from app.services.rate_limiter.sku_resolver import SKU
 
+
+from app.logging import get_mcp_logger
+logger = get_mcp_logger("tools.web_search")
 serper_api_key = settings.SERPER_API_KEY
 gemini_api_key_serper_content_parser = settings.SERPER_CONTENT_PARSER_API_KEY
 serper_content_parser_model = settings.SERPER_CONTENT_PARSER_MODEL

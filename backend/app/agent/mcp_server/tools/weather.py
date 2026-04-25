@@ -10,6 +10,9 @@ from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_l
 from app.services.rate_limiter.sku_resolver import SKU
 
 
+
+from app.logging import get_mcp_logger
+logger = get_mcp_logger("tools.weather")
 async def _weather_consume_or_error() -> Optional[Dict]:
     """Consume the shared weather_usage SKU; return an error dict if over limit."""
     try:

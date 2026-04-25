@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Search, Loader2 } from 'lucide-react';
 import { GOOGLE_MAPS_API_KEY } from '../../apis/config';
+import { logRateLimitBlock } from '../../utils/clientLog';
 import { checkSkuQuota, trackClientSku } from '../../utils/rateLimiter';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -160,6 +161,11 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
       const preflight = await checkSkuQuota('autocomplete_requests');
       if (!preflight.allowed && !preflight.skipped) {
         keystrokeQuotaExhaustedRef.current = true;
+        logRateLimitBlock(
+          'autocomplete_requests',
+          'Autocomplete keystroke blocked — autocomplete_requests quota exhausted',
+          { current: preflight.current, limit: preflight.limit },
+        );
         setSuggestions([]);
         setIsOpen(false);
         return;
@@ -280,6 +286,11 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         if (!preflight.allowed && !preflight.skipped) {
           console.warn(
             '[PlacesAutocomplete] place_details_essentials quota exhausted — selection blocked',
+          );
+          logRateLimitBlock(
+            'places_place_details_essentials',
+            'Place selection blocked — places_place_details_essentials quota exhausted',
+            { current: preflight.current, limit: preflight.limit },
           );
           return;
         }

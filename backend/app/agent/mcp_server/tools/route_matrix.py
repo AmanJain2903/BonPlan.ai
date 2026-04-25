@@ -14,8 +14,11 @@ import urllib.parse
 import pathlib
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.logging import get_mcp_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
 from app.services.rate_limiter.sku_resolver import resolve_get_route_matrix_sku
+
+logger = get_mcp_logger("tools.route_matrix")
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 

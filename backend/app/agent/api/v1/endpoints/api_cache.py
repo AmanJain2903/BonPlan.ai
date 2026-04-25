@@ -12,7 +12,9 @@ from sqlalchemy import select
 
 from app.database.database import Session
 from app.database.models.apiCacheTable import ApiCache
+from app.logging import get_api_logger
 
+logger = get_api_logger("agent.api_cache")
 router = APIRouter()
 
 
@@ -48,6 +50,7 @@ async def insert_api_cache(body: ApiCacheInsertBody):
             return {"message": "API cache inserted successfully.", "status_code": 200}
         except Exception as e:
             await db.rollback()
+            logger.exception("Failed to insert API cache", cache_key=cache_key, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to insert API cache: {e}")
 
 
@@ -75,4 +78,5 @@ async def retrieve_api_cache(
         except HTTPException:
             raise
         except Exception as e:
+            logger.exception("Failed to retrieve API cache", cache_key=cache_key, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to retrieve API cache: {e}")

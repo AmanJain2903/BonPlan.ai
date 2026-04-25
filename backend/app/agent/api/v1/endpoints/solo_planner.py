@@ -26,6 +26,9 @@ from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary, TripItineraryStatus
 from app.database.models.tripMembersTable import TripMember
 from app.database.models.tripsTable import PlanStatus, Trip
+from app.logging import get_api_logger
+
+logger = get_api_logger("solo_planner")
 
 router = APIRouter()
 
@@ -199,6 +202,7 @@ async def generate_solo_plan(request: Request, id: str):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("Failed to generate solo plan", trip_id=id, error=str(e))
         # Best-effort status revert if row exists.
         try:
             async with Session() as db:
@@ -235,9 +239,7 @@ async def generate_solo_plan(request: Request, id: str):
                     try:
                         await _apply_event_write(str(id), item)
                     except Exception as e:
-                        print(
-                            f"[SOLO_PLANNER_SSE] DB write failed: {e}", flush=True
-                        )
+                        logger.exception("SSE DB write failed", error=str(e))
                 finally:
                     write_queue.task_done()
 
@@ -252,10 +254,7 @@ async def generate_solo_plan(request: Request, id: str):
             try:
                 await writer_task
             except Exception as e:
-                print(
-                    f"[SOLO_PLANNER_SSE] Writer task raised on drain: {e}",
-                    flush=True,
-                )
+                logger.warning("SSE writer task raised on drain", error=str(e))
 
             # Update terminal statuses.
             try:
@@ -277,10 +276,7 @@ async def generate_solo_plan(request: Request, id: str):
                             itin_row.status = TripItineraryStatus.PENDING
                         await db.commit()
             except Exception as e:
-                print(
-                    f"[SOLO_PLANNER_SSE] Failed to update final statuses: {e}",
-                    flush=True,
-                )
+                logger.exception("SSE failed to update final statuses", error=str(e))
 
         try:
             gen = generate_trip_itinerary(
@@ -304,10 +300,9 @@ async def generate_solo_plan(request: Request, id: str):
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
-                    print(
-                        f"[SOLO_PLANNER_SSE] Stream idle > {sse_timeout_seconds}s "
-                        f"for trip {id} — aborting.",
-                        flush=True,
+                    logger.warning(
+                        "SSE stream idle — aborting",
+                        timeout_s=sse_timeout_seconds, trip_id=str(id),
                     )
                     success = False
                     try:
@@ -338,17 +333,11 @@ async def generate_solo_plan(request: Request, id: str):
                     break
 
         except asyncio.CancelledError:
-            print(
-                f"[SOLO_PLANNER_SSE] Client disconnected for trip {id} — finalizing.",
-                flush=True,
-            )
+            logger.info("SSE client disconnected — finalizing", trip_id=str(id))
             # Fall through to the shielded finalize in the finally block.
             raise
         except Exception as e:
-            print(
-                f"[SOLO_PLANNER_SSE] Unexpected error while streaming: {e}",
-                flush=True,
-            )
+            logger.exception("SSE unexpected error while streaming", trip_id=str(id), error=str(e))
             success = False
             try:
                 yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -376,9 +365,9 @@ async def generate_solo_plan(request: Request, id: str):
                 await asyncio.shield(finalize_task)
             except BaseException as e:
                 if not isinstance(e, asyncio.CancelledError):
-                    print(
-                        f"[SOLO_PLANNER_SSE] Finalize raised (will still complete in background): {e}",
-                        flush=True,
+                    logger.warning(
+                        "SSE finalize raised (will still complete in background)",
+                        trip_id=str(id), error=str(e),
                     )
                 # Do NOT re-raise here; the outer except already handled
                 # the original exception. The finally's job is just to

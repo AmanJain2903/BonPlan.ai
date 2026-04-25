@@ -15,8 +15,11 @@ import pathlib
 from app.agent.mcp_server.tools.geocoding import get_address
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
+from app.logging import get_mcp_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
 from app.services.rate_limiter.sku_resolver import resolve_get_route_sku
+
+logger = get_mcp_logger("tools.routes")
 
 api_key = settings.GOOGLE_MAPS_API_KEY
 
@@ -102,13 +105,28 @@ async def get_route_leg(leg: dict) -> dict:
     try:
         startAddress = (await get_address(routeLeg["startLocation"]["latitude"], routeLeg["startLocation"]["longitude"], TIMEOUTS['get_address']))["address"]
         routeLeg["startLocation"]["address"] = startAddress
-    except Exception:
+    except Exception as _e:
+        # Reverse-geocoding the leg endpoint is best-effort; we still want
+        # the route returned even if the lookup fails. Log so we know how
+        # often this fallback fires.
+        logger.warning(
+            "Reverse geocode failed for leg start (falling back to empty address)",
+            lat=routeLeg["startLocation"].get("latitude"),
+            lng=routeLeg["startLocation"].get("longitude"),
+            error=str(_e),
+        )
         routeLeg["startLocation"]["address"] = ""
 
     try:
         endAddress = (await get_address(routeLeg["endLocation"]["latitude"], routeLeg["endLocation"]["longitude"], TIMEOUTS['get_address']))["address"]
         routeLeg["endLocation"]["address"] = endAddress
-    except Exception:
+    except Exception as _e:
+        logger.warning(
+            "Reverse geocode failed for leg end (falling back to empty address)",
+            lat=routeLeg["endLocation"].get("latitude"),
+            lng=routeLeg["endLocation"].get("longitude"),
+            error=str(_e),
+        )
         routeLeg["endLocation"]["address"] = ""
 
     return routeLeg

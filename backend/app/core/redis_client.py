@@ -17,7 +17,6 @@ Connection rules:
 
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
 import redis.asyncio as redis
@@ -25,8 +24,9 @@ from redis.asyncio.connection import ConnectionPool
 from redis.exceptions import RedisError
 
 from app.core.config import settings
+from app.logging import get_core_logger
 
-logger = logging.getLogger(__name__)
+logger = get_core_logger("redis_client")
 
 _pool: Optional[ConnectionPool] = None
 _client: Optional[redis.Redis] = None
@@ -56,7 +56,7 @@ async def ping_redis() -> bool:
         client = get_redis()
         return await client.ping()
     except RedisError as e:
-        logger.warning("Redis ping failed: %s", e)
+        logger.warning("Redis ping failed", error=str(e))
         return False
 
 
@@ -67,11 +67,11 @@ async def close_redis() -> None:
         try:
             await _client.aclose()
         except Exception as e:
-            logger.warning("Error closing Redis client: %s", e)
+            logger.warning("Error closing Redis client", error=str(e))
         _client = None
     if _pool is not None:
         try:
             await _pool.disconnect(inuse_connections=True)
         except Exception as e:
-            logger.warning("Error disconnecting Redis pool: %s", e)
+            logger.warning("Error disconnecting Redis pool", error=str(e))
         _pool = None

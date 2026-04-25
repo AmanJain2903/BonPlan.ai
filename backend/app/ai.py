@@ -16,16 +16,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agent.api.router import router
 from app.agent.core.runtime import agent_runtime_context
 from app.core.config import settings
+from app.logging import get_app_logger
 from app.utils.http import close_http_client
+
+logger = get_app_logger("ai")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Agent lifespan starting", agent=settings.AGENT_NAME, version=settings.AGENT_VERSION)
     try:
         async with agent_runtime_context():
+            logger.info("Agent runtime context entered")
             yield
+    except Exception:
+        logger.exception("Agent lifespan crashed")
+        raise
     finally:
+        logger.info("Agent lifespan shutting down")
         await close_http_client()
+        logger.info("Agent lifespan shutdown complete")
 
 
 app = FastAPI(
