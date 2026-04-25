@@ -23,6 +23,10 @@ construct nodes directly don't blow up.
 from contextvars import ContextVar, Token
 from typing import Any, Callable, Dict, Optional
 
+from app.logging import get_agent_logger
+
+logger = get_agent_logger("langgraph_runtime.streaming")
+
 StreamWriter = Callable[[Dict[str, Any]], None]
 
 _stream_writer: ContextVar[Optional[StreamWriter]] = ContextVar(
@@ -43,14 +47,17 @@ def reset_stream_writer(token: Token) -> None:
     try:
         _stream_writer.reset(token)
     except (ValueError, LookupError):
+        logger.warning("Failed to reset stream writer. Unsetting the writer directly.")
         try:
             _stream_writer.set(None)
         except Exception:
+            logger.error("Failed to unset stream writer.")
             pass
 
 
 def emit(chunk: Dict[str, Any]) -> None:
     writer = _stream_writer.get()
     if writer is None:
+        logger.error("Stream writer not found.")
         return
     writer(chunk)

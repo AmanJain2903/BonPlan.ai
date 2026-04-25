@@ -8,9 +8,11 @@ import hashlib
 import json
 
 from app.core.config import settings
+from app.logging import get_api_logger
 from app.utils.http import get_http_client
 
 AGENT_URL = settings.AGENT_URL
+logger = get_api_logger("agent.api.caching")
 
 
 async def generate_cache_key(api_name: str, params: dict) -> str:
@@ -32,7 +34,7 @@ async def retrieve_api_cache(cache_key: str, expires_in: int = 7) -> dict | None
                 return data["cache_value"]
         return None
     except Exception as e:
-        print(f"Failed to retrieve API cache: {e}")
+        logger.warning("Failed to retrieve API cache", error=str(e))
         return None
 
 
@@ -45,4 +47,4 @@ async def insert_api_cache(cache_key: str, cache_value: dict) -> None:
             timeout=10,
         )
     except Exception as e:
-        print(f"Failed to insert API cache: {e}")
+        logger.warning("Failed to insert API cache", error=str(e))

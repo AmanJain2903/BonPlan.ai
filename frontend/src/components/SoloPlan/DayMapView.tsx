@@ -8,6 +8,7 @@ import {
   eventKey,
 } from './constants';
 import { GOOGLE_MAPS_MAP_ID } from '../../apis/config';
+import { logRateLimitBlock } from '../../utils/clientLog';
 import { checkSkuQuota, trackClientSku } from '../../utils/rateLimiter';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -314,6 +315,11 @@ async function fetchRoutePolyline(
   const status = await checkSkuQuota('directions');
   if (!status.allowed && !status.skipped) {
     directionsQuotaExhausted = true;
+    logRateLimitBlock(
+      'directions',
+      'Polyline fetch blocked — directions quota exhausted',
+      { current: status.current, limit: status.limit },
+    );
     return;
   }
 
@@ -747,6 +753,11 @@ export default function DayMapViewBody({
       if (cancelled) return;
       if (!status.allowed && !status.skipped) {
         setMapError('Map quota exhausted for this billing period.');
+        logRateLimitBlock(
+          'dynamic_maps',
+          'Day map mount blocked — dynamic_maps quota exhausted',
+          { current: status.current, limit: status.limit },
+        );
         return;
       }
 

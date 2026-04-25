@@ -15,6 +15,7 @@
 // - The `trackClientSku` call after mount keeps the counter accurate.
 
 import { useEffect, useRef, useState } from 'react';
+import { logRateLimitBlock } from './clientLog';
 import { checkSkuQuota, trackClientSku } from './rateLimiter';
 
 export function useDynamicMapImpression(enabled: boolean = true): boolean {
@@ -35,6 +36,14 @@ export function useDynamicMapImpression(enabled: boolean = true): boolean {
       if (ok) {
         trackedRef.current = true;
         void trackClientSku('dynamic_maps', 1);
+      } else {
+        // Log only when the limiter actually blocks a render — this is the
+        // event the backend can't see on its own.
+        logRateLimitBlock(
+          'dynamic_maps',
+          'Map render blocked — dynamic_maps quota exhausted',
+          { current: status.current, limit: status.limit },
+        );
       }
     })();
     return () => {

@@ -2,6 +2,10 @@ import asyncio
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
+from app.logging import get_mcp_logger
+
+logger = get_mcp_logger("main")
+
 # Timezone Tools
 from app.agent.mcp_server.tools.timezone import get_current_timestamp
 from app.agent.mcp_server.tools.timezone import convert_utc_string_to_timestamp
@@ -250,4 +254,11 @@ mcp.add_tool(get_hotel_booking_url_tool)
 if __name__ == "__main__":
     # Standard I/O execution for MCP servers
     # This allows the LangGraph agent to call these tools as if they were local functions
-    mcp.run()
+    logger.info("MCP server starting (stdio)")
+    try:
+        mcp.run()
+    except Exception:
+        logger.exception("MCP server crashed")
+        raise
+    finally:
+        logger.info("MCP server exited")

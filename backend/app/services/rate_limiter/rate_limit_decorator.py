@@ -29,12 +29,12 @@ from __future__ import annotations
 
 import functools
 import inspect
-import logging
 from typing import Any, Callable, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
 
+from app.logging import get_rate_limiter_logger
 from app.services.rate_limiter.rate_limiter import (
     ConsumeResult,
     RateLimitExceeded,
@@ -42,7 +42,7 @@ from app.services.rate_limiter.rate_limiter import (
 )
 from app.services.rate_limiter.sku_resolver import SkuResolver
 
-logger = logging.getLogger(__name__)
+logger = get_rate_limiter_logger("decorator")
 
 
 def _is_endpoint(func: Callable[..., Any]) -> bool:
@@ -141,18 +141,11 @@ def limit_sku(
                     raise_on_limit=True,
                 )
             except RateLimitExceeded as exc:
+                logger.warning(f"Rate limit exceeded for SKU {resolved_sku}", user_id=str(user_id) if user_id else "",
+                )
                 if is_endpoint:
                     _raise_for_endpoint(exc)
                 return _error_dict_for_tool(exc)
-
-            logger.debug(
-                "SKU '%s' consume: current=%s remaining=%s allowed=%s skipped=%s",
-                result.sku,
-                result.current,
-                result.remaining,
-                result.allowed,
-                result.skipped,
-            )
 
             return await func(*args, **kwargs)
 

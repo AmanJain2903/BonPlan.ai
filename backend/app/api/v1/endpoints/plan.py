@@ -19,6 +19,9 @@ from app.database.models.tripsTable import Trip, PlanningType, RoutingStyle, Pla
 from app.database.models.tripItinerariesTable import TripItinerary
 from app.database.models.usersTable import User
 from app.database.models.tripMembersTable import TripMember, TripRole
+from app.logging import get_api_logger
+
+logger = get_api_logger("api.plan")
 
 router = APIRouter()
 
@@ -157,9 +160,7 @@ async def draft_plan(token: str, data: dict):
             raise
         except Exception as e:
             await db.rollback()
-            import traceback
-            error_message = traceback.format_exc()
-            print(error_message)
+            logger.exception("Failed to draft plan", error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to draft plan: {e}")
 
 """
@@ -203,6 +204,7 @@ async def get_rbac_for_plan(token: str, id: str):
             if not rbac:
                 return {"message": "You lack this access.", "status_code": 403, "rbac": None}
         except Exception as e:
+            logger.error("Failed to get RBAC for trip", trip_id=id, user_id=user_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get RBAC for draft plan: {e}")
 
         return {"message": "RBAC fetched successfully.", "status_code": 200, "rbac": rbac.role}
@@ -251,6 +253,7 @@ async def get_plans(token: str):
             if not plans:
                 return {"message": "You have no plans yet.", "status_code": 404, "plans": None}
         except Exception as e:
+            logger.error("Failed to get plans", user_id=user_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get plans: {e}")
 
         role_by_trip = {m.trip_id: m.role for m in memberships}
@@ -317,6 +320,7 @@ async def get_plan(token: str, id: str):
             if not plan:
                 return {"message": "Plan not found.", "status_code": 404, "plan": None}
         except Exception as e:
+            logger.error("Failed to get plan", trip_id=id, user_id=user_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get plan: {e}")
 
         planResponse = {
@@ -387,6 +391,7 @@ async def delete_plan(token: str, id: str):
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to fetch user for deletion", trip_id=id, user_id=user_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to delete plan: {e}")
 
         try:
@@ -399,6 +404,7 @@ async def delete_plan(token: str, id: str):
             if role != "owner":
                 return {"message": "You are not authorized to delete this plan.", "status_code": 403}
         except Exception as e:
+            logger.error("Failed to get RBAC for deletion", trip_id=id, user_id=user_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get RBAC for plan: {e}")
 
         try:
@@ -406,6 +412,7 @@ async def delete_plan(token: str, id: str):
             if not plan:
                 return {"message": "Plan not found.", "status_code": 404}
         except Exception as e:
+            logger.error("Failed to fetch plan for deletion", trip_id=id, user_id=user_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to delete plan: {e}")
 
         try:
@@ -413,5 +420,6 @@ async def delete_plan(token: str, id: str):
             await db.commit()
             return {"message": "Plan deleted successfully.", "status_code": 200}
         except Exception as e:
+            logger.error("Failed to delete plan", trip_id=id, user_id=user_id, error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to delete plan: {e}")

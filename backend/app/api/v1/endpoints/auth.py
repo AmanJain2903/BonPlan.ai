@@ -1,6 +1,7 @@
 # backend/app/api/v1/endpoints/auth.py
 
 """
+
 This file contains the authentication endpoints for the v1 version of the API.
 """
 
@@ -24,6 +25,10 @@ from app.database.database import Session
 from app.database.models.usersTable import User
 from app.database.schemas.preferences import TripPreferencesSchema
 from app.utils.emailVerification import send_email
+
+from app.logging import get_api_logger
+
+logger = get_api_logger("api.auth")
 
 router = APIRouter()
 
@@ -166,6 +171,7 @@ async def google_login(token: str):
                 jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
                 return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True, "is_admin": newUser.is_admin}
             except Exception as e:
+                logger.error("Failed to create/login a google user", error=str(e))
                 await db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
 
@@ -221,6 +227,7 @@ async def local_register(first_name: str, last_name: str, email: str, password: 
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to create user", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
 
@@ -261,6 +268,7 @@ async def local_login(email: str, password: str):
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to login a local user", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to login: {e}")
 
@@ -307,7 +315,8 @@ async def verify_email(token: str):
             user.is_verified = True
             await db.commit()
             return {"message": "Email verified successfully", "status_code": 200}
-        except Exception:
+        except Exception as e:
+            logger.error("Failed to verify email", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail="Failed to verify email.")
 
@@ -348,7 +357,8 @@ async def forgot_password(email: str):
         """
         try:
             await send_email(email, subject, htmlContent)
-        except Exception:
+        except Exception as e:
+            logger.error("Failed to send password reset email", error=str(e))
             raise HTTPException(status_code=500, detail="Failed to send reset email. Please try again later.")
         return {"message": "If an account with that email exists, a reset link has been sent.", "status_code": 200}
 
@@ -385,6 +395,7 @@ async def reset_password(token: str, new_password: str):
             await db.commit()
             return {"message": "Password has been reset successfully. You can now log in.", "status_code": 200}
         except Exception as e:
+            logger.error("Failed to reset password", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to reset password: {e}")
 
@@ -407,21 +418,25 @@ async def get_profile(token: str):
         raise HTTPException(status_code=400, detail="Invalid token.")
 
     async with Session() as db:
-        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found.")
-        phone = user.phone or {}
-        prefs = user.preferences or TripPreferencesSchema().model_dump()
-        return {
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "email": user.email,
-            "country_code": phone.get("country_code", ""),
-            "phone": phone.get("number", ""),
-            "auth_provider": user.auth_provider,
-            "preferences": prefs,
-            "status_code": 200,
-        }
+        try:
+            user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found.")
+            phone = user.phone or {}
+            prefs = user.preferences or TripPreferencesSchema().model_dump()
+            return {
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "country_code": phone.get("country_code", ""),
+                "phone": phone.get("number", ""),
+                "auth_provider": user.auth_provider,
+                "preferences": prefs,
+                "status_code": 200,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get profile for user: {user_id}", error=str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to get profile: {e}")
 
 
 """
@@ -473,6 +488,7 @@ async def update_profile(req: UpdateProfileRequest):
             await db.rollback()
             raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
         except Exception as e:
+            logger.error("Failed to update a user's profile", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to update profile: {e}")
 
@@ -511,6 +527,7 @@ async def change_password(token: str, current_password: str, new_password: str):
             await db.commit()
             return {"message": "Password changed successfully.", "status_code": 200}
         except Exception as e:
+            logger.error("Failed to change a user's password", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to change password: {e}")
 
@@ -541,5 +558,6 @@ async def delete_user(token: str):
             await db.commit()
             return {"message": "Account deleted successfully", "status_code": 200}
         except Exception as e:
+            logger.error("Failed to delete a user's account", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to delete account: {e}")

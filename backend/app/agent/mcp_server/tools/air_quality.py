@@ -11,6 +11,9 @@ from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_l
 from app.services.rate_limiter.sku_resolver import SKU
 
 
+
+from app.logging import get_mcp_logger
+logger = get_mcp_logger("tools.air_quality")
 async def _air_quality_consume_or_error() -> Optional[Dict]:
     try:
         await get_rate_limiter().consume(SKU["air_quality_usage"])

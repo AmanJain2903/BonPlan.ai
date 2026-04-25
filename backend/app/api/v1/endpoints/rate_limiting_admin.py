@@ -17,8 +17,10 @@ from app.database.database import Session
 from app.database.models.rateLimitConfigs import RateLimitConfigs, Period, Scope
 from app.database.models.rateLimitUsage import RateLimitUsage
 from app.database.models.usersTable import User
+from app.logging import get_api_logger
 from app.services.rate_limiter.rate_limiter import get_rate_limiter
 
+logger = get_api_logger("api.rate_limiting_admin")
 router = APIRouter()
 
 class CreateRateLimitConfigBody(BaseModel):
@@ -140,9 +142,11 @@ async def create_rate_limit_config(data: CreateRateLimitConfigBody):
             )
             db.add(new_config)
             await db.commit()
+            logger.info("Rate limit config created successfully", sku=sku)
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to create rate limit config", sku=sku, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to create rate limit config: {e}")
 
     await get_rate_limiter().invalidate_config_cache()
@@ -166,6 +170,7 @@ async def get_rate_limit_config(sku: Optional[str] = None, sku_id: Optional[str]
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to get rate limit config", sku=sku, sku_id=sku_id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get rate limit config: {e}")
         
     config_dict = {
@@ -235,9 +240,11 @@ async def update_rate_limit_config(data: UpdateRateLimitConfigBody):
             if data.reset_month is not None:
                 config.reset_month = data.reset_month
             await db.commit()
+            logger.info("Rate limit config updated successfully", sku=sku if sku else config.sku, sku_id=sku_id if sku_id else config.id)
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to update rate limit config", sku=sku if sku else config.sku, sku_id=sku_id if sku_id else config.id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to update rate limit config: {e}")
 
     await get_rate_limiter().invalidate_config_cache()
@@ -261,9 +268,11 @@ async def delete_rate_limit_config(sku: Optional[str] = Query(None), sku_id: Opt
                 raise HTTPException(status_code=404, detail="Rate limit config not found.")
             await db.delete(config)
             await db.commit()
+            logger.info("Rate limit config deleted successfully", sku=sku if sku else config.sku, sku_id=sku_id if sku_id else config.id)
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to delete rate limit config", sku=sku if sku else config.sku, sku_id=sku_id if sku_id else config.id, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to delete rate limit config: {e}")
     await get_rate_limiter().invalidate_config_cache()
     return {"message": "Rate limit config deleted successfully.", "status_code": 200}
@@ -292,6 +301,7 @@ async def get_all_configs():
             ]
             return {"status_code": 200, "configs": config_list}
         except Exception as e:
+            logger.error("Failed to get rate limit configs", error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get configs: {e}")
 
 @router.get("/usage", response_model=dict)
@@ -336,4 +346,5 @@ async def get_all_usage(
                 })
             return {"status_code": 200, "usage": usage_list}
         except Exception as e:
+            logger.error("Failed to get rate limit usages", scope=scope, period_bucket=period_bucket, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get usage: {e}")

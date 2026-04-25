@@ -12,6 +12,9 @@ from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
 from app.services.rate_limiter.sku_resolver import SKU
 
+
+from app.logging import get_mcp_logger
+logger = get_mcp_logger("tools.timezone")
 api_key = settings.GOOGLE_MAPS_API_KEY
 
 async def get_current_timestamp() -> Dict:

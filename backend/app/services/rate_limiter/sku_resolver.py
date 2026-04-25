@@ -23,6 +23,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
+from app.logging import get_rate_limiter_logger
+
+logger = get_rate_limiter_logger("sku_resolver")
+
 # --- canonical SKU slugs -----------------------------------------------------
 #
 # Keep these lowercased and underscore-separated — the rate_limit_configs table
@@ -152,5 +156,6 @@ TOOL_TO_SKU: dict[str, SkuResolver] = {
 def resolve_sku(tool_name: str, **kwargs: Any) -> Optional[str]:
     resolver = TOOL_TO_SKU.get(tool_name)
     if resolver is None:
+        logger.error("No SKU resolver found for tool", tool_name=tool_name, kwargs=kwargs)
         return None
     return resolver(**kwargs)

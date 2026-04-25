@@ -1,6 +1,7 @@
 # backend/app/api/v1/endpoints/rate_limiting.py
 
 """
+
 Rate-limiting endpoints for the BonPlan.ai backend.
 
 Split into two groups:
@@ -32,6 +33,10 @@ from app.database.models.rateLimitConfigs import Period, Scope
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
 from typing import Optional
 from uuid import UUID
+
+from app.logging import get_api_logger
+
+logger = get_api_logger("api.rate_limiting")
 
 router = APIRouter()
 

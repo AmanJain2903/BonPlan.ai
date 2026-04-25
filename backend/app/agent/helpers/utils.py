@@ -15,6 +15,10 @@ from app.agent.schemas.structuredOutput import (
     OtherEventDetails,
     EndEventDetails,
 )
+from app.logging import get_agent_logger
+
+logger = get_agent_logger("helpers.utils")
+
 
 def fix_schema_for_gemini(schema: dict) -> dict:
     import copy
@@ -71,6 +75,7 @@ def _load_add_event_description() -> str:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
     except Exception:
+        logger.warning("Failed to load add_event.md. Returning fallback description.")
         return "Call this tool to commit a specific event (Flight, Hotel, etc.) to the user's itinerary. The agent must call this multiple times to build a full trip. Be mindful for the format you are passing in the arguments. It is a nested JSON object with the keys and values as per the schema."
 
 ADD_EVENT_TOOL = types.FunctionDeclaration(

@@ -1,6 +1,7 @@
 # backend/app/api/v1/endpoints/api_cache.py
 
 """
+
 This file contains the API cache endpoints for the BonPlan.ai backend. Exact copy of the agent's API cache endpoints.
 """
 
@@ -12,6 +13,10 @@ from sqlalchemy import select
 
 from app.database.database import Session
 from app.database.models.apiCacheTable import ApiCache
+
+from app.logging import get_api_logger
+
+logger = get_api_logger("api.api_cache")
 
 router = APIRouter()
 
@@ -47,6 +52,7 @@ async def insert_api_cache(body: ApiCacheInsertBody):
             await db.commit()
             return {"message": "API cache inserted successfully.", "status_code": 200}
         except Exception as e:
+            logger.error("Failed to insert API cache", error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to insert API cache: {e}")
 
@@ -75,4 +81,5 @@ async def retrieve_api_cache(
         except HTTPException:
             raise
         except Exception as e:
+            logger.error("Failed to retrieve API cache", error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to retrieve API cache: {e}")

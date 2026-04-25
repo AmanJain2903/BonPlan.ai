@@ -20,6 +20,13 @@ Envelope fields:
 
 from typing import Any, Optional
 
+from app.logging import get_mcp_logger
+
+# Single logger funnel for *every* tool error in the MCP layer. The tool name
+# itself ends up in the `extra` dict (or is implied by the message), so we
+# don't need 12 per-tool loggers — one centralised sink is easier to grep.
+_logger = get_mcp_logger("tool_error")
+
 
 def tool_error(
     message: str,
@@ -36,4 +43,33 @@ def tool_error(
         for k, v in extra.items():
             if k not in err:
                 err[k] = v
+    # Mirror every tool error into the MCP log so we have a record of which
+    # tools failed, why, and with what context — independent of whether the
+    # model chooses to surface the failure to the user. When tool_error is
+    # called from inside an `except` block, `.exception()` will capture the
+    # traceback automatically; outside an except block it falls back to
+    # plain `.error()/.warning()`.
+    try:
+        log_extra = {k: v for k, v in err.items() if k not in ("error", "fix_hint")}
+        import sys as _sys
+        active_exc = _sys.exc_info()[0] is not None
+        if status_code and status_code >= 500:
+            if active_exc:
+                _logger.exception(message, **log_extra)
+            else:
+                _logger.error(message, **log_extra)
+        elif status_code and status_code == 429:
+            _logger.warning(message, **log_extra)
+        else:
+            if active_exc:
+                # Validation / 4xx with a live exception — keep the
+                # traceback, but at WARN level since it's typically
+                # caller-correctable.
+                import traceback as _tb
+                tb_text = _tb.format_exc()
+                if tb_text and tb_text.strip() != "NoneType: None":
+                    log_extra = {**log_extra, "traceback": tb_text}
+            _logger.warning(message, **log_extra)
+    except Exception:
+        pass
     return err

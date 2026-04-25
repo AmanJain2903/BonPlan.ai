@@ -11,6 +11,10 @@ from typing import Any, Dict
 
 from app.agent.langgraph_runtime.state import PlannerState
 
+from app.logging import get_agent_logger
+
+logger = get_agent_logger("nodes.collaboration_checkpoint")
+
 
 async def collaboration_checkpoint_node(state: PlannerState) -> Dict[str, Any]:
     # TODO (collaborative mode): check state["mode"] == "collaborative" and

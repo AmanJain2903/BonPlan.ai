@@ -9,6 +9,9 @@ import smtplib
 from email.mime.text import MIMEText
 
 from app.core.config import settings
+from app.logging import get_utils_logger
+
+logger = get_utils_logger("emailVerification")
 
 SMTP_LOGIN_EMAIL = settings.SENDER_EMAIL
 EMAIL_PASSWORD = settings.GMAIL_APP_PASSWORD
@@ -29,7 +32,7 @@ async def send_email(to_email, subject, body):
 
     try:
         await asyncio.to_thread(_blocking_send)
-        print("Email sent successfully")
+        logger.info("Email sent successfully", to=to_email, subject=subject)
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        logger.exception("Failed to send email", to=to_email, error=str(e))
         raise
