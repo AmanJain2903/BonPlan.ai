@@ -69,7 +69,11 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
       <div className="w-full max-w-4xl flex flex-col items-center text-center mb-6 -mt-10">
         <div className="mt-3 min-h-[3.25rem] sm:min-h-[4rem] lg:min-h-[4.5rem] flex items-center justify-center w-full">
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight animate-[fade-in_400ms_ease-out]">
-            Let's review our choices, <span className="text-cyan">{name}</span>.
+            {name ? (
+              <>Let's review our choices, <span className="text-cyan">{name}</span>.</>
+            ) : (
+              <>Let's review our choices.</>
+            )}
           </h1>
         </div>
         <div className="mt-3 h-5 flex items-center justify-center">
@@ -248,9 +252,9 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
               className="relative w-full max-w-3xl max-h-[75vh] overflow-hidden rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-xl flex flex-col"
             >
               {/* Header */}
-              <div className="p-6 flex items-center justify-between bg-gradient-to-b from-cyan/20 via-cyan/10 to-transparent">
+              <div className="p-6 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-cyan/10 flex items-center justify-center text-cyan">
+                  <div className="h-10 w-10 rounded-xl bg-cyan/10 border border-cyan/15 flex items-center justify-center text-cyan">
                     <Sparkles size={20} />
                   </div>
                   <div>
@@ -359,7 +363,7 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
               </div>
 
               {/* Footer */}
-              <div className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-24 bg-gradient-to-t from-cyan/20 via-cyan/10 to-transparent">
+              <div className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-24 bg-gradient-to-t from-carbon via-carbon/80 to-transparent">
               </div>
               <div className="h-18 shrink-0" aria-hidden />
             </motion.div>

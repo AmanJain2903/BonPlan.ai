@@ -293,6 +293,7 @@ export default function SoloPlanView() {
                   contextInput={contextMessage}
                   setContextInput={setContextMessage}
                   onStart={startPlanner}
+                  hasEvents={itineraryState.days.some(day => day.events && day.events.length > 0)}
                 />
               </motion.div>
             </motion.div>

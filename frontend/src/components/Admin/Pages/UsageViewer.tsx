@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../../api/index';
 import { useOutletContext } from 'react-router-dom';
+import { useAuth } from '../../../context/AuthContext';
 import { Search, Server, Menu } from 'lucide-react';
 import { cn } from '../../../utils/tailwind';
 import { format, subDays, subWeeks, subMonths, subYears, getISOWeek, getISOWeekYear } from 'date-fns';
@@ -102,7 +103,7 @@ const GlobalUsageCard = ({ config, usageData }: { config: any, usageData: any[] 
               <div className="flex items-center justify-between text-sm mb-1.5">
                 <span className="text-white/40">Consumption</span>
                 <span className="font-medium text-white">
-                  {isUnlimited ? 'Unlimited' : `${usageAmount.toLocaleString()} / ${config.limit.toLocaleString()}`}
+                  {isUnlimited ? `${usageAmount.toLocaleString()} / Unlimited` : `${usageAmount.toLocaleString()} / ${config.limit.toLocaleString()}`}
                 </span>
               </div>
               <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
@@ -139,7 +140,8 @@ const UserUsageTable = ({ configs, usageData, search }: { configs: any[], usageD
   const relevantUsage = useMemo(() => {
     return usageData
       .filter(u => u.sku === selectedSku && u.period_bucket === selectedBucket)
-      .filter(u => u.user_name?.toLowerCase().includes(search.toLowerCase()) || u.user_id.toLowerCase().includes(search.toLowerCase()));
+      .filter(u => u.user_name?.toLowerCase().includes(search.toLowerCase()) || u.user_id.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
   }, [usageData, selectedSku, selectedBucket, search]);
 
   if (configs.length === 0) {
@@ -228,7 +230,7 @@ const UserUsageTable = ({ configs, usageData, search }: { configs: any[], usageD
                         </div>
                         <div className="w-24 text-right text-sm font-medium">
                           {isUnlimited ? (
-                            <span className="text-white/40">Unlimited</span>
+                            <span className="text-white">{row.usage.toLocaleString()} <span className="text-white/40 font-normal">/ Unlimited</span></span>
                           ) : (
                             <span className="text-white">{row.usage.toLocaleString()} <span className="text-white/40 font-normal">/ {limit.toLocaleString()}</span></span>
                           )}
@@ -248,6 +250,7 @@ const UserUsageTable = ({ configs, usageData, search }: { configs: any[], usageD
 
 export default function UsageViewer() {
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>();
+  const { token } = useAuth();
   const [configs, setConfigs] = useState<any[]>([]);
   const [usage, setUsage] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,9 +262,10 @@ export default function UsageViewer() {
   const loadData = async () => {
     try {
       setLoading(true);
+      if (!token) return;
       const [configsData, usageData] = await Promise.all([
-        api.admin.fetchConfigs(),
-        api.admin.fetchUsage(scope)
+        api.admin.fetchConfigs(token),
+        api.admin.fetchUsage(token, scope)
       ]);
       const scopeConfigs = configsData.filter((c: any) => c.scope === scope);
 

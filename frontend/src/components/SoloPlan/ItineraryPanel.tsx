@@ -173,7 +173,7 @@ export default function ItineraryPanel({
       <GoogleMapsApiLoader solutionChannel="GMP_BonPlan_soloPlan" />
 
       <div
-        className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full ${selectedDay == null ? 'overflow-y-auto' : 'overflow-hidden'
+        className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full scrollbar-hide ${selectedDay == null ? 'overflow-y-auto' : 'overflow-hidden'
           } ${(!hasStarted || (errorType && !hasDayCards)) ? 'justify-center' : 'justify-start'}`}
       >
         {/* Trip tips button (always visible, overlay or not). */}
@@ -337,6 +337,7 @@ export default function ItineraryPanel({
                       <DayCard
                         day={day}
                         index={index}
+                        destinations={itineraryState.journey}
                         onSelect={(n) => {
                           setNavDirection(1);
                           setSelectedDay(n);
@@ -361,6 +362,7 @@ export default function ItineraryPanel({
                   <ExpandedFrame
                     day={selectedDayData}
                     allDays={itineraryState.days}
+                    destinations={itineraryState.journey}
                     onClose={handleCloseOverlay}
                     onNavigate={handleNavigate}
                     bodyKey={viewMode}

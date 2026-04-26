@@ -147,6 +147,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         activeThinkingBubble: turn.activeThinkingBubble + (chunk.content || ''),
+        activePruningChunk: null,
       }));
       break;
 
@@ -157,6 +158,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
           ...turn,
           ...flushThinking(turn),
           activeToolIndicator: { name: chunk.tool_name, call_id: chunk.call_id },
+          activePruningChunk: null,
           toolHistory: hasTool
             ? turn.toolHistory
             : [...turn.toolHistory, { call_id: chunk.call_id, name: chunk.tool_name, args: chunk.args }],
@@ -175,6 +177,16 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
           turn.activeToolIndicator && turn.activeToolIndicator.call_id === chunk.call_id
             ? null
             : turn.activeToolIndicator,
+        activePruningChunk: null,
+      }));
+      break;
+
+    case 'pruning':
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        ...flushThinking(turn),
+        activeToolIndicator: null,
+        activePruningChunk: chunk,
       }));
       break;
 
@@ -182,6 +194,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         ...flushThinking(turn),
+        activePruningChunk: null,
       }));
       session.itineraryState = processEventIntoItinerary(session.itineraryState, chunk.data);
       break;
@@ -191,6 +204,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
         ...turn,
         ...flushThinking(turn),
         activeToolIndicator: null,
+        activePruningChunk: null,
         finalSummary: turn.finalSummary + (chunk.content || ''),
         systemLog: null,
       }));
@@ -200,6 +214,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         ...flushThinking(turn),
+        activePruningChunk: null,
         systemLog: { type: 'system', content: chunk.content, error: chunk.error },
       }));
       break;
@@ -209,6 +224,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
         ...turn,
         ...flushThinking(turn),
         activeToolIndicator: null,
+        activePruningChunk: null,
         systemLog: { type: 'error', content: chunk.content },
         isStreaming: false,
       }));
@@ -310,6 +326,7 @@ class GenerationManager {
         type: 'bot' as const,
         toolHistory: [],
         activeToolIndicator: null,
+        activePruningChunk: null,
         thoughtHistory: '',
         activeThinkingBubble: '',
         finalSummary: '',
@@ -415,6 +432,7 @@ class GenerationManager {
     session.turns = updateLastBotTurn(session.turns, (turn) => ({
       ...turn,
       activeToolIndicator: null,
+      activePruningChunk: null,
       activeThinkingBubble: '',
       systemLog: { type: 'error', content: 'You stopped the generation.', userStopped: true },
       isStreaming: false,

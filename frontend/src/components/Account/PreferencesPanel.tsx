@@ -24,6 +24,14 @@ import {
   OtherPreferences,
 } from '../../data/preferences';
 
+const formatInterest = (s: string) => {
+  return s
+    .split(' ')
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 /* ──────────────────────── Shared Sub-Components ──────────────────────── */
 
 /** Glassmorphism section card wrapper */
@@ -77,6 +85,44 @@ const TogglePill = ({ label, active, onClick }: { label: string; active: boolean
     {label}
   </button>
 );
+
+const CustomInterestInput = ({ onAdd }: { onAdd: (val: string) => void }) => {
+  const [val, setVal] = useState('');
+
+  const handleAdd = () => {
+    const formatted = formatInterest(val.trim());
+    if (formatted) {
+      onAdd(formatted);
+      setVal('');
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-dashed border-white/20 bg-white/[0.02] focus-within:border-cyan/50 focus-within:bg-cyan/5 transition-all group shrink-0">
+      <input
+        type="text"
+        value={val}
+        maxLength={36}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAdd();
+          }
+        }}
+        placeholder="Add custom..."
+        className="bg-transparent text-xs font-semibold text-white/80 outline-none w-24 placeholder:text-white/30"
+      />
+      <button
+        type="button"
+        onClick={handleAdd}
+        className="text-white/40 hover:text-cyan transition-colors cursor-pointer"
+      >
+        <Check size={14} strokeWidth={3} />
+      </button>
+    </div>
+  );
+};
 
 /** iOS-style toggle switch */
 const ToggleSwitch = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) => (
@@ -420,7 +466,27 @@ export default function PreferencesPanel() {
         {/* Activity Interests — multi-select scrollable row */}
         <div>
           <SubLabel fieldKey="activity_interests">Activity Interests</SubLabel>
-          <ScrollRow activeIndex={ACTIVITY_INTERESTS.findIndex(o => form.activity_interests.includes(o.value))}>
+          <ScrollRow>
+            <CustomInterestInput onAdd={(val) => toggleArrayItem('activity_interests', val)} />
+
+            {/* User-added custom interests first */}
+            {form.activity_interests
+              .filter(item => !ACTIVITY_INTERESTS.some(opt => opt.value === item))
+              .map(item => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => toggleArrayItem('activity_interests', item)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold border transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border-cyan/40 bg-cyan/10 text-cyan shadow-[0_0_12px_rgba(102,252,241,0.12)]"
+                >
+                  <span className="flex items-center justify-center h-4 w-4 rounded-md border border-cyan/50 bg-cyan/25 transition-all duration-200">
+                    <Check size={10} strokeWidth={3} />
+                  </span>
+                  {item}
+                </button>
+              ))}
+
+            {/* Predefined interests */}
             {ACTIVITY_INTERESTS.map(opt => {
               const active = form.activity_interests.includes(opt.value);
               return (

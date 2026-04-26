@@ -8,6 +8,7 @@ interface HeroPanelProps {
   contextInput: string;
   setContextInput: (val: string) => void;
   onStart: () => void;
+  hasEvents?: boolean;
 }
 
 
@@ -37,7 +38,7 @@ function AutoResizeTextarea({
   );
 }
 
-export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, setContextInput, onStart }: HeroPanelProps) {
+export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, setContextInput, onStart, hasEvents }: HeroPanelProps) {
   return (
     <motion.div
       key="hero"
@@ -120,7 +121,7 @@ export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, s
           >
             <Sparkles className="w-5 h-5 fill-black" />
             <span className="uppercase tracking-widest text-sm relative z-10 transition-transform group-hover:-translate-x-1 duration-300">
-              Start {plannerMode} Planning
+              {hasEvents ? 'Resume' : 'Start'} {plannerMode} Planning
             </span>
           </button>
         </div>

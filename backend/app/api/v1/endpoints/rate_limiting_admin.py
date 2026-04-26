@@ -17,11 +17,34 @@ from app.database.database import Session
 from app.database.models.rateLimitConfigs import RateLimitConfigs, Period, Scope
 from app.database.models.rateLimitUsage import RateLimitUsage
 from app.database.models.usersTable import User
+import jwt
+from app.core.config import settings
 from app.logging import get_api_logger
 from app.services.rate_limiter.rate_limiter import get_rate_limiter
 
 logger = get_api_logger("api.rate_limiting_admin")
 router = APIRouter()
+
+async def _verify_admin(token: str):
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required.")
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid session. Please log in again.")
+    
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid token.")
+    
+    async with Session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        if not user.is_admin:
+            raise HTTPException(status_code=403, detail="Admin privileges required.")
 
 class CreateRateLimitConfigBody(BaseModel):
     sku: str
@@ -101,7 +124,8 @@ def _format_for_insert(value: Optional[str]) -> Optional[str]:
     return value.lower().strip().replace(" ", "_")
 
 @router.post("/create-rate-limit-config", response_model=dict)
-async def create_rate_limit_config(data: CreateRateLimitConfigBody):
+async def create_rate_limit_config(token: str, data: CreateRateLimitConfigBody):
+    await _verify_admin(token)
     sku = _format_for_insert(data.sku)
     if not sku:
         raise HTTPException(status_code=400, detail="SKU is required.")
@@ -153,7 +177,8 @@ async def create_rate_limit_config(data: CreateRateLimitConfigBody):
     return {"message": "Rate limit config created successfully.", "status_code": 200}
 
 @router.get("/get-rate-limit-config", response_model=dict)
-async def get_rate_limit_config(sku: Optional[str] = None, sku_id: Optional[str] = None):
+async def get_rate_limit_config(token: str, sku: Optional[str] = None, sku_id: Optional[str] = None):
+    await _verify_admin(token)
     if not sku and not sku_id:
         raise HTTPException(status_code=400, detail="SKU name or SKU ID is required.")
 
@@ -191,7 +216,8 @@ async def get_rate_limit_config(sku: Optional[str] = None, sku_id: Optional[str]
     return {"message": "Rate limit config retrieved successfully.", "status_code": 200, "config": config_dict}
 
 @router.put("/update-rate-limit-config", response_model=dict)
-async def update_rate_limit_config(data: UpdateRateLimitConfigBody):
+async def update_rate_limit_config(token: str, data: UpdateRateLimitConfigBody):
+    await _verify_admin(token)
     sku = _format_for_insert(data.sku)
     sku_id = data.sku_id
     service = data.service
@@ -251,7 +277,8 @@ async def update_rate_limit_config(data: UpdateRateLimitConfigBody):
     return {"message": "Rate limit config updated successfully.", "status_code": 200}
 
 @router.delete("/delete-rate-limit-config", response_model=dict)
-async def delete_rate_limit_config(sku: Optional[str] = Query(None), sku_id: Optional[str] = Query(None)):
+async def delete_rate_limit_config(token: str, sku: Optional[str] = Query(None), sku_id: Optional[str] = Query(None)):
+    await _verify_admin(token)
     sku = _format_for_insert(sku)
     if not sku and not sku_id:
         raise HTTPException(status_code=400, detail="SKU name or SKU ID is required.")
@@ -278,8 +305,9 @@ async def delete_rate_limit_config(sku: Optional[str] = Query(None), sku_id: Opt
     return {"message": "Rate limit config deleted successfully.", "status_code": 200}
 
 @router.get("/configs", response_model=dict)
-async def get_all_configs():
+async def get_all_configs(token: str):
     """Retrieve all rate limit configs for the dashboard."""
+    await _verify_admin(token)
     async with Session() as db:
         try:
             configs = (await db.execute(select(RateLimitConfigs).order_by(RateLimitConfigs.updated_at.desc()))).scalars().all()
@@ -306,10 +334,12 @@ async def get_all_configs():
 
 @router.get("/usage", response_model=dict)
 async def get_all_usage(
+    token: str,
     scope: Optional[Scope] = Query(None, description="Filter by scope (global or user)"),
     period_bucket: Optional[str] = Query(None, description="Filter by specific period bucket")
 ):
     """Retrieve rate limit usage records, optionally filtered."""
+    await _verify_admin(token)
     async with Session() as db:
         try:
             # We need to join with configs to filter by scope

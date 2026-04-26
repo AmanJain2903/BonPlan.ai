@@ -32,7 +32,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from redis.exceptions import RedisError
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
@@ -572,7 +572,10 @@ class RateLimiter:
                 constraint="uq_rate_limit_usage_sku_user_bucket",
                 # Only move the counter forward — never overwrite a higher
                 # value with a stale lower one (out-of-order task races).
-                set_={"usage": insert_stmt.excluded.usage},
+                set_={
+                    "usage": insert_stmt.excluded.usage,
+                    "updated_at": func.now()
+                },
                 where=RateLimitUsage.usage < insert_stmt.excluded.usage,
             )
             async with Session() as db:

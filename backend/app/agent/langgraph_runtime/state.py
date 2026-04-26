@@ -32,6 +32,11 @@ class PlannerState(TypedDict, total=False):
     # ── Research artefacts ────────────────────────────────────────────────────
     research_facts: dict                    # compact JSON ≤ 2 KB; schema_version: 1
 
+    # ── Journey order (locked in by research/START) ───────────────────────────
+    # Extracted from the START event's `start_details.journey` and surfaced
+    # explicitly to every day_planner invocation so they cannot drift from the
+    # destination order committed by the research phase.
+    journey: list                           # ordered list of destination names
 
     # ── Identity  ─────────────────────────────
     owner_id: Optional[str]

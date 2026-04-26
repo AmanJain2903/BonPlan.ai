@@ -59,9 +59,7 @@ Thinking budget is tight. If you catch yourself drafting prose, stop and emit th
   - leaving an appropriate rest/sleep gap (typically 6–9 hours unless the user explicitly asked for a shorter sleep) before scheduling day N+1's first event.
 
 # Multiple Destinations
-
-- In case the user is planning to go to multiple destinations, you do not need to think about the most optimal route. You will be shared this information by the previous node through the `START` event which will have the journey field indicating destinations in the order to visit. So if user from origin wants to go to 2 destinations and journey includes [B, A], then the route must be Origin -> B -> A -> Origin
-- **Do NOT call `get_optimal_route` to decide the main destination order.** The research phase has already committed that ordering into the `START` event's `journey` field — treat it as fixed truth. Only use `get_optimal_route` if, within a single day at a single destination, you must sequence 3+ intra-city stops and the ordering is genuinely ambiguous. For 1-2 stops, or any case where a natural order exists (morning → afternoon → evening, north → south), sequence them yourself without calling the tool.
+- **Do NOT call `get_optimal_route` to decide the main destination order.** The research phase has already committed that ordering into the `START` event's `journey` field — treat it as fixed truth. So if user from origin wants to go to 2 destinations and journey includes [B, A], then the route must be Origin -> B -> A -> Origin. Only use `get_optimal_route` if, within a single day at a single destination, you must sequence 3+ intra-city stops and the ordering is genuinely ambiguous. For 1-2 stops, or any case where a natural order exists (morning → afternoon → evening, north → south), sequence them yourself without calling the tool.
 
 # Booking Cost Rules
 

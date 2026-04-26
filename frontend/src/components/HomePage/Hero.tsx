@@ -88,7 +88,7 @@ export default function Hero({ plans = [], isLoadingPlans = false }: HeroProps) 
         whileTap={{ scale: 0.97 }}
         viewport={{ once: true, margin: "-50px" }}
         transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-        onClick={() => navigate(isLoggedIn ? '/draft-plan' : '/register')}
+        onClick={() => navigate('/draft-plan')}
         className={`relative group ${isLoggedIn && firstName ? 'mt-4' : 'mt-10'} inline-flex items-center gap-2.5 bg-cyan text-midnight font-bold text-lg tracking-wide rounded-xl px-8 py-3.5 hover:shadow-[0_0_30px_rgba(102,252,241,0.4)] transition-[box-shadow,background-color] duration-300 cursor-pointer`}
       >
         BUILD A BON PLAN

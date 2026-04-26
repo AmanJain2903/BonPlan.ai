@@ -17,9 +17,10 @@ interface DayCardProps {
   index?: number;
   onSelect?: (dayNumber: number) => void;
   hidden?: boolean;
+  destinations?: string[];
 }
 
-export default function DayCard({ day, index = 0, onSelect, hidden = false }: DayCardProps) {
+export default function DayCard({ day, index = 0, onSelect, hidden = false, destinations = [] }: DayCardProps) {
   const isDefaultTitle = typeof day.title === 'string' && day.title.trim().toLowerCase() === `day ${day.dayNumber}`;
   const displayTitle = day.title && !isDefaultTitle ? `${day.title}` : `Day ${day.dayNumber}`;
 
@@ -107,7 +108,7 @@ export default function DayCard({ day, index = 0, onSelect, hidden = false }: Da
       </div>
 
       <div className="flex-1 relative z-10">
-        <PlacesPolaroid day={day} />
+        <PlacesPolaroid day={day} destinations={destinations} variant="card" />
       </div>
 
       <div className="flex items-center gap-5 pt-5 border-t border-white/[0.08] relative z-10">
