@@ -45,11 +45,11 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
 
 
     mode = state.get("mode", "autonomous")
-    if mode != "autonomous":
+    if mode == "editing":
         emit({
             "type": "system",
             "content": f"Mode '{mode}' not wired yet.",
-            "error": "Only 'autonomous' mode is supported currently.",
+            "error": "Only 'autonomous' and 'collaborative' modes are supported currently.",
         })
         log.warning(f"Mode '{mode}' not wired yet.", mode=mode)
         return {"phase": "done", "cancelled": True}
