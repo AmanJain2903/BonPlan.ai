@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Check, X as XIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import GoogleSignInButton from './GoogleSignInButton';
@@ -24,6 +24,7 @@ function getPasswordChecks(pw: string) {
 
 export default function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [googleError, setGoogleError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -74,7 +75,7 @@ export default function Register() {
       );
       setStatus('success');
       setApiMessage(res.message || 'Registration successful!');
-      setTimeout(() => navigate('/login'), 4000);
+      setTimeout(() => navigate('/login', { state: location.state }), 4000);
     } catch (err: unknown) {
       setStatus('error');
       const detail =
@@ -253,7 +254,7 @@ export default function Register() {
 
         <p className="text-center text-xs text-white/30 mt-6">
           Already have an account?{' '}
-          <Link to="/login" className="text-cyan hover:text-cyan/80 transition-colors font-medium">Log in</Link>
+          <Link to="/login" state={location.state} className="text-cyan hover:text-cyan/80 transition-colors font-medium">Log in</Link>
         </p>
       </motion.div>
     </div>

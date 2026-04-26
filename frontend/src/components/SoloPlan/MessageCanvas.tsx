@@ -21,7 +21,7 @@ function UserMessage({ text }: { text: string }) {
       className="flex items-start justify-end gap-2.5 mb-2"
     >
       <div className="max-w-70 px-4 py-2.5 bg-white/[0.04] border border-white/[0.06] rounded-2xl rounded-tr-sm">
-        <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-words">
+        <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-word">
           {displayText}
           {needsTruncation && (
             <button
@@ -90,7 +90,7 @@ function ToolHistoryAccordion({
                   {tool.args && (
                     <div className="mb-2">
                       <span className="text-[10px] uppercase tracking-wider text-white/30 font-semibold">Query</span>
-                      <pre className="mt-1 text-[11px] text-white/50 bg-black/40 rounded-lg p-2 max-h-24 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-all">
+                      <pre className="mt-1 text-[11px] text-white/50 bg-black/40 rounded-lg p-2 max-h-24 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-word">
                         {typeof tool.args === 'string' ? tool.args : JSON.stringify(tool.args, null, 2)}
                       </pre>
                     </div>
@@ -98,7 +98,7 @@ function ToolHistoryAccordion({
                   {tool.response && (
                     <div>
                       <span className="text-[10px] uppercase tracking-wider text-white/30 font-semibold">Response</span>
-                      <pre className="mt-1 text-[11px] text-white/50 bg-black/40 rounded-lg p-2 max-h-32 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-all">
+                      <pre className="mt-1 text-[11px] text-white/50 bg-black/40 rounded-lg p-2 max-h-32 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-word">
                         {typeof tool.response === 'string' ? tool.response : JSON.stringify(tool.response, null, 2)}
                       </pre>
                     </div>
@@ -196,6 +196,50 @@ function ActiveToolIndicator({ activeTool }: { activeTool: { name: string; call_
         >
           <Loader2 className="w-4 h-4 text-cyan animate-spin shrink-0" />
           <span className="text-xs font-bold text-cyan/70 font-mono italic">Executing {activeTool.name}...</span>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function ActivePruningIndicator({ activePruningChunk }: { activePruningChunk: any | null }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <AnimatePresence>
+      {activePruningChunk && (
+        <motion.div
+          initial={{ opacity: 0, y: 10, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -5, scale: 0.97 }}
+          transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+          className="flex flex-col px-4 py-2"
+        >
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-4 h-4 text-cyan animate-spin shrink-0" />
+            <span className="text-xs font-bold text-cyan/70 font-mono italic">Compacting Memory...</span>
+            <button onClick={() => setExpanded(p => !p)} className="p-1 text-cyan/70 hover:text-cyan transition-colors ml-auto mr-2">
+              <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                <ChevronDown className="w-4 h-4" />
+              </motion.div>
+            </button>
+          </div>
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+                className="overflow-hidden"
+              >
+                <pre className="mt-2 text-[11px] text-white/50 bg-black/40 rounded-lg p-3 max-h-48 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-word">
+                  {typeof activePruningChunk.content === 'string'
+                    ? activePruningChunk.content
+                    : JSON.stringify(activePruningChunk, null, 2)}
+                </pre>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
@@ -484,9 +528,9 @@ export default function MessageCanvas({
   };[turns, toolsExpanded, thoughtsExpanded, systemLogExpanded]
 
   const scrollToBottom = () => {
-    scrollContainerRef.current?.scrollTo({ 
-      top: scrollContainerRef.current.scrollHeight, 
-      behavior: 'smooth' 
+    scrollContainerRef.current?.scrollTo({
+      top: scrollContainerRef.current.scrollHeight,
+      behavior: 'smooth'
     });
   };
 
@@ -529,65 +573,66 @@ export default function MessageCanvas({
       </div> */}
 
       {/* Scroll to Top - Top Right */}
-<div className="absolute right-0 top-0 z-20 pointer-events-none">
-  <AnimatePresence>
-    {showScrollTop && (
-      <motion.button
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.8 }}
-        onClick={scrollToTop}
-        className="p-2.5 text-cyan/40 hover:text-cyan hover:scale-120 transition-all pointer-events-auto shadow-lg"
-      >
-        <ArrowUp className="w-4 h-4" />
-      </motion.button>
-    )}
-  </AnimatePresence>
-</div>
-
-{/* Scroll to Bottom - Bottom Right */}
-<div className="absolute right-0 bottom-0 z-20 pointer-events-none">
-  <AnimatePresence>
-    {showScrollBottom && (
-      <motion.button
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.8 }}
-        onClick={scrollToBottom}
-        className="p-2.5 text-cyan/40 hover:text-cyan hover:scale-120 transition-all pointer-events-auto shadow-lg"
-      >
-        <ArrowDown className="w-4 h-4" />
-      </motion.button>
-    )}
-  </AnimatePresence>
-</div>
-      
-    <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-20 chat-scrollbar">
-      <div className="max-w-3xl mx-auto flex flex-col gap-1.5 relative">
-        {turns.map((turn) =>
-          turn.type === 'user' ? (
-            <UserMessage key={turn.id} text={turn.text} />
-          ) : (
-            <div key={turn.id} className="flex flex-col gap-1.5">
-              <ToolHistoryAccordion toolHistory={turn.toolHistory} expanded={toolsExpanded} onToggle={onToggleTools} />
-              <ThoughtsAccordion thoughtHistory={turn.thoughtHistory} expanded={thoughtsExpanded} onToggle={onToggleThoughts} />
-              <WaitingDots visible={turn.isStreaming && !turn.activeThinkingBubble && !turn.finalSummary} />
-              <ActiveToolIndicator activeTool={turn.activeToolIndicator} />
-              <ActiveThinkingBubble activeThinking={turn.activeThinkingBubble} thinkingEndRef={thinkingEndRef} />
-              <FinalSummaryMessage finalSummary={turn.finalSummary} summaryEndRef={summaryEndRef} />
-              <SystemMessageAccordion
-                systemLog={turn.systemLog}
-                expanded={systemLogExpanded}
-                onToggle={onToggleSystemLog}
-              />
-              <ErrorRecoveryMessage systemLog={turn.systemLog} errorType={errorType} onRetry={onRetry} />
-            </div>
-          )
-        )}
-
-        <div ref={messageEndRef} />
+      <div className="absolute right-0 top-0 z-20 pointer-events-none">
+        <AnimatePresence>
+          {showScrollTop && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              onClick={scrollToTop}
+              className="p-2.5 text-cyan/40 hover:text-cyan hover:scale-120 transition-all pointer-events-auto shadow-lg"
+            >
+              <ArrowUp className="w-4 h-4" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
-    </div>
+
+      {/* Scroll to Bottom - Bottom Right */}
+      <div className="absolute right-0 bottom-0 z-20 pointer-events-none">
+        <AnimatePresence>
+          {showScrollBottom && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              onClick={scrollToBottom}
+              className="p-2.5 text-cyan/40 hover:text-cyan hover:scale-120 transition-all pointer-events-auto shadow-lg"
+            >
+              <ArrowDown className="w-4 h-4" />
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-20 chat-scrollbar">
+        <div className="max-w-3xl mx-auto flex flex-col gap-1.5 relative">
+          {turns.map((turn) =>
+            turn.type === 'user' ? (
+              <UserMessage key={turn.id} text={turn.text} />
+            ) : (
+              <div key={turn.id} className="flex flex-col gap-1.5">
+                <ToolHistoryAccordion toolHistory={turn.toolHistory} expanded={toolsExpanded} onToggle={onToggleTools} />
+                <ThoughtsAccordion thoughtHistory={turn.thoughtHistory} expanded={thoughtsExpanded} onToggle={onToggleThoughts} />
+                <WaitingDots visible={turn.isStreaming && !turn.activeThinkingBubble && !turn.finalSummary} />
+                <ActiveToolIndicator activeTool={turn.activeToolIndicator} />
+                <ActivePruningIndicator activePruningChunk={turn.activePruningChunk} />
+                <ActiveThinkingBubble activeThinking={turn.activeThinkingBubble} thinkingEndRef={thinkingEndRef} />
+                <FinalSummaryMessage finalSummary={turn.finalSummary} summaryEndRef={summaryEndRef} />
+                <SystemMessageAccordion
+                  systemLog={turn.systemLog}
+                  expanded={systemLogExpanded}
+                  onToggle={onToggleSystemLog}
+                />
+                <ErrorRecoveryMessage systemLog={turn.systemLog} errorType={errorType} onRetry={onRetry} />
+              </div>
+            )
+          )}
+
+          <div ref={messageEndRef} />
+        </div>
+      </div>
     </div>
   );
 }

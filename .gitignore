@@ -35,4 +35,5 @@ dist-ssr
 .claude/
 
 # Test Results
+backend/app/agent/dumps/
 backend/app/agent/test/results/

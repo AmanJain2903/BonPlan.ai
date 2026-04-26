@@ -44,6 +44,7 @@ export interface BotTurn {
   type: 'bot';
   toolHistory: ToolEntry[];
   activeToolIndicator: { name: string; call_id: string } | null;
+  activePruningChunk: any | null;
   thoughtHistory: string;
   activeThinkingBubble: string;
   finalSummary: string;

@@ -49,19 +49,24 @@ export default function PlanSetup() {
     commitCurrentStepRef.current = null;
   }, [currentStepIndex]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      navigate('/login', { replace: true });
-    }
-  }, [isLoggedIn, navigate]);
-
-  if (!isLoggedIn) return null;
+  // Removed isLoggedIn check to allow unauthenticated users to draft plans
 
   const name = user?.firstName?.trim() || '';
 
   // Get the Metadata for the current step!
   const isSummary = currentStepIndex >= activeSteps.length;
   const currentStepMeta = isSummary ? null : activeSteps[currentStepIndex];
+
+  let displayTitle = currentStepMeta?.title || '';
+  let displayDescription = currentStepMeta?.description || '';
+
+  if (!name && currentStepMeta) {
+    displayTitle = displayTitle.replace(/,\s*\{name\}/g, '').replace(/\{name\}/g, '');
+    if (currentStepMeta.id === 'trip-preferences') {
+      displayTitle = "Let's set some preferences.";
+      displayDescription = "Tell us what you'd like to do on the trip";
+    }
+  }
 
   // --- Core Engine Functions ---
   const handleNext = () => {
@@ -102,8 +107,7 @@ export default function PlanSetup() {
                 navigate('/', { replace: true });
               }
             } else {
-              console.error('No JWT token found for drafting');
-              navigate('/login', { replace: true });
+              navigate('/register', { state: { submitDraft: true } });
             }
           }}
         />
@@ -244,7 +248,7 @@ export default function PlanSetup() {
                 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight animate-[fade-in_400ms_ease-out]"
               >
                 {/* This magically splits "Where are we going, {name}?" and styles the name! */}
-                {currentStepMeta.title.split('{name}').map((part, i, arr) =>
+                {displayTitle.split('{name}').map((part, i, arr) =>
                   i < arr.length - 1 ? (
                     <span key={i}>
                       {part}
@@ -259,7 +263,7 @@ export default function PlanSetup() {
 
             <div className="mt-3 h-5 flex items-center justify-center">
               <p className="text-white/40 text-sm animate-[fade-in_500ms_ease-out]" key={`desc-${currentStepMeta.id}`}>
-                {currentStepMeta.description}
+                {displayDescription}
               </p>
             </div>
           </div>

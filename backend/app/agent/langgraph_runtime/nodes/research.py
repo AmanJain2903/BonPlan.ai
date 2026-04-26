@@ -107,12 +107,29 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
     )
     research_emitted = list(result.emitted_events or [])
 
+    # Extract the START event (and its journey order) from this phase's
+    # emissions so the day planners see it in prior_events and can be given an
+    # explicit, mandatory destination order.
+    existing_prior = list(state.get("prior_events", []) or [])
+    start_event = next(
+        (e for e in research_emitted if (e or {}).get("event_type") == "START"),
+        None,
+    )
+    journey: list = []
+    if start_event:
+        journey = list(((start_event.get("start_details") or {}).get("journey") or []))
+        # Avoid double-adding START on resume (it may already be persisted).
+        if not any((e or {}).get("event_type") == "START" for e in existing_prior):
+            existing_prior.append(start_event)
+
     if not result.success:
         # Even if the LLM phase failed, hand the baseline facts to the day
         # planner so planning can proceed with SOMETHING rather than nothing.
         log.warning("Research phase failed", error=result.error)
         return {
             "research_facts": {},
+            "journey": journey,
+            "prior_events": existing_prior,
             "next_event_number": 1,   # day 1 starts fresh from event 1
             "current_day": 1
         }
@@ -120,10 +137,12 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
     llm_facts = await _parse_llm_research_json(result.last_text)
     research_facts = await _truncate_research_facts(llm_facts)
 
-    log.info("Research phase complete")
+    log.info("Research phase complete", journey=journey)
 
     return {
         "research_facts": research_facts,
+        "journey": journey,
+        "prior_events": existing_prior,
         "next_event_number": 1,   # day 1 starts fresh from event 1
         "current_day": 1
     }

@@ -1,19 +1,21 @@
 # add_itinerary_event
 
 ## Purpose
-Call this tool to commit a specific event (Flight, Hotel, Activity, Commute, etc.) to the user's itinerary. The agent must call this sequentially multiple times to build a full trip. Be mindful of the format you are passing in the arguments—it is a nested JSON object with keys and values following the required schemas.
+Call this tool to commit a specific event (Start, Flight, Hotel, Activity, Commute, etc.) to the user's itinerary. The agent must call this sequentially multiple times to build a full trip. Be mindful of the format you are passing in the arguments—it is a nested JSON object with keys and values following the required schemas.
 
 ## When to use
 Use this tool *after* calling information retrieval tools (like `search_flights`, `search_hotels`, `search_places`, `get_route_matrix`, etc.) to definitively lock down a step of the user's journey. You build the trip event by event, day by day.
 
 ## Critical Rules & Constraints
-1. **Lifecycle Constraints**: 
-   - You **MUST** start the itinerary by logging a `START` event type, using day number `0` and event number `0`.
-   - You **MUST** log regular events chronologically by event number (Event 1, Event 2, etc...) and day number (Day 1, Day 2, etc...) using standard event types.
-   - You **MUST** complete the itinerary by logging a final `END` event type, using day number `-1` and event number `-1`. Failure to log the `END` event will break the itinerary.
-2. **Strict Exclusivity**: You can only populate the specific details sub-object that matches your `event_type`. All other detail sub-objects MUST be omitted or set to null. For example, if `event_type` is `HOTEL_CHECKIN`, provide `hotel_checkin_details` and leave `flight_takeoff_details`, `commute_details`, etc., completely empty/null.
-3. **Data Accuracy & Sourcing**: All IDs, URLs (including logos and booking URLs), coordinates, names, prices and all other factual info in the output MUST be exact matches to real data fetched from the tool calls. Do not hallucinate information.
-4. **Time Formats**: 
+1. **Phase Constraints**:
+   - You **MUST** output events only for your current phase and no events for other phases must be emmited by you.
+2. **Lifecycle Constraints**: 
+   - If you are in `RESEARCH + START` phase you **MUST** log a `START` event type, using day number `0` and event number `0`. Failure to log the `START` event will break the itinerary.
+   - If you are in `DAY N of M` phase you **MUST** log regular events chronologically by event number (Event 1, Event 2, etc...) and for the day number N as provided to you using standard event types. You need not think of `START` and `END` event types.
+   - If you are in `FINALIZE` phase you **MUST** complete the itinerary by logging a final `END` event type, using day number `-1` and event number `-1`. Failure to log the `END` event will break the itinerary.
+3. **Strict Exclusivity**: You can only populate the specific details sub-object that matches your `event_type`. All other detail sub-objects MUST be omitted or set to null. For example, if `event_type` is `HOTEL_CHECKIN`, provide `hotel_checkin_details` and leave `flight_takeoff_details`, `commute_details`, etc., completely empty/null.
+4. **Data Accuracy & Sourcing**: All IDs, URLs (including logos and booking URLs), coordinates, names, prices and all other factual info in the output MUST be exact matches to real data fetched from the tool calls. Do not hallucinate information.
+5. **Time Formats**: 
    - Dates must be strictly formatted as `YYYY-MM-DD`. For `START` and `END` events, the date string should be strictly `"Start"` or `"End"` respectively.
    - Timestamps strictly formatted as `YYYY-MM-DDTHH:MM:SS` (representing the local time of the event's location).
 

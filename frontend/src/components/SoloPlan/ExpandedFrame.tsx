@@ -27,6 +27,7 @@ interface ExpandedFrameProps {
   allDays: ItineraryDay[];
   onClose: () => void;
   onNavigate: (delta: -1 | 1) => void;
+  destinations?: string[];
   /** Right-side action button in the header (e.g. Map / Back to Card toggle). */
   actionButton: ReactNode;
   /** Key identifying the currently rendered body, used to drive crossfade on view switches. */
@@ -49,6 +50,7 @@ export default function ExpandedFrame({
   actionButton,
   bodyKey,
   children,
+  destinations = [],
 }: ExpandedFrameProps) {
   const isDefaultTitle = typeof day.title === 'string' && day.title.trim().toLowerCase() === `day ${day.dayNumber}`;
   const displayTitle = day.title && !isDefaultTitle ? day.title : `Day ${day.dayNumber}`;
@@ -81,7 +83,7 @@ export default function ExpandedFrame({
         className={`relative w-full h-full rounded-3xl backdrop-blur-md overflow-hidden flex flex-col ${frameClass}`}
       >
         {/* Ambient background polaroid — rotates through the day's place images */}
-        <PlacesPolaroid day={day} variant="background" />
+        <PlacesPolaroid day={day} variant="background" destinations={destinations} />
 
         {day.isLoading && !day.hasError && (
           <motion.div

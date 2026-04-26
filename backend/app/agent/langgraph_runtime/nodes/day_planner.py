@@ -139,6 +139,17 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     prior_events = state.get("prior_events", []) or []
     is_resuming = bool(state.get("is_resuming", False))
     close_pass = bool(state.get("close_pass", False))
+
+    # Journey order is committed by the research phase via the START event.
+    # Day planners MUST follow it. Prefer the explicit state field; fall back
+    # to scraping it out of the START event in prior_events on resume runs
+    # where the field may not have been populated yet.
+    journey: list = list(state.get("journey") or [])
+    if not journey:
+        for ev in prior_events:
+            if (ev or {}).get("event_type") == "START":
+                journey = list(((ev.get("start_details") or {}).get("journey") or []))
+                break
     config = types.GenerateContentConfig(
         tools=[runtime.day_tool_block or runtime.planner_tool_block],
         system_instruction=AUTONOMOUS_SYSTEM_PROMPT,
@@ -159,6 +170,32 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         if is_resuming
         else ""
     )
+
+    origin = getattr(trip_data, "origin", None)
+    origin_label = (
+        getattr(origin, "city", None)
+        or "Origin"
+    )
+    if journey:
+        journey_chain = (
+            f"{origin_label} -> "
+            + " -> ".join(journey)
+            + f" -> {origin_label}"
+        )
+        journey_block = (
+            "MANDATORY DESTINATION ORDER (from the START event's `journey` field — "
+            "locked in by the research phase, NOT a suggestion):\n"
+            f"  {journey_chain}\n"
+            "Rules:\n"
+            f"  - Visit destinations strictly in this order. Do NOT reorder, skip, "
+            "merge, or insert destinations.\n"
+            "  - Use the already-emitted events to determine which destination the "
+            "traveler is currently in and which is next.\n"
+            "  - The trip starts and ends at the origin. Do NOT call "
+            "`get_optimal_route` to re-derive this order.\n\n"
+        )
+    else:
+        journey_block = ""
 
     open_bookings = _compute_open_bookings(prior_events)
     days_remaining_after_today = max(0, total_days - current_day)
@@ -204,6 +241,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         f"Phase: DAY {current_day} of {total_days}\n\n"
         f"User Request:\n{trip_data.model_dump_json()}\n\n"
         f"Research Context:\n{facts_json}\n\n"
+        f"{journey_block}"
         f"Already-Emitted Events (ground truth — do NOT re-emit, do NOT re-search what these establish):\n"
         f"{trip_state_json}\n\n"
         f"{open_bookings_block}"

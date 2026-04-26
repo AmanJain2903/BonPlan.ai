@@ -11,6 +11,7 @@ interface PlacesPolaroidProps {
    * "background" – used inside ExpandedFrame: just rotating images, no text, low opacity + blur.
    */
   variant?: 'card' | 'background';
+  destinations?: string[];
 }
 
 interface PlaceEntry {
@@ -18,12 +19,12 @@ interface PlaceEntry {
   placeName: string;
 }
 
-export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroidProps) {
+export default function PlacesPolaroid({ day, variant = 'card', destinations = [] }: PlacesPolaroidProps) {
   const [allImages, setAllImages] = useState<string[][]>([]); // One array of URLs per place
   const [placeIndex, setPlaceIndex] = useState(0);
   const [imageIndices, setImageIndices] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
-  const filteredPlacesRef = useRef<PlaceEntry[]>([]);
+  const filteredNamesRef = useRef<string[]>([]);
 
   // Extract unique places (by place_id) from qualifying events.
   // DINING/ACTIVITY store data in event.place_details; OTHER in event.other_details.
@@ -50,39 +51,64 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
 
   // Stable string key — only re-fetch when the actual set of place IDs changes
   const placeIdsKey = useMemo(() => places.map((p) => p.placeId).join(','), [places]);
+  const destinationsKey = useMemo(() => destinations.join(','), [destinations]);
 
   useEffect(() => {
     let mounted = true;
     const fetchImages = async () => {
       setLoading(true);
       try {
-        const rawImageSets = await Promise.all(
-          places.map(async (place) => {
-            const urls = await api.places.getDestinationImagesByPlaceId(place.placeId, 1, 1.5);
-            // Filter out fallback placeholder images
-            const validUrls = (urls || []).filter((url) => url && url !== FALLBACK_IMAGE);
-            return validUrls;
-          })
-        );
+        let finalImages: string[][] = [];
+        let finalNames: string[] = [];
 
-        if (mounted) {
-          // Only keep places that have at least one real image
+        if (places.length > 0) {
+          const rawImageSets = await Promise.all(
+            places.map(async (place) => {
+              const urls = await api.places.getDestinationImagesByPlaceId(place.placeId, 2, 1.5);
+              // Filter out fallback placeholder images
+              const validUrls = (urls || []).filter((url) => url && url !== FALLBACK_IMAGE);
+              return validUrls;
+            })
+          );
+
           const validIndices = rawImageSets
             .map((set, i) => (set.length > 0 ? i : -1))
             .filter((i) => i >= 0);
-          const filteredImages = validIndices.map((i) => rawImageSets[i]);
-          // Also filter the places list to stay in sync
-          const filteredPlaces = validIndices.map((i) => places[i]);
+          finalImages = validIndices.map((i) => rawImageSets[i]);
+          finalNames = validIndices.map((i) => places[i].placeName);
+        }
 
-          setAllImages(filteredImages);
-          setImageIndices(new Array(filteredImages.length).fill(0));
+        // Fallback to destinations if no place images were found
+        if (finalImages.length === 0 && destinations && destinations.length > 0) {
+          const destNames = destinations.map((d: any) => {
+            if (typeof d === 'string') return d;
+            const destName = (d.city ? `${d.city}` : "") + (d.state ? `, ${d.state}` : "") + (d.country ? `, ${d.country}` : "");
+            return destName || 'Unknown Destination';
+          });
+
+          const rawImageSets = await Promise.all(
+            destNames.map(async (name) => {
+              if (name === 'Unknown Destination') return [];
+              const urls = await api.places.getDestinationImagesByName(name, 2, 1.5);
+              return urls.length > 0 ? urls : [];
+            })
+          );
+
+          const validIndices = rawImageSets
+            .map((set, i) => (set.length > 0 ? i : -1))
+            .filter((i) => i >= 0);
+          finalImages = validIndices.map((i) => rawImageSets[i]);
+          finalNames = validIndices.map((i) => destNames[i]);
+        }
+
+        if (mounted) {
+          setAllImages(finalImages);
+          setImageIndices(new Array(finalImages.length).fill(0));
           setPlaceIndex(0);
           setLoading(false);
-          // Update the places ref so names stay in sync
-          filteredPlacesRef.current = filteredPlaces;
+          filteredNamesRef.current = finalNames;
 
-          // Pre-load all images into browser cache
-          filteredImages.forEach((set) => {
+          finalImages.forEach((set) => {
             set.forEach((url) => {
               const img = new Image();
               img.src = url;
@@ -94,22 +120,16 @@ export default function PlacesPolaroid({ day, variant = 'card' }: PlacesPolaroid
       }
     };
 
-    if (places.length > 0) {
-      fetchImages();
-    } else {
-      setLoading(false);
-      setAllImages([]);
-      setImageIndices([]);
-    }
+    fetchImages();
 
     return () => { mounted = false; };
-  }, [placeIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [placeIdsKey, destinationsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived state
   const currentPlaceImages = allImages[placeIndex] || [];
   const currentImageIndex = imageIndices[placeIndex] || 0;
   const currentImage = currentPlaceImages[currentImageIndex];
-  const currentName = filteredPlacesRef.current[placeIndex]?.placeName || '';
+  const currentName = filteredNamesRef.current[placeIndex] || '';
 
   // Auto-rotate: image every 1.5s, place every 3s
   useEffect(() => {

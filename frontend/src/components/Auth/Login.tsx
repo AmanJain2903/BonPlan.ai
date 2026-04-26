@@ -6,6 +6,7 @@ import GoogleSignInButton from './GoogleSignInButton';
 import WelcomePreferencesModal from './WelcomePreferencesModal';
 import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { useTrip } from '../../context/TripContext';
 
 type Status = 'idle' | 'loading' | 'error';
 
@@ -13,6 +14,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
+  const { trip, resetTrip } = useTrip();
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState<Status>('idle');
   const [apiMessage, setApiMessage] = useState('');
@@ -43,8 +45,22 @@ export default function Login() {
         const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
         const next = fromPath && fromPath.startsWith('/admin') && isAdmin ? fromPath : '/';
 
-        // Show welcome modal only for first-time registrations (server-driven)
-        if (res.is_new_user) {
+        const submitDraft = (location.state as any)?.submitDraft;
+        
+        if (submitDraft && trip.planningStyle && trip.tripData) {
+          try {
+            const draftRes = await api.plan.draftPlan(res.token, {
+              planningStyle: trip.planningStyle,
+              routingStyle: trip.routingStyle,
+              tripData: trip.tripData,
+            });
+            resetTrip();
+            navigate(`/plan/${trip.planningStyle}/${draftRes.trip_id}`, { replace: true });
+          } catch (err) {
+            console.error('Failed to submit draft post-login', err);
+            navigate(next, { replace: true });
+          }
+        } else if (res.is_new_user) {
           setShowWelcome(true);
         } else {
           navigate(next);

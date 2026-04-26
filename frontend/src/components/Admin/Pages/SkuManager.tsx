@@ -5,9 +5,11 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, Trash2, Edit2, Server, Globe, AlertCircle, Search, Menu } from 'lucide-react';
 import { cn } from '../../../utils/tailwind';
 import { api } from '../../../api/index';
+import { useAuth } from '../../../context/AuthContext';
 
 export default function SkuManager() {
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>();
+  const { token } = useAuth();
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,7 +27,8 @@ export default function SkuManager() {
   const loadConfigs = async () => {
     try {
       setLoading(true);
-      const data = await api.admin.fetchConfigs();
+      if (!token) return;
+      const data = await api.admin.fetchConfigs(token);
       setConfigs(data);
     } catch (err) {
       console.error(err);
@@ -39,8 +42,9 @@ export default function SkuManager() {
   }, []);
 
   const handleDelete = async () => {
+    if (!token) return;
     if ((deletingSku.sku_id && deletingSku.sku_id !== '') || (deletingSku.sku && deletingSku.sku !== '')) {
-      await api.admin.deleteConfig(deletingSku);
+      await api.admin.deleteConfig(token, deletingSku);
       setDeletingSku({ sku_id: '', sku: '' });
       loadConfigs();
     }
@@ -74,11 +78,12 @@ export default function SkuManager() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!token) return;
     try {
       if (editingSku) {
-        await api.admin.updateConfig({ sku_id: editingSku.id, ...formData });
+        await api.admin.updateConfig(token, { sku_id: editingSku.id, ...formData });
       } else {
-        await api.admin.createConfig(formData);
+        await api.admin.createConfig(token, formData);
       }
       setIsModalOpen(false);
       loadConfigs();
