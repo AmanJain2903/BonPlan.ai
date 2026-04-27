@@ -48,6 +48,8 @@ export default function ActivityCard({ event, onViewOnMap, contentKey }: Props) 
       accent={accent}
       contentKey={contentKey}
       viewOnMapButton={<ViewOnMapButton onClick={onViewOnMap} />}
+      startTime={d.start_time}
+      endTime={d.end_time}
       collapsedContent={
         <>
           <LogoOrIcon url={d.logo_url} name={d.place_name} />

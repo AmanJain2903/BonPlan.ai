@@ -119,4 +119,18 @@ export const api = {
             signal
         });
     },
+    respondToQuestion: async (
+        token: string,
+        id: string,
+        body: { call_id: string; answer: string | null; skipped: boolean },
+    ): Promise<Response> => {
+        return await fetch(`${AGENT_BASE}/agent/api/v1/solo-planner/generate/solo/${id}/respond`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+        });
+    },
 };

@@ -199,3 +199,10 @@ class AddItineraryEvent(BaseModel):
     commute_details: Optional[CommuteEventDetails] = Field(default=None, description="(Optional) Populate this only if event_type is COMMUTE. Never populate for any other event type.")
     other_details: Optional[OtherEventDetails] = Field(default=None, description="(Optional) Populate this only if event_type is OTHER. Never populate for any other event type.")
     end_details: Optional[EndEventDetails] = Field(default=None, description="(Optional) Populate this only if event_type is END. Never populate for any other event type.")
+
+class AdkUserQuestionTool(BaseModel):
+    question: str = Field(description="The question to ask the user. One sentence at max 250 chars.")
+    options: List[str] = Field(description="List of options for the user to choose from. Max 4 options. Keep them short and scannable. Always add an option like 'Surprise Me` at the end for open ended questions unless the choice is binary.")
+    answer_type: Literal["single", "multiple"] = Field(description="Type of answer expected. Can be 'single' or 'multiple'. Use 'single' for questions where the user can choose only one option and 'multiple' for questions where the user can choose multiple options.")
+    skippable: bool = Field(description="Whether the user can skip the question. Use true if the user can skip the question and false if the user cannot skip the question. Almost always True, unless the user is logistiacally or legally constrained in some way.")
+    reason: Optional[str] = Field(default=None, description="Reason for asking the question. This is for internal use only and will not be shown to the user. Keep the reason concise, no more than 300 characters.")

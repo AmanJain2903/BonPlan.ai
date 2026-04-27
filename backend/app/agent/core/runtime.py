@@ -36,6 +36,8 @@ from app.agent.schemas.structuredOutput import AddItineraryEvent
 from app.agent.helpers.utils import (
     convert_mcp_to_gemini,
     ADD_EVENT_TOOL,
+    ASK_USER_QUESTION_TOOL,
+    PER_TYPE_EVENT_TOOLS,
     build_phase_tool_block,
     RESEARCH_EVENT_TOOL_NAMES,
     DAY_EVENT_TOOL_NAMES,
@@ -131,6 +133,7 @@ class AgentRuntime:
     planner_tool_block: Optional[types.Tool] = None
     research_tool_block: Optional[types.Tool] = None
     day_tool_block: Optional[types.Tool] = None
+    day_tool_block_collaborative: Optional[types.Tool] = None
     finalizer_tool_block: Optional[types.Tool] = None
     planner_graph: Optional[Any] = None
     checkpointer: Optional[Any] = None
@@ -223,6 +226,9 @@ async def agent_runtime_context():
             runtime.day_tool_block = build_phase_tool_block(
                 day_mcp_decls, DAY_EVENT_TOOL_NAMES
             )
+            runtime.day_tool_block_collaborative = build_phase_tool_block(
+                day_mcp_decls, DAY_EVENT_TOOL_NAMES, ask_user_question_tool=ASK_USER_QUESTION_TOOL
+            )
             runtime.finalizer_tool_block = build_phase_tool_block(
                 finalizer_mcp_decls, FINALIZER_EVENT_TOOL_NAMES
             )
@@ -263,6 +269,7 @@ async def agent_runtime_context():
                 runtime.planner_tool_block = None
                 runtime.research_tool_block = None
                 runtime.day_tool_block = None
+                runtime.day_tool_block_collaborative = None
                 runtime.finalizer_tool_block = None
                 runtime.planner_graph = None
                 runtime.checkpointer = None

@@ -25,7 +25,7 @@ log = get_agent_logger("bootstrap")
 
 
 async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
-    run_id = (state.get("trip_id") + "-" + state.get("owner_id")) if state.get("owner_id") and state.get("trip_id") else str(uuid.uuid4())
+    run_id = (state.get("trip_id") + "-" + state.get("user_id")) if state.get("user_id") and state.get("trip_id") else str(uuid.uuid4())
     set_agent_log_context(run_id=run_id, node="bootstrap")
 
     _wait_attempts = 0

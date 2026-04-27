@@ -48,6 +48,19 @@ export const formatDate = (dateObj: any) => {
   return '';
 };
 
+export const getDateDifference = (start?: any, end?: any): number => {
+  if (!start || !end) return 0;
+  const startObj = safelyParseJSON(start);
+  const endObj = safelyParseJSON(end);
+  if (startObj?.year && startObj?.month && startObj?.day && endObj?.year && endObj?.month && endObj?.day) {
+    const startDate = new Date(startObj.year, startObj.month - 1, startObj.day);
+    const endDate = new Date(endObj.year, endObj.month - 1, endObj.day);
+    const diff = endDate.getTime() - startDate.getTime();
+    return Math.round(diff / (1000 * 60 * 60 * 24));
+  }
+  return 0;
+};
+
 export const formatDateForDayCard = (date: string) => {
   const year = date.split('-')[0];
   const month = date.split('-')[1];

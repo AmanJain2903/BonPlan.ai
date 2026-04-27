@@ -54,6 +54,7 @@ export default function SoloPlanView() {
   const [errorType, setErrorType] = useState<'stopped' | 'error' | null>(null);
   const [generatingOverride, setGeneratingOverride] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [isWaitingForUser, setIsWaitingForUser] = useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -82,6 +83,13 @@ export default function SoloPlanView() {
     setItineraryState({ ...session.itineraryState });
     setErrorType(session.errorType);
     setIsSessionActive(session.isActive);
+    setIsWaitingForUser(!!session.isWaitingForUser);
+
+    if (session.isActive) {
+      // While the run is active, lock the displayed mode to whatever the
+      // session was started in. Survives navigation away & back.
+      setChatMode(session.mode);
+    }
 
     if (!session.isActive && session.errorType == null) {
       setGeneratingOverride(false);
@@ -153,6 +161,10 @@ export default function SoloPlanView() {
           setErrorType(existingSession.errorType);
           if (existingSession.isActive) {
             setGeneratingOverride(true);
+            // Restore the chat-header label to whatever the session was
+            // actually running in (collaborative vs autonomous), not the
+            // local default that just got reset by the remount.
+            setChatMode(existingSession.mode);
           }
         } else if (itin) {
           const replayed = replayEvents(itin);
@@ -223,6 +235,21 @@ export default function SoloPlanView() {
     startPlanner();
   }, [startPlanner]);
 
+  const handleAnswerQuestion = useCallback(
+    async (params: { callId: string; answer: string | null; skipped: boolean }) => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!tripId || !token) return;
+      await generationManager.answerQuestion(
+        tripId,
+        params.callId,
+        params.answer,
+        params.skipped,
+        token,
+      );
+    },
+    [tripId],
+  );
+
   const handleMessageSend = useCallback(() => {
     const message = chatInput.trim();
     if (!message) return;
@@ -233,7 +260,6 @@ export default function SoloPlanView() {
       {
         id: `${Date.now()}-bot`,
         type: 'bot',
-        toolHistory: [],
         activeToolIndicator: null,
         activePruningChunk: null,
         thoughtHistory: '',
@@ -241,6 +267,7 @@ export default function SoloPlanView() {
         finalSummary: 'Message Received. Pending Development.',
         systemLog: null,
         isStreaming: false,
+        pendingQuestion: null,
       },
     ]);
     setChatInput('');
@@ -423,6 +450,8 @@ export default function SoloPlanView() {
                       messageEndRef={messageEndRef}
                       thinkingEndRef={thinkingEndRef}
                       summaryEndRef={summaryEndRef}
+                      onAnswerQuestion={handleAnswerQuestion}
+                      isWaitingForUser={isWaitingForUser}
                     />
 
                     <ChatInputBar

@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, type LucideIcon } from 'lucide-react';
-import { EASE_OUT_EXPO } from '../../constants';
+import { EASE_OUT_EXPO, getDateDifference } from '../../constants';
 
 interface SubCardShellProps {
   eventType: string;
@@ -15,6 +15,8 @@ interface SubCardShellProps {
   initiallyExpanded?: boolean;
   /** Change this key whenever the event data updates to trigger a content crossfade. */
   contentKey?: string | number;
+  startTime?: any;
+  endTime?: any;
 }
 
 const CONTENT_SWAP = {
@@ -32,7 +34,7 @@ const CONTENT_SWAP = {
  * smoothly while structural elements (pill, chevron, map button, bg) stay stable.
  */
 export default function SubCardShell({
-  eventType: _eventType,
+  eventType,
   label,
   Icon,
   accent,
@@ -42,6 +44,8 @@ export default function SubCardShell({
   onExpandChange,
   initiallyExpanded = false,
   contentKey,
+  startTime,
+  endTime,
 }: SubCardShellProps) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const canExpand = Boolean(expandedContent);
@@ -52,6 +56,9 @@ export default function SubCardShell({
     setExpanded(next);
     onExpandChange?.(next);
   };
+
+  const isCommute = eventType === 'COMMUTE' || eventType.startsWith('FLIGHT') || eventType.startsWith('CAR');
+  const dateDiff = (!isCommute && startTime && endTime) ? getDateDifference(startTime, endTime) : 0;
 
   // Use contentKey if provided, otherwise the collapsed content itself is stable
   const animKey = contentKey ?? 'stable';
@@ -65,6 +72,13 @@ export default function SubCardShell({
       transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
       className={`relative w-full rounded-2xl bg-black/50 border ${accent.border} backdrop-blur-sm overflow-hidden shadow-lg hover:shadow-cyan/10 transition-shadow`}
     >
+      {/* Date Difference Badge */}
+      {dateDiff > 0 && (
+        <div className="absolute top-0 right-0 bg-cyan text-black px-2 py-0.5 rounded-bl-xl text-[10px] font-bold shadow-md z-20">
+          +{dateDiff}
+        </div>
+      )}
+
       <div
         aria-hidden
         className="absolute inset-0 bg-gradient-to-br from-cyan/15 via-transparent to-cyan/15 pointer-events-none z-0"

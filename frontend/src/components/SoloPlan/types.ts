@@ -39,10 +39,40 @@ export interface UserTurn {
   text: string;
 }
 
+export interface PendingQuestion {
+  callId: string;
+  question: string;
+  options: string[];
+  answerType: 'single' | 'multiple';
+  skippable: boolean;
+  // Local UI state — not on the wire.
+  selectedOptions: string[];
+  customAnswer: string;
+  // When the user types free text we hide chip selections; when they
+  // re-activate a chip we hide free text but keep it stashed so it
+  // restores if every chip is later deselected.
+  stashedFreeText: string;
+  status: 'pending' | 'answered' | 'skipped' | 'stale';
+}
+
+/**
+ * A frozen Q&A exchange that gets inserted into the chat history once the
+ * user answers a pending question. Rendered as a single composite block so
+ * the question always sits ABOVE the answer in display, regardless of the
+ * surrounding newest-first ordering.
+ */
+export interface QAPairTurn {
+  id: string;
+  type: 'qa_pair';
+  question: string;
+  answer: string;
+  skipped: boolean;
+  staleInOtherTab?: boolean;
+}
+
 export interface BotTurn {
   id: string;
   type: 'bot';
-  toolHistory: ToolEntry[];
   activeToolIndicator: { name: string; call_id: string } | null;
   activePruningChunk: any | null;
   thoughtHistory: string;
@@ -50,9 +80,10 @@ export interface BotTurn {
   finalSummary: string;
   systemLog: SystemLog | null;
   isStreaming: boolean;
+  pendingQuestion: PendingQuestion | null;
 }
 
-export type ChatTurn = UserTurn | BotTurn;
+export type ChatTurn = UserTurn | BotTurn | QAPairTurn;
 
 export type ChatMode = 'autonomous' | 'collaborative' | 'editing';
 
@@ -60,9 +91,15 @@ export type PageState = 'DRAFT' | 'GENERATING' | 'EDITING';
 
 export interface GenerationSession {
   tripId: string;
+  // The mode the run was STARTED in. Persisted on the session so the chat
+  // header label survives navigation (the local SoloPlanView state can flip
+  // to 'editing' or be re-initialised on remount; this is the source of
+  // truth for "what was running").
+  mode: ChatMode;
   turns: ChatTurn[];
   itineraryState: ItineraryState;
   errorType: 'stopped' | 'error' | null;
   isActive: boolean;
+  isWaitingForUser: boolean;
   abortController: AbortController | null;
 }
