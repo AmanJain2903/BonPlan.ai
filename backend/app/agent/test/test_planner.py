@@ -245,7 +245,7 @@ async def run_test():
                 async for chunk in generate_trip_itinerary(
                     test_trip_payload,
                     mode="autonomous",
-                    owner_id="test_user",
+                    user_id="test_user",
                     trip_id=str(trip_id),
                 ):
                     chunks.append(chunk)

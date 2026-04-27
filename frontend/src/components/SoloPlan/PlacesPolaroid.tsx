@@ -25,6 +25,8 @@ export default function PlacesPolaroid({ day, variant = 'card', destinations = [
   const [imageIndices, setImageIndices] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const filteredNamesRef = useRef<string[]>([]);
+  // Stable per-instance random phase offset so cards don't all tick in sync
+  const tickOffsetRef = useRef(Math.floor(Math.random() * 1500));
 
   // Extract unique places (by place_id) from qualifying events.
   // DINING/ACTIVITY store data in event.place_details; OTHER in event.other_details.
@@ -132,37 +134,47 @@ export default function PlacesPolaroid({ day, variant = 'card', destinations = [
   const currentName = filteredNamesRef.current[placeIndex] || '';
 
   // Auto-rotate: image every 1.5s, place every 3s
+  // tickOffsetRef staggers each card's phase so they don't all tick in sync.
   useEffect(() => {
     if (loading || allImages.length === 0) return;
 
     let totalTicks = 0;
-    const intervalId = window.setInterval(() => {
-      totalTicks++;
+    let intervalId: number;
 
-      const placeImages = allImages[placeIndex] || [];
+    const startInterval = () => {
+      intervalId = window.setInterval(() => {
+        totalTicks++;
 
-      // Every 6s (every 2nd tick) swap place
-      if (totalTicks % 2 === 0 && allImages.length > 1) {
-        setImageIndices((prev) => {
-          const next = [...prev];
-          if (placeImages.length > 1) {
+        const placeImages = allImages[placeIndex] || [];
+
+        // Every 6s (every 2nd tick) swap place
+        if (totalTicks % 2 === 0 && allImages.length > 1) {
+          setImageIndices((prev) => {
+            const next = [...prev];
+            if (placeImages.length > 1) {
+              next[placeIndex] = (next[placeIndex] + 1) % placeImages.length;
+            }
+            return next;
+          });
+          setPlaceIndex((prev) => (prev + 1) % allImages.length);
+        }
+        // Every 3s (every tick) swap image within same place
+        else if (placeImages.length > 1) {
+          setImageIndices((prev) => {
+            const next = [...prev];
             next[placeIndex] = (next[placeIndex] + 1) % placeImages.length;
-          }
-          return next;
-        });
-        setPlaceIndex((prev) => (prev + 1) % allImages.length);
-      }
-      // Every 3s (every tick) swap image within same place
-      else if (placeImages.length > 1) {
-        setImageIndices((prev) => {
-          const next = [...prev];
-          next[placeIndex] = (next[placeIndex] + 1) % placeImages.length;
-          return next;
-        });
-      }
-    }, 1500);
+            return next;
+          });
+        }
+      }, 1500);
+    };
 
-    return () => window.clearInterval(intervalId);
+    const timeoutId = window.setTimeout(startInterval, tickOffsetRef.current);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
   }, [loading, allImages, placeIndex]);
 
   // ── Background variant: just the rotating image, no overlays ──────────

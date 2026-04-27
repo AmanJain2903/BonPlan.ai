@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { User, Wrench, Brain, ChevronDown, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { EASE_OUT_EXPO } from './constants';
-import { ToolEntry, SystemLog, ChatTurn } from './types';
+import { ToolEntry, SystemLog, ChatTurn, BotTurn, UserTurn, QAPairTurn } from './types';
 import { BotAvatar, BouncingDots } from './Atoms';
+import QuestionCard from './QuestionCard';
 
 // ─── Sub-sections ─────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ function UserMessage({ text }: { text: string }) {
       initial={{ opacity: 0, y: 10, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
-      className="flex items-start justify-end gap-2.5 mb-2"
+      className="flex items-start justify-end gap-2.5"
     >
       <div className="max-w-70 px-4 py-2.5 bg-white/[0.04] border border-white/[0.06] rounded-2xl rounded-tr-sm">
         <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-word">
@@ -36,79 +37,6 @@ function UserMessage({ text }: { text: string }) {
       <div className="w-7 h-7 rounded-full bg-cyan/10 border border-cyan/20 flex items-center justify-center shrink-0 mt-0.5">
         <User className="w-3.5 h-3.5 text-cyan" />
       </div>
-    </motion.div>
-  );
-}
-
-function ToolHistoryAccordion({
-  toolHistory,
-  expanded,
-  onToggle,
-}: {
-  toolHistory: ToolEntry[];
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  if (toolHistory.length === 0) return null;
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="overflow-hidden"
-    >
-      <button
-        onClick={onToggle}
-        className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-white/60 hover:text-white/80 transition-colors group"
-      >
-        <Wrench className="w-3.5 h-3.5 text-cyan/70" />
-        <span>Tool Calls ({toolHistory.length})</span>
-        <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown className="w-3.5 h-3.5" />
-        </motion.div>
-      </button>
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-3 flex flex-col gap-3 max-h-60 overflow-y-auto scrollbar-hide">
-              {toolHistory.map((tool) => (
-                <div key={tool.call_id} className="rounded-lg border border-white/[0.06] bg-black/30 p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    {tool.response ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-400/70" />
-                    ) : (
-                      <Loader2 className="w-3.5 h-3.5 text-cyan/70 animate-spin" />
-                    )}
-                    <span className="text-xs font-bold text-cyan/90 font-mono">{tool.name}</span>
-                  </div>
-                  {tool.args && (
-                    <div className="mb-2">
-                      <span className="text-[10px] uppercase tracking-wider text-white/30 font-semibold">Query</span>
-                      <pre className="mt-1 text-[11px] text-white/50 bg-black/40 rounded-lg p-2 max-h-24 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-word">
-                        {typeof tool.args === 'string' ? tool.args : JSON.stringify(tool.args, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                  {tool.response && (
-                    <div>
-                      <span className="text-[10px] uppercase tracking-wider text-white/30 font-semibold">Response</span>
-                      <pre className="mt-1 text-[11px] text-white/50 bg-black/40 rounded-lg p-2 max-h-32 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-word">
-                        {typeof tool.response === 'string' ? tool.response : JSON.stringify(tool.response, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 }
@@ -174,7 +102,7 @@ function WaitingDots({ visible }: { visible: boolean }) {
           className="flex items-start gap-3"
         >
           <BotAvatar />
-          <div className="flex items-center gap-1.5 px-4 py-4 mt-0.5">
+          <div className="flex items-center gap-1.5 px-0 py-3 mt-0.5">
             <BouncingDots />
           </div>
         </motion.div>
@@ -275,7 +203,7 @@ function ActiveThinkingBubble({
           className="flex items-start gap-3"
         >
           <BotAvatar icon={Brain} className="mt-0.5" />
-          <div className="flex-1 px-4 py-3">
+          <div className="flex-1 px-0 py-0">
             <div
               ref={scrollRef}
               className="max-w-70 max-h-20 overflow-y-auto scrollbar-hide pointer-events-none relative"
@@ -392,7 +320,7 @@ function FinalSummaryMessage({
           className="flex items-start gap-3"
         >
           <BotAvatar className="mt-0.5" />
-          <div className="flex-1 px-4 py-3">
+          <div className="flex-1 px-0 py-0">
             <div className="text-sm text-white/80 leading-relaxed prose prose-invert prose-sm max-w-none prose-strong:text-white prose-em:text-white/70 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-1 prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1">
               <ReactMarkdown>{finalSummary.trim()}</ReactMarkdown>
             </div>
@@ -449,6 +377,78 @@ function ErrorRecoveryMessage({
   );
 }
 
+// ─── Past-message renderers (frozen turns shown below the live latest turn) ───
+
+/**
+ * Composite Q&A block. ALWAYS renders the AI question above the user's
+ * answer — regardless of the surrounding newest-first / chronological
+ * ordering of other turns. This is intentional: a Q&A pair only reads
+ * naturally as Q-then-A.
+ *
+ * The AI question matches the summary-message style (no bg, just prose
+ * next to the bot avatar). Only the user's answer carries a bubble bg,
+ * matching the rest of the chat's user-message style.
+ */
+function QAPairMessage({ turn }: { turn: QAPairTurn }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="flex flex-col gap-2 mb-2"
+    >
+      {/* AI question — no bg, just text + bot avatar (summary chunk style) */}
+      {turn.question?.trim() && (
+        <div className="flex items-start gap-3">
+          <BotAvatar className="mt-0.5" />
+          <div className="flex-1 px-0 py-0">
+            <div className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">
+              {turn.question}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* User's answer — same bubble style as a regular user message */}
+      <div className="flex items-start justify-end gap-2.5">
+        <div className="max-w-70 px-4 py-2.5 bg-white/[0.04] border border-white/[0.06] rounded-2xl rounded-tr-sm">
+          <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-word">
+            {turn.answer || (turn.skipped ? 'Skipped' : '')}
+          </p>
+        </div>
+        <div className="w-7 h-7 rounded-full bg-cyan/10 border border-cyan/20 flex items-center justify-center shrink-0 mt-0.5">
+          <User className="w-3.5 h-3.5 text-cyan" />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function FrozenBotTurn({ turn }: { turn: BotTurn }) {
+  const [thoughtsExpanded, setThoughtsExpanded] = useState(false);
+  const [systemLogExpanded, setSystemLogExpanded] = useState(false);
+
+  const hasThoughts = !!turn.thoughtHistory?.trim();
+  const hasSummary = !!turn.finalSummary?.trim();
+  const hasSystemLog = turn.systemLog?.type === 'system';
+
+  const hasContent = hasThoughts || hasSummary || hasSystemLog;
+  if (!hasContent) return null;
+  // History view of a completed bot turn — collapsed accordion pills only,
+  // no in-progress indicators (no active tool, no active thinking bubble,
+  // no pruning, no pending question, no waiting dots).
+  return (
+    <div className="flex flex-col gap-1.5 mb-3">
+      <ThoughtsAccordion thoughtHistory={turn.thoughtHistory} expanded={thoughtsExpanded} onToggle={() => setThoughtsExpanded(p => !p)} />
+      <FinalSummaryMessage finalSummary={turn.finalSummary} />
+      <SystemMessageAccordion
+        systemLog={turn.systemLog}
+        expanded={systemLogExpanded}
+        onToggle={() => setSystemLogExpanded(p => !p)}
+      />
+    </div>
+  );
+}
+
 // ─── Composite Component ──────────────────────────────────────
 
 interface MessageCanvasProps {
@@ -466,6 +466,8 @@ interface MessageCanvasProps {
   summaryEndRef: RefObject<HTMLDivElement>;
   scrollPositionRef: MutableRefObject<number>;
   isAtBottomRef: MutableRefObject<boolean>;
+  onAnswerQuestion?: (params: { callId: string; answer: string | null; skipped: boolean }) => void;
+  isWaitingForUser?: boolean;
 }
 
 export default function MessageCanvas({
@@ -483,12 +485,34 @@ export default function MessageCanvas({
   summaryEndRef,
   scrollPositionRef,
   isAtBottomRef,
+  onAnswerQuestion,
+  isWaitingForUser,
 }: MessageCanvasProps) {
+  // Split turns into history (older) vs latest bot turn for sticky-top.
+  const lastBotIdx = (() => {
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      if (turns[i].type === 'bot') return i;
+    }
+    return -1;
+  })();
+  const latestBot: BotTurn | null = lastBotIdx >= 0 ? (turns[lastBotIdx] as BotTurn) : null;
+  const historyTurns: ChatTurn[] = lastBotIdx >= 0 ? turns.slice(0, lastBotIdx) : turns;
+
+  const handleQuestionSubmit = useCallback(
+    async (params: { callId: string; answer: string | null; skipped: boolean }) => {
+      if (onAnswerQuestion) await onAnswerQuestion(params);
+    },
+    [onAnswerQuestion],
+  );
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
+  // Standard chat semantics: chronological top-to-bottom in DOM, auto-scroll
+  // to BOTTOM where the latest live turn sits. `isAtBottomRef` is the
+  // "follow newest" sentinel — true when the user is parked at the bottom
+  // of the chat (the default reading position).
   const updateScrollState = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -506,7 +530,6 @@ export default function MessageCanvas({
   const handleScroll = () => updateScrollState();
 
   useEffect(() => {
-    // Small timeout to ensure the DOM has rendered the height
     const timer = setTimeout(updateScrollState, 100);
     return () => clearTimeout(timer);
   }, [turns, updateScrollState]);
@@ -516,16 +539,16 @@ export default function MessageCanvas({
     if (!container) return;
 
     if (isAtBottomRef.current) {
+      // Auto-follow: pin to the bottom where the latest live turn sits.
       container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
     } else {
-      // If user is scrolled up, keep them exactly where they were
       container.scrollTop = scrollPositionRef.current;
     }
   }, [turns, toolsExpanded, thoughtsExpanded, systemLogExpanded]);
 
   const scrollToTop = () => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };[turns, toolsExpanded, thoughtsExpanded, systemLogExpanded]
+  };
 
   const scrollToBottom = () => {
     scrollContainerRef.current?.scrollTo({
@@ -606,28 +629,56 @@ export default function MessageCanvas({
         </AnimatePresence>
       </div>
 
-      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-20 chat-scrollbar">
+      {/*
+        Chronological chat layout: oldest at top, newest at bottom. Auto-scroll
+        keeps the latest live bot turn parked at the bottom of the viewport.
+        A horizontal rule sits ABOVE the latest live turn to separate it from
+        the frozen past (frozen previous bot turns + qa_pair past blocks).
+      */}
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 chat-scrollbar">
         <div className="max-w-3xl mx-auto flex flex-col gap-1.5 relative">
-          {turns.map((turn) =>
-            turn.type === 'user' ? (
-              <UserMessage key={turn.id} text={turn.text} />
-            ) : (
-              <div key={turn.id} className="flex flex-col gap-1.5">
-                <ToolHistoryAccordion toolHistory={turn.toolHistory} expanded={toolsExpanded} onToggle={onToggleTools} />
-                <ThoughtsAccordion thoughtHistory={turn.thoughtHistory} expanded={thoughtsExpanded} onToggle={onToggleThoughts} />
-                <WaitingDots visible={turn.isStreaming && !turn.activeThinkingBubble && !turn.finalSummary} />
-                <ActiveToolIndicator activeTool={turn.activeToolIndicator} />
-                <ActivePruningIndicator activePruningChunk={turn.activePruningChunk} />
-                <ActiveThinkingBubble activeThinking={turn.activeThinkingBubble} thinkingEndRef={thinkingEndRef} />
-                <FinalSummaryMessage finalSummary={turn.finalSummary} summaryEndRef={summaryEndRef} />
-                <SystemMessageAccordion
-                  systemLog={turn.systemLog}
-                  expanded={systemLogExpanded}
-                  onToggle={onToggleSystemLog}
+
+          {/* History (older turns) — chronological top-to-bottom (oldest
+              first, newest just before the separator). */}
+          {historyTurns.map((turn) => {
+            if (turn.type === 'user') {
+              return <UserMessage key={turn.id} text={(turn as UserTurn).text} />;
+            }
+            if (turn.type === 'qa_pair') {
+              return <QAPairMessage key={turn.id} turn={turn as QAPairTurn} />;
+            }
+            return (
+              <FrozenBotTurn
+                key={turn.id}
+                turn={turn as BotTurn}
+              />
+            );
+          })}
+
+          {/* Latest (live) bot turn — at the BOTTOM of DOM. Auto-scroll
+              parks the viewport here. */}
+          {latestBot && (
+            <div key={latestBot.id} className="flex flex-col gap-1.5">
+              <ThoughtsAccordion thoughtHistory={latestBot.thoughtHistory} expanded={thoughtsExpanded} onToggle={onToggleThoughts} />
+              <WaitingDots visible={latestBot.isStreaming && !latestBot.activeThinkingBubble && !latestBot.finalSummary && !latestBot.pendingQuestion} />
+              <ActiveToolIndicator activeTool={latestBot.activeToolIndicator} />
+              <ActivePruningIndicator activePruningChunk={latestBot.activePruningChunk} />
+              <ActiveThinkingBubble activeThinking={latestBot.activeThinkingBubble} thinkingEndRef={thinkingEndRef} />
+              <FinalSummaryMessage finalSummary={latestBot.finalSummary} summaryEndRef={summaryEndRef} />
+              <SystemMessageAccordion
+                systemLog={latestBot.systemLog}
+                expanded={systemLogExpanded}
+                onToggle={onToggleSystemLog}
+              />
+              {latestBot.pendingQuestion && (
+                <QuestionCard
+                  pendingQuestion={latestBot.pendingQuestion}
+                  disabled={!isWaitingForUser}
+                  onSubmit={handleQuestionSubmit}
                 />
-                <ErrorRecoveryMessage systemLog={turn.systemLog} errorType={errorType} onRetry={onRetry} />
-              </div>
-            )
+              )}
+              <ErrorRecoveryMessage systemLog={latestBot.systemLog} errorType={errorType} onRetry={onRetry} />
+            </div>
           )}
 
           <div ref={messageEndRef} />

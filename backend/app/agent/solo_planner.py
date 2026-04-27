@@ -22,7 +22,7 @@
 #     "error": baseDelay
 # }
 
-# async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous", "collaborative", "editing"] = "autonomous", current_trip_itinerary: Optional[list] = None, owner_id: Optional[str] = None, trip_id: Optional[str] = None, cancellation_callback: Optional[Callable[[], Awaitable[bool]]] = None) -> AsyncGenerator[Dict[str, Any], None]:
+# async def generate_trip_itinerary(trip_payload: dict, mode: Literal["autonomous", "collaborative", "editing"] = "autonomous", current_trip_itinerary: Optional[list] = None, user_id: Optional[str] = None, trip_id: Optional[str] = None, cancellation_callback: Optional[Callable[[], Awaitable[bool]]] = None) -> AsyncGenerator[Dict[str, Any], None]:
 
 #     async def check_cancellation():
 #         if cancellation_callback and await cancellation_callback():
@@ -56,9 +56,11 @@ async def generate_trip_itinerary(
     trip_payload: dict,
     current_trip_itinerary: Optional[list] = None,
     mode: Literal["autonomous", "collaborative", "editing"] = "autonomous",
-    owner_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     trip_id: Optional[str] = None,
     cancellation_callback: Optional[Callable[[], Awaitable[bool]]] = None,
+    collab_seed_answer: Optional[str] = None,
+    collab_qa_pairs: Optional[List] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Thin LangGraph adapter.  All planning logic lives in langgraph_runtime/.
@@ -110,7 +112,7 @@ async def generate_trip_itinerary(
     initial_state = {
         "trip_input": trip_payload,
         "mode": mode,
-        "owner_id": owner_id,
+        "user_id": user_id,
         "trip_id": trip_id,
         "current_day": current_day,
         "next_event_number": next_event_number,
@@ -120,6 +122,14 @@ async def generate_trip_itinerary(
         "is_complete": False,
         "phase": "bootstrap",
     }
+    # Inject persisted collab Q&A when resuming so day planners get the full
+    # preference history and the checkpoint doesn't re-ask the seed question.
+    if is_resuming:
+        if collab_seed_answer:
+            initial_state["collab_seed_answer"] = collab_seed_answer
+            initial_state["collab_seed_answered"] = True
+        if collab_qa_pairs:
+            initial_state["prior_qa_pairs"] = collab_qa_pairs
 
     run_id = str(uuid.uuid4())
     graph_config = {"configurable": {"thread_id": run_id}}

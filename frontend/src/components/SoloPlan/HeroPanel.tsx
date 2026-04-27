@@ -71,10 +71,8 @@ export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, s
                 Autonomous
               </button>
               <button
-                onClick={() => {}}
-                disabled
-                className="flex-1 flex items-center justify-center py-2.5 px-4 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 z-10 text-white/30 cursor-not-allowed"
-                title="Collaborative Mode Coming Soon"
+                onClick={() => setPlannerMode('collaborative')}
+                className={`flex-1 flex items-center justify-center py-2.5 px-4 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 z-10 ${plannerMode === 'collaborative' ? 'text-black bg-cyan shadow-[0_0_15px_rgba(102,252,241,0.4)]' : 'text-white/50 hover:text-white'}`}
               >
                 Collaborative
               </button>

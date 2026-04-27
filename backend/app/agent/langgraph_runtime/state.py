@@ -39,7 +39,7 @@ class PlannerState(TypedDict, total=False):
     journey: list                           # ordered list of destination names
 
     # ── Identity  ─────────────────────────────
-    owner_id: Optional[str]
+    user_id: Optional[str]
     trip_id: Optional[str]
 
     # ── Cancellation ──────────────────────────────────────────────────────────
@@ -59,6 +59,23 @@ class PlannerState(TypedDict, total=False):
     # ── Reserved: collaborative mode ──────────────────────────────────────────
     pending_human_request: Optional[str]    # question to surface to the user
     human_response: Optional[str]           # user's answer
+    # Seed answer collected by collaboration_checkpoint before day planning.
+    # Fed verbatim into every day_planner's initial message so the LLM can
+    # tailor the trip to the user's stated vibe.
+    collab_seed_answer: Optional[str]
+    collab_seed_answered: bool              # True after the seed question resolved
+    # All Q&A pairs collected in prior sessions (loaded from DB on resume).
+    # Injected into each day_planner so the LLM doesn't repeat questions and
+    # can apply the user's stated preferences across days.
+    prior_qa_pairs: Optional[list]
+
+    # ── Day validation ───────────────────────────────────────────────────────
+    # Set by day_validator when current day fails validation; cleared on success.
+    # day_planner reads this to include error feedback in its next prompt.
+    day_validation_errors: Optional[str]
+    # How many validation retry attempts have run for the current day.
+    # Resets to 0 whenever day_validator advances to the next day.
+    day_validator_attempts: int
 
     # ── Reserved: editing mode ────────────────────────────────────────────────
     edit_scope: Optional[list]              # list of (day_number, event_number) pairs

@@ -43,6 +43,13 @@ Thinking budget is tight. If you catch yourself drafting prose, stop and emit th
 - **Meals**: unless the user opted out, every day has breakfast, lunch, dinner or maybe brunch or coffee as `DINING` events if time permits but try to schedule meals paced naturally. Never emit two meals or dining events very closely in time.
 - **Days are local, not UTC**: assign each event to the `day_number` matching the traveler's local wall-clock date at the event's location, even when a flight crosses midnight or a date line.
 
+## When to Close Open Bookings
+
+- **HOTEL_CHECKOUT**: emit this ONLY at the checkout time of the hotel on the traveler's **last day at that hotel** — either the final day of the trip, or the day they are physically moving to a different destination. On any intermediate day where the traveler sleeps at the same hotel again that night, do NOT emit `HOTEL_CHECKOUT`. Do NOT check out mid-stay only to re-check-in.
+- **CAR_DROPOFF**: emit only when the rental is genuinely over (switching to a flight, final day of trip, or no longer needing the car at this destination).
+- **FLIGHT_LAND**: emit only at the natural arrival of that flight leg — never manufacture an early landing.
+- **Rule of thumb**: if `Days remaining AFTER today > 0` and the traveler is staying at the same hotel tomorrow, skip `HOTEL_CHECKOUT` entirely for today.
+
 ## End-of-day Rule — A Day Must Always End at a Restful Location
 
 - **The last event of every day must leave the traveler somewhere they can rest for the night** — almost always back at the `HOTEL_CHECKIN` location (or a carried-over hotel). It must NEVER be a `DINING`, `ACTIVITY`, `FLIGHT_TAKEOFF`, `CAR_PICKUP`, or `OTHER` event that leaves them stranded at a venue, airport, or attraction.

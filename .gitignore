@@ -1,6 +1,7 @@
 __pycache__/
 .env
 .bonplan/
+.vscode
 
 # Logs
 logs
@@ -32,7 +33,12 @@ dist-ssr
 *.sw?
 
 # Claude Code
-.claude/
+.claude
+.mcp.json
+CLAUDE.md
+
+# Graphify
+graphify-out
 
 # Test Results
 backend/app/agent/dumps/

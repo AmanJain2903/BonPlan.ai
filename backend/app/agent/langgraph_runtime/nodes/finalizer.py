@@ -11,10 +11,13 @@ always receives a valid terminal state.
 import json
 import os
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from google.genai import types
+from sqlalchemy import select
 
+from app.database.database import Session
+from app.database.models.tripItinerariesTable import TripItinerary
 from app.logging import get_agent_logger, set_agent_log_context
 from app.agent.core.runtime import runtime
 from app.agent.langgraph_runtime.gemini_adapter import run_chat_loop
@@ -57,20 +60,43 @@ def _sum_trip_cost(events: list) -> float:
     return round(total, 2)
 
 async def finalizer_node(state: PlannerState) -> Dict[str, Any]:
-    run_id = (state.get("trip_id") + "-" + state.get("owner_id")) if state.get("owner_id") and state.get("trip_id") else str(uuid.uuid4())
+    run_id = (state.get("trip_id") + "-" + state.get("user_id")) if state.get("user_id") and state.get("trip_id") else str(uuid.uuid4())
     set_agent_log_context(run_id=run_id, node="finalizer", day=-1)
     log.info("Starting finalizer for the entire trip")
 
     trip_payload = state.get("trip_input", {})
     trip_data = TripInput(**trip_payload)
     research_facts = state.get("research_facts", {})
-    prior_events = state.get("prior_events", []) or []
+    prior_events: List[Dict] = list(state.get("prior_events") or [])
 
+    # Load full events from DB for cost computation — prior_events in state is
+    # pruned (closers and slim events) and would under-count costs.
+    full_events_for_cost: List[Dict] = prior_events  # fallback
+    trip_id = state.get("trip_id")
+    if trip_id:
+        try:
+            async with Session() as db:
+                itin = (
+                    await db.execute(
+                        select(TripItinerary).where(TripItinerary.trip_id == trip_id)
+                    )
+                ).scalar_one_or_none()
+                if itin and itin.events:
+                    full_events_for_cost = list(itin.events)
+        except Exception as exc:
+            log.warning(
+                "finalizer: DB load failed for cost computation, using state events. This means that the trip cost is not being computed correctly.",
+                trip_id=trip_id,
+                error=str(exc),
+            )
+
+    # Pruned prior_events passed to LLM for context (tips generation doesn't
+    # need full event details — research_facts + slim summary is sufficient).
     trip_state_json = json.dumps(prior_events, default=str)
 
-    # Pre-compute the trip cost from committed events so the model never
+    # Pre-compute the trip cost from full committed events so the model never
     # re-sums. Using the precomputed value keeps finalization one-shot.
-    precomputed_trip_cost = _sum_trip_cost(prior_events)
+    precomputed_trip_cost = _sum_trip_cost(full_events_for_cost)
 
 
     config = types.GenerateContentConfig(

@@ -1,5 +1,5 @@
 import { api } from '../../apis/plan';
-import { GenerationSession, ChatTurn, BotTurn, ItineraryState, ItineraryDay } from './types';
+import { GenerationSession, ChatTurn, BotTurn, ItineraryState, ItineraryDay, PendingQuestion, ChatMode, QAPairTurn } from './types';
 
 type Subscriber = (session: GenerationSession) => void;
 
@@ -84,10 +84,7 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
       return {
         ...prev,
         days: prev.days.map((day) => {
-          if (day.dayNumber < dayNum) {
-            return { ...day, isLoading: false };
-          }
-          if (day.dayNumber !== dayNum) return day;
+              if (day.dayNumber !== dayNum) return day;
 
           // Upsert by (day_number, event_number) so regenerated events replace
           // the prior entry instead of duplicating. Backend already upserts on
@@ -143,6 +140,33 @@ function flushThinking(turn: BotTurn): Pick<BotTurn, 'thoughtHistory' | 'activeT
 
 function handleSSEChunk(session: GenerationSession, chunk: any): void {
   switch (chunk.type) {
+    case 'heartbeat':
+      // Server liveness ping while awaiting user input. No UI state change.
+      return;
+
+    case 'question': {
+      const pq: PendingQuestion = {
+        callId: chunk.call_id,
+        question: chunk.question,
+        options: Array.isArray(chunk.options) ? chunk.options : [],
+        answerType: chunk.answer_type === 'multiple' ? 'multiple' : 'single',
+        skippable: chunk.skippable !== false,
+        selectedOptions: [],
+        customAnswer: '',
+        stashedFreeText: '',
+        status: 'pending',
+      };
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        ...flushThinking(turn),
+        activeToolIndicator: null,
+        activePruningChunk: null,
+        pendingQuestion: pq,
+      }));
+      session.isWaitingForUser = true;
+      return;
+    }
+
     case 'thinking':
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
@@ -153,15 +177,11 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
 
     case 'tool_call':
       session.turns = updateLastBotTurn(session.turns, (turn) => {
-        const hasTool = turn.toolHistory.some((t) => t.call_id === chunk.call_id);
         return {
           ...turn,
           ...flushThinking(turn),
           activeToolIndicator: { name: chunk.tool_name, call_id: chunk.call_id },
-          activePruningChunk: null,
-          toolHistory: hasTool
-            ? turn.toolHistory
-            : [...turn.toolHistory, { call_id: chunk.call_id, name: chunk.tool_name, args: chunk.args }],
+          activePruningChunk: null
         };
       });
       break;
@@ -170,9 +190,6 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         ...flushThinking(turn),
-        toolHistory: turn.toolHistory.map((t) =>
-          t.call_id === chunk.call_id ? { ...t, response: chunk.response } : t
-        ),
         activeToolIndicator:
           turn.activeToolIndicator && turn.activeToolIndicator.call_id === chunk.call_id
             ? null
@@ -189,6 +206,17 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
         activePruningChunk: chunk,
       }));
       break;
+
+    case 'day_end': {
+      const completedDay = chunk.day_number;
+      session.itineraryState = {
+        ...session.itineraryState,
+        days: session.itineraryState.days.map((day) =>
+          day.dayNumber === completedDay ? { ...day, isLoading: false } : day
+        ),
+      };
+      break;
+    }
 
     case 'event':
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
@@ -296,44 +324,78 @@ class GenerationManager {
     const controller = new AbortController();
     const baseItineraryState = options.initialItineraryState || { days: [] };
 
-    // Filter out trailing error bot turn from previous failed attempt
-    const cleanedTurns = existing?.turns ? [...existing.turns] : [];
-    if (cleanedTurns.length > 0) {
-      const lastTurn = cleanedTurns[cleanedTurns.length - 1];
-      if (lastTurn.type === 'bot' && (lastTurn as BotTurn).systemLog?.type === 'error') {
-        cleanedTurns.pop();
-      }
-    }
+    // Preserve every prior turn, including bot turns that ended in error or
+    // stop. The previous live bot turn is FROZEN (active indicators cleared,
+    // isStreaming=false, kept tool history + thoughts + summary + systemLog
+    // intact) so it joins history as a collapsed pill block. This is the
+    // same pattern collapseQuestion uses for Q&A flows.
+    const preservedTurns: ChatTurn[] = existing?.turns
+      ? existing.turns.map((turn) => {
+          if (turn.type !== 'bot') return turn;
+          const bot = turn as BotTurn;
+          // Only freeze if it's still flagged streaming or has live indicators.
+          if (
+            bot.isStreaming ||
+            bot.activeToolIndicator ||
+            bot.activePruningChunk ||
+            bot.activeThinkingBubble ||
+            bot.pendingQuestion
+          ) {
+            return {
+              ...bot,
+              isStreaming: false,
+              activeToolIndicator: null,
+              activePruningChunk: null,
+              activeThinkingBubble: '',
+              pendingQuestion: null,
+            } as BotTurn;
+          }
+          return bot;
+        })
+      : [];
+
+    // Normalise mode for the session label. The 'editing' string is sent to
+    // the backend for non-collaborative chat-after-generation, but for the
+    // chat-header label we treat it as autonomous (it's a continuation of
+    // an autonomously-generated plan).
+    const sessionMode: ChatMode =
+      options.mode === 'editing' ? 'editing' : options.mode === 'collaborative' ? 'collaborative' : 'autonomous';
 
     const session: GenerationSession = {
       tripId,
-      turns: cleanedTurns,
+      mode: sessionMode,
+      turns: preservedTurns,
       itineraryState: baseItineraryState,
       errorType: null,
       isActive: true,
+      isWaitingForUser: false,
       abortController: controller,
     };
 
-    session.turns = [
-      ...session.turns,
-      {
+    // Append a user turn only when the user actually typed something. On a
+    // resume / retry click the chatInput is empty and an empty user turn
+    // would render as a 0-height invisible row but still pollute the array.
+    const newTurns: ChatTurn[] = [...session.turns];
+    if (options.chatInput && options.chatInput.trim().length > 0) {
+      newTurns.push({
         id: `${Date.now()}-user`,
         type: 'user' as const,
         text: options.chatInput,
-      },
-      {
-        id: `${Date.now()}-bot`,
-        type: 'bot' as const,
-        toolHistory: [],
-        activeToolIndicator: null,
-        activePruningChunk: null,
-        thoughtHistory: '',
-        activeThinkingBubble: '',
-        finalSummary: '',
-        systemLog: null,
-        isStreaming: true,
-      },
-    ];
+      });
+    }
+    newTurns.push({
+      id: `${Date.now()}-bot`,
+      type: 'bot' as const,
+      activeToolIndicator: null,
+      activePruningChunk: null,
+      thoughtHistory: '',
+      activeThinkingBubble: '',
+      finalSummary: '',
+      systemLog: null,
+      isStreaming: true,
+      pendingQuestion: null,
+    });
+    session.turns = newTurns;
 
     this.sessions.set(tripId, session);
     this.notify(tripId);
@@ -401,6 +463,7 @@ class GenerationManager {
 
       session.turns = updateLastBotTurn(session.turns, (turn) => ({ ...turn, isStreaming: false }));
       session.isActive = false;
+      session.isWaitingForUser = false;
       this.notify(tripId);
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -416,8 +479,148 @@ class GenerationManager {
         this.markLoadingDaysAsError(session);
       }
       session.isActive = false;
+      session.isWaitingForUser = false;
       this.notify(tripId);
     }
+  }
+
+  /**
+   * Submit the user's answer to the currently-pending question for `tripId`.
+   *
+   * On 200: collapses the QuestionCard, splices in two synthetic past turns
+   * (assistant_question + user) so the chat reads naturally on scroll, and
+   * clears `isWaitingForUser`.
+   *
+   * On 409 (stale_question — answered in another tab): same collapse, but
+   * the user-turn body says "(answered in another tab)".
+   *
+   * On other errors: shows a system error message; the QuestionCard stays
+   * open so the user can retry once the issue is resolved.
+   */
+  async answerQuestion(
+    tripId: string,
+    callId: string,
+    answer: string | null,
+    skipped: boolean,
+    token: string,
+  ): Promise<void> {
+    const session = this.sessions.get(tripId);
+    if (!session) return;
+
+    let res: Response;
+    try {
+      res = await api.respondToQuestion(token, tripId, {
+        call_id: callId,
+        answer,
+        skipped,
+      });
+    } catch (err) {
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        systemLog: { type: 'error', content: 'Failed to deliver your answer.' },
+      }));
+      this.notify(tripId);
+      return;
+    }
+
+    if (res.ok) {
+      this.collapseQuestion(session, callId, answer, skipped, /*stale*/ false);
+      this.notify(tripId);
+      return;
+    }
+    if (res.status === 409) {
+      this.collapseQuestion(session, callId, answer, skipped, /*stale*/ true);
+      this.notify(tripId);
+      return;
+    }
+    let detail: string | undefined;
+    try {
+      detail = (await res.json())?.detail;
+    } catch (_) {
+      // ignore
+    }
+    session.turns = updateLastBotTurn(session.turns, (turn) => ({
+      ...turn,
+      systemLog: {
+        type: 'error',
+        content: detail || `Could not submit your answer (${res.status}).`,
+      },
+    }));
+    this.notify(tripId);
+  }
+
+  /**
+   * On answer:
+   *   1. Freeze the bot turn that asked the question. It keeps its tool
+   *      history / thoughts / summary so the user can still see what the
+   *      AI was doing before it asked. We just clear pendingQuestion and
+   *      mark isStreaming=false so all "active" indicators disappear.
+   *   2. Append a single composite QA pair turn (Q above A) as a frozen
+   *      past message.
+   *   3. Append a fresh empty bot turn that becomes the new live latestBot.
+   *      All subsequent SSE chunks update THIS turn — the previous turn's
+   *      tools / thoughts stay scoped to the previous turn.
+   */
+  private collapseQuestion(
+    session: GenerationSession,
+    callId: string,
+    answer: string | null,
+    skipped: boolean,
+    stale: boolean,
+  ): void {
+    let questionText = '';
+    session.turns = session.turns.map((turn) => {
+      if (
+        turn.type === 'bot' &&
+        turn.pendingQuestion &&
+        turn.pendingQuestion.callId === callId
+      ) {
+        questionText = turn.pendingQuestion.question;
+        return {
+          ...turn,
+          pendingQuestion: null,
+          isStreaming: false,          // freeze: no more live indicators
+          activeToolIndicator: null,
+          activePruningChunk: null,
+          activeThinkingBubble: '',
+        };
+      }
+      return turn;
+    });
+
+    let answerText: string;
+    if (stale) {
+      answerText = '(answered in another tab)';
+    } else if (skipped) {
+      answerText = 'Skipped';
+    } else {
+      answerText = answer || '';
+    }
+
+    const qaPair: QAPairTurn = {
+      id: `${Date.now()}-qa-${callId}`,
+      type: 'qa_pair',
+      question: questionText,
+      answer: answerText,
+      skipped,
+      staleInOtherTab: stale,
+    };
+
+    const newBot: BotTurn = {
+      id: `${Date.now()}-bot-after-${callId}`,
+      type: 'bot',
+      activeToolIndicator: null,
+      activePruningChunk: null,
+      thoughtHistory: '',
+      activeThinkingBubble: '',
+      finalSummary: '',
+      systemLog: null,
+      isStreaming: true,
+      pendingQuestion: null,
+    };
+
+    session.turns = [...session.turns, qaPair, newBot];
+    session.isWaitingForUser = false;
   }
 
   stopGeneration(tripId: string): void {
@@ -440,6 +643,7 @@ class GenerationManager {
 
     session.errorType = 'stopped';
     session.isActive = false;
+    session.isWaitingForUser = false;
     this.markLoadingDaysAsError(session);
     this.notify(tripId);
   }

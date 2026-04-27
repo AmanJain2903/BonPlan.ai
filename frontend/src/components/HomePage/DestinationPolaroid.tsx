@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../api';
@@ -16,6 +16,8 @@ export default function DestinationPolaroid({
   const [cityIndex, setCityIndex] = useState(0);
   const [imageIndices, setImageIndices] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  // Stable per-instance random phase offset so cards don't all tick together
+  const tickOffsetRef = useRef(Math.floor(Math.random() * 1500));
 
   // Parse destinations to string names
   const destNames = destinations.map((d: any) => {
@@ -82,38 +84,48 @@ export default function DestinationPolaroid({
   const hasMultipleCities = allImages.length > 1;
 
   // Auto-rotate logic: Image every 3s, City every 6s
+  // tickOffsetRef staggers each card's phase so they don't all tick in sync.
   useEffect(() => {
     if (loading || allImages.length === 0) return;
 
     let totalTicks = 0;
-    const intervalId = window.setInterval(() => {
-      totalTicks++;
+    let intervalId: number;
 
-      const cityImages = allImages[cityIndex] || [];
+    const startInterval = () => {
+      intervalId = window.setInterval(() => {
+        totalTicks++;
 
-      // 1. Every 3s (every 2nd tick), swap city
-      if (totalTicks % 2 === 0 && allImages.length > 1) {
-        setImageIndices(prev => {
-          const newIndices = [...prev];
-          if (cityImages.length > 1) {
+        const cityImages = allImages[cityIndex] || [];
+
+        // 1. Every 3s (every 2nd tick), swap city
+        if (totalTicks % 2 === 0 && allImages.length > 1) {
+          setImageIndices(prev => {
+            const newIndices = [...prev];
+            if (cityImages.length > 1) {
+              newIndices[cityIndex] = (newIndices[cityIndex] + 1) % cityImages.length;
+            }
+            return newIndices;
+          });
+          setCityIndex(prev => (prev + 1) % allImages.length);
+        }
+        // 2. Every 1.5s (every tick), swap image within city
+        else if (cityImages.length > 1) {
+          setImageIndices(prev => {
+            const newIndices = [...prev];
             newIndices[cityIndex] = (newIndices[cityIndex] + 1) % cityImages.length;
-          }
-          return newIndices;
-        });
-        setCityIndex(prev => (prev + 1) % allImages.length);
-      }
-      // 2. Every 1.5s (every tick), swap image within city
-      else if (cityImages.length > 1) {
-        setImageIndices(prev => {
-          const newIndices = [...prev];
-          newIndices[cityIndex] = (newIndices[cityIndex] + 1) % cityImages.length;
-          return newIndices;
-        });
-      }
-    }, 1500);
+            return newIndices;
+          });
+        }
+      }, 1500);
+    };
 
-    return () => window.clearInterval(intervalId);
-  }, [loading, allImages, cityIndex]); // Reset on city change (automatic or manual)
+    const timeoutId = window.setTimeout(startInterval, tickOffsetRef.current);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [loading, allImages, cityIndex, tickOffsetRef]); // Reset on city change (automatic or manual)
 
 
   return (

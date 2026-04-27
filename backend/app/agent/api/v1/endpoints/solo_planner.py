@@ -21,6 +21,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.agent.solo_planner import generate_trip_itinerary
+from app.agent.langgraph_runtime.collaboration import (
+    get_pending,
+    submit_answer,
+)
+from app.agent.helpers.qa_persistence import load_collab_qa
 from app.core.config import settings
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary, TripItineraryStatus
@@ -63,11 +68,35 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
             itinerary.cost = start_details.get(
                 "trip_cost_estimate", itinerary.cost
             )
+            # Persist to events so resume detection can find it.
+            if not any(e.get("event_type") == "START" for e in (itinerary.events or [])):
+                itinerary.events = list(itinerary.events or [])
+                itinerary.events.append(event)
+            else:
+                existing_start_event_index = None
+                for i, existing_event in enumerate(itinerary.events):
+                    if existing_event.get("event_type") == "START":
+                        existing_start_event_index = i
+                        break
+                if existing_start_event_index is not None:
+                    itinerary.events[existing_start_event_index] = event
         elif event_type == "END":
             end_details = event.get("end_details") or {}
             itinerary.title = end_details.get("trip_title", itinerary.title)
             itinerary.cost = end_details.get("trip_cost", itinerary.cost)
             itinerary.tips = end_details.get("trip_tips", itinerary.tips)
+            # Persist to events so the full event record is available on load.
+            if not any(e.get("event_type") == "END" for e in (itinerary.events or [])):
+                itinerary.events = list(itinerary.events or [])
+                itinerary.events.append(event)
+            else:
+                existing_end_event_index = None
+                for i, existing_event in enumerate(itinerary.events):
+                    if existing_event.get("event_type") == "END":
+                        existing_end_event_index = i
+                        break
+                if existing_end_event_index is not None:
+                    itinerary.events[existing_end_event_index] = event
         else:
             existing_event_index = None
             for i, existing_event in enumerate(itinerary.events):
@@ -147,6 +176,23 @@ async def generate_solo_plan(request: Request, id: str):
                 itinerary_row.status = TripItineraryStatus.GENERATING
 
             await db.commit()
+
+            # Load full Q&A history for collaborative mode.
+            # Seed answer → injected into state so checkpoint doesn't re-ask.
+            # All pairs → injected as prior_qa_pairs so day planners don't
+            # repeat questions and apply prior session preferences.
+            _collab_seed_answer: Optional[str] = None
+            _collab_qa_pairs: list = []
+            if mode == "collaborative":
+                _collab_qa_pairs = await load_collab_qa(str(id), str(user_id))
+                for entry in _collab_qa_pairs:
+                    if entry.get("context") == "seed":
+                        _collab_seed_answer = (
+                            "(no preference — surprise me)"
+                            if entry.get("skipped")
+                            else entry.get("answer") or None
+                        )
+                        break
 
             destinations_list = plan.destinations
             if isinstance(destinations_list, str):
@@ -283,9 +329,11 @@ async def generate_solo_plan(request: Request, id: str):
                 trip_payload,
                 mode=mode,
                 current_trip_itinerary=current_trip_itinerary,
-                owner_id=str(user_id),
+                user_id=str(user_id),
                 trip_id=str(id),
                 cancellation_callback=request.is_disconnected,
+                collab_seed_answer=_collab_seed_answer,
+                collab_qa_pairs=_collab_qa_pairs,
             )
 
             # Outer timeout: each `anext()` bounded by `sse_timeout_seconds`.
@@ -374,3 +422,79 @@ async def generate_solo_plan(request: Request, id: str):
                 # guarantee finalize was scheduled.
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.post("/generate/solo/{id}/respond")
+async def respond_to_question(request: Request, id: str):
+    """
+    Deliver a user's answer to the currently-pending collaborative question
+    for *id*. The matching chat-loop coroutine in the SSE stream awakens
+    and continues. The SSE stream itself stays open and is the only path
+    further chunks flow on.
+
+    Status codes:
+      200 — answer accepted
+      400 — malformed body or sanitization rejected the answer
+      401 — unauthenticated
+      403 — caller is not owner/shared_editor of the trip
+      404 — no pending question for this trip
+      409 — call_id mismatch (stale tab) or the question was already answered
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401, detail="Missing or invalid Authorization header."
+        )
+    token = auth_header.split(" ")[1]
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("user_id")
+    except Exception:
+        raise HTTPException(
+            status_code=401, detail="Invalid session. Please log in again."
+        )
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid token.")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+
+    call_id = body.get("call_id")
+    answer = body.get("answer")
+    skipped = bool(body.get("skipped", False))
+    if not isinstance(call_id, str) or not call_id:
+        raise HTTPException(status_code=400, detail="`call_id` is required.")
+
+    # RBAC check.
+    async with Session() as db:
+        rbac = (
+            await db.execute(
+                select(TripMember).where(
+                    TripMember.trip_id == id, TripMember.user_id == user_id
+                )
+            )
+        ).scalar_one_or_none()
+        if not rbac or rbac.role not in ["owner", "shared_editor"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to answer questions for this plan.",
+            )
+
+    # Quick existence check before submitting (gives a precise 404 vs the
+    # generic 'stale_question' that submit_answer returns for any mismatch).
+    if get_pending(str(id)) is None:
+        raise HTTPException(status_code=404, detail="No pending question for this trip.")
+
+    status, detail = submit_answer(str(id), call_id, answer, skipped)
+    if status == "ok":
+        return {"ok": True}
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail=detail or "not_found")
+    if status == "stale":
+        raise HTTPException(status_code=409, detail=detail or "stale_question")
+    if status == "invalid":
+        raise HTTPException(status_code=400, detail=detail or "invalid_answer")
+    # Defensive default — shouldn't be reachable.
+    raise HTTPException(status_code=500, detail="Unknown submit_answer status.")

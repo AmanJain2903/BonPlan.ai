@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from google.genai import types
 from app.agent.schemas.structuredOutput import (
     AddItineraryEvent,
@@ -14,6 +14,7 @@ from app.agent.schemas.structuredOutput import (
     CommuteEventDetails,
     OtherEventDetails,
     EndEventDetails,
+    AdkUserQuestionTool,
 )
 from app.logging import get_agent_logger
 
@@ -78,12 +79,29 @@ def _load_add_event_description() -> str:
         logger.warning("Failed to load add_event.md. Returning fallback description.")
         return "Call this tool to commit a specific event (Flight, Hotel, etc.) to the user's itinerary. The agent must call this multiple times to build a full trip. Be mindful for the format you are passing in the arguments. It is a nested JSON object with the keys and values as per the schema."
 
+def _load_ask_user_question_description() -> str:
+    path = os.path.join(os.path.dirname(__file__), "ask_user_question.md")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        logger.warning("Failed to load ask_user_question.md. Returning fallback description.")
+        return "Ask the user a question to gather missing information."
+
 ADD_EVENT_TOOL = types.FunctionDeclaration(
     name="add_itinerary_event",
     description=_load_add_event_description(),
-    # This ensures Gemini treats the arguments as a strictly structured JSON object
     parameters=fix_schema_for_gemini(AddItineraryEvent.model_json_schema())
 )
+
+ASK_USER_QUESTION_TOOL_NAME="ask_user_question"
+
+ASK_USER_QUESTION_TOOL = types.FunctionDeclaration(
+    name=ASK_USER_QUESTION_TOOL_NAME,
+    description=_load_ask_user_question_description(),
+    parameters=fix_schema_for_gemini(AdkUserQuestionTool.model_json_schema())
+)
+
 
 def convert_mcp_to_gemini(mcp_tool) -> types.FunctionDeclaration:
     return types.FunctionDeclaration(
@@ -263,7 +281,28 @@ FINALIZER_EVENT_TOOL_NAMES: List[str] = ["add_end_event"]
 def build_phase_tool_block(
     mcp_tools: List[types.FunctionDeclaration],
     event_tool_names: List[str],
+    ask_user_question_tool: Optional[types.FunctionDeclaration] = None
 ) -> types.Tool:
     """Compose MCP tools + the phase's per-type event tools into one Tool block."""
     decls = list(mcp_tools) + [PER_TYPE_EVENT_TOOLS[n] for n in event_tool_names]
+    if ask_user_question_tool:
+        decls.append(ask_user_question_tool)
     return types.Tool(function_declarations=decls)
+
+def _coerce_event_args(tool_name: str, raw_args: dict) -> dict:
+    """
+    Map a per-type tool call back into a unified AddItineraryEvent payload.
+
+    For single-event tools (e.g. add_flight_takeoff_event) we inject the
+    event_type the tool name implies, overriding anything the model sent so
+    mismatches can't slip through.
+    For multi-event tools (add_activity_or_dining_event) we trust the model's
+    event_type value since both options are valid.
+    """
+    args = dict(raw_args or {})
+    if tool_name == "add_itinerary_event":
+        return args
+    fixed = TOOL_NAME_TO_EVENT_TYPE.get(tool_name)
+    if fixed is not None:
+        args["event_type"] = fixed
+    return args

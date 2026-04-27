@@ -3,8 +3,10 @@ Event validation helpers — relocated from solo_planner.py.
 
 `validate_itinerary_event(args)` returns (error_str | None, coerced_args | None).
 `START_GUARD_MODES` lists modes where re-emitting START is forbidden.
+`_compute_open_bookings(events)` returns open opener events with no matching closer.
 """
 import math
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent.schemas.structuredOutput import AddItineraryEvent
@@ -60,6 +62,125 @@ _NATURAL_PAIRS = {
 # treated as the same place (same airport terminal, same hotel complex, etc.).
 _SAME_LOCATION_METERS = 1000.0
 
+# ─── Open-booking pairing ────────────────────────────────────────────────────
+# Opener event_type → (closer event_type, details field, label field)
+_OPEN_CLOSE: Dict[str, Tuple[str, str, str]] = {
+    "HOTEL_CHECKIN":  ("HOTEL_CHECKOUT", "hotel_checkin_details",  "hotel_name"),
+    "CAR_PICKUP":     ("CAR_DROPOFF",    "car_pickup_details",     "rental_company_name"),
+    "FLIGHT_TAKEOFF": ("FLIGHT_LAND",    "flight_takeoff_details", "flight_number"),
+}
+_CLOSE_TYPES = {close for close, _, _ in _OPEN_CLOSE.values()}
+
+# High-level category for each opener type (used for duplicate-open checks).
+_OPENER_CATEGORY: Dict[str, str] = {
+    "HOTEL_CHECKIN":  "HOTEL",
+    "CAR_PICKUP":     "CAR",
+    "FLIGHT_TAKEOFF": "FLIGHT",
+}
+_CATEGORY_CLOSE_TYPE: Dict[str, str] = {
+    "HOTEL": "HOTEL_CHECKOUT",
+    "CAR":   "CAR_DROPOFF",
+    "FLIGHT": "FLIGHT_LAND",
+}
+
+
+def _booking_bucket_key(event: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    """Return the (category, sub-key) bucket this event belongs to, or None."""
+    et = event.get("event_type")
+    if et in ("HOTEL_CHECKIN", "HOTEL_CHECKOUT"):
+        field = "hotel_checkin_details" if et == "HOTEL_CHECKIN" else "hotel_checkout_details"
+        name = ((event.get(field) or {}).get("hotel_name") or "").strip().lower()
+        return ("HOTEL", name)
+    if et in ("CAR_PICKUP", "CAR_DROPOFF"):
+        field = "car_pickup_details" if et == "CAR_PICKUP" else "car_dropoff_details"
+        name = ((event.get(field) or {}).get("rental_company_name") or "").strip().lower()
+        return ("CAR", name)
+    if et in ("FLIGHT_TAKEOFF", "FLIGHT_LAND"):
+        return ("FLIGHT", "")
+    return None
+
+
+def _compute_open_bookings(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return descriptors for every opener event that has no matching closer yet.
+
+    Events are grouped into (category, sub-key) buckets; within each bucket the
+    nth opener (by appearance order) is paired with the nth closer.
+    """
+    buckets: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for e in events:
+        key = _booking_bucket_key(e)
+        if key is None:
+            continue
+        slot = buckets.setdefault(key, {"openers": [], "closers": 0})
+        et = e.get("event_type")
+        if et in _OPEN_CLOSE:
+            slot["openers"].append(e)
+        elif et in _CLOSE_TYPES:
+            slot["closers"] += 1
+
+    open_items: List[Dict[str, Any]] = []
+    for key, slot in buckets.items():
+        for idx, opener in enumerate(slot["openers"]):
+            if idx < slot["closers"]:
+                continue
+            et = opener.get("event_type")
+            close_type, open_field, label_key = _OPEN_CLOSE[et]
+            details = opener.get(open_field) or {}
+            open_items.append({
+                "open_event_type": et,
+                "must_be_closed_by": close_type,
+                "opening_day_number": opener.get("day_number"),
+                "opening_event_number": opener.get("event_number"),
+                "label": details.get(label_key) or "",
+                "bucket": list(key),
+            })
+    return open_items
+
+
+# ─── Time-ordering helpers ────────────────────────────────────────────────────
+# Maps event_type → (details_field, start_time_key, end_time_key).
+# COMMUTE and START/END are omitted — they have no usable wall-clock times.
+_EVENT_TIMES: Dict[str, Tuple[str, str, str]] = {
+    "FLIGHT_TAKEOFF": ("flight_takeoff_details", "departure_time", "arrival_time"),
+    "FLIGHT_LAND":    ("flight_land_details",    "arrival_time",   "arrival_time"),
+    "HOTEL_CHECKIN":  ("hotel_checkin_details",  "checkin_time",   "checkin_time"),
+    "HOTEL_CHECKOUT": ("hotel_checkout_details", "checkout_time",  "checkout_time"),
+    "CAR_PICKUP":     ("car_pickup_details",     "pickup_time",    "pickup_time"),
+    "CAR_DROPOFF":    ("car_dropoff_details",    "dropoff_time",   "dropoff_time"),
+    "DINING":         ("place_details",          "start_time",     "end_time"),
+    "ACTIVITY":       ("place_details",          "start_time",     "end_time"),
+    "OTHER":          ("other_details",          "start_time",     "end_time"),
+}
+
+_DT_FORMATS = ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d")
+
+
+def _parse_dt(s: Any) -> Optional[datetime]:
+    if not isinstance(s, str):
+        return None
+    for fmt in _DT_FORMATS:
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _event_start_dt(event: Dict[str, Any]) -> Optional[datetime]:
+    et = event.get("event_type")
+    if et not in _EVENT_TIMES:
+        return None
+    field, start_key, _ = _EVENT_TIMES[et]
+    return _parse_dt((event.get(field) or {}).get(start_key))
+
+
+def _event_end_dt(event: Dict[str, Any]) -> Optional[datetime]:
+    et = event.get("event_type")
+    if et not in _EVENT_TIMES:
+        return None
+    field, _, end_key = _EVENT_TIMES[et]
+    return _parse_dt((event.get(field) or {}).get(end_key))
+
 
 def _latlng(c: Any) -> Optional[Tuple[float, float]]:
     if not isinstance(c, dict):
@@ -105,6 +226,99 @@ def _same_location(a: Optional[Tuple[float, float]], b: Optional[Tuple[float, fl
     if a is None or b is None:
         return True  # unknown → don't enforce
     return _haversine_m(a, b) <= _SAME_LOCATION_METERS
+
+
+def _validate_no_duplicate_open(
+    args: Dict[str, Any],
+    prior_events: List[Dict[str, Any]],
+) -> Optional[str]:
+    """Block a new opener when the same category already has an unclosed opener."""
+    et = args.get("event_type")
+    category = _OPENER_CATEGORY.get(et)
+    if category is None:
+        return None
+
+    open_items = _compute_open_bookings(prior_events)
+    same_cat = [
+        item for item in open_items
+        if _OPENER_CATEGORY.get(item.get("open_event_type")) == category
+    ]
+    if not same_cat:
+        return None
+
+    existing = same_cat[0]
+    close_type = _CATEGORY_CLOSE_TYPE[category]
+    label = existing.get("label") or ""
+    label_part = f" ({label})" if label else ""
+    log.warning(
+        "Agent tried to open a booking when same category already open",
+        new_event_type=et,
+        existing_open=existing,
+    )
+    return (
+        f"Cannot emit [{et}]: there is already an unclosed [{existing['open_event_type']}]{label_part} "
+        f"from day {existing['opening_day_number']}, event #{existing['opening_event_number']}. "
+        f"A planner must emit [{close_type}] to close it before opening a new one. "
+        "Re-emit the appropriate closing event (with the correct day_number and event_number for "
+        "the day/position it should have appeared), then re-emit this event."
+    )
+
+
+def _validate_time_order(
+    args: Dict[str, Any],
+    prior_events: List[Dict[str, Any]],
+) -> Optional[str]:
+    """Block an event whose start or end time falls before any prior event's end time."""
+    day_number = args.get("day_number")
+    et = args.get("event_type")
+    if et not in _EVENT_TIMES:
+        return None
+
+    new_start = _event_start_dt(args)
+    new_end = _event_end_dt(args)
+    if new_start is None and new_end is None:
+        return None
+
+    latest_end: Optional[datetime] = None
+    latest_event: Optional[Dict[str, Any]] = None
+    for e in prior_events:
+        if e.get("day_number") != day_number:
+            continue
+        e_end = _event_end_dt(e)
+        if e_end is not None and (latest_end is None or e_end > latest_end):
+            latest_end = e_end
+            latest_event = e
+
+    if latest_end is None or latest_event is None:
+        return None
+
+    # Determine which new time violates ordering
+    start_violates = new_start is not None and new_start < latest_end
+    end_violates = new_end is not None and new_end < latest_end
+    if not start_violates and not end_violates:
+        return None
+
+    violating_time = new_start if start_violates else new_end
+    violation_label = "starts" if start_violates else "ends"
+    log.warning(
+        "Agent emitted event out of chronological order",
+        new_event_type=et,
+        violating_time=str(violating_time),
+        prev_end=str(latest_end),
+        prev_event_type=latest_event.get("event_type"),
+    )
+    return (
+        f"Time ordering violation: this [{et}] event {violation_label} at "
+        f"{violating_time.strftime('%Y-%m-%dT%H:%M:%S')}, but a prior event "
+        f"(day {latest_event.get('day_number')}, event #{latest_event.get('event_number')} "
+        f"[{latest_event.get('event_type')}]) already ends at "
+        f"{latest_end.strftime('%Y-%m-%dT%H:%M:%S')}. "
+        "Events must be strictly chronological. "
+        "Either adjust this event's times so it starts >= the previous event's end, "
+        f"or re-emit the conflicting prior event (day_number={latest_event.get('day_number')}, "
+        f"event_number={latest_event.get('event_number')}) with corrected end time, "
+        "followed by any intermediate events, and then this event."
+    )
 
 
 async def _validate_placement(
@@ -355,6 +569,16 @@ async def validate_itinerary_event(
             f"but also received: {extra_fields}.",
             None,
         )
+
+    # Duplicate-open guard: block opener when same category already has unclosed opener.
+    dup_open_error = _validate_no_duplicate_open(args, prior_events or [])
+    if dup_open_error:
+        return dup_open_error, None
+
+    # Chronological time-order guard: block event that predates a prior event's end.
+    time_order_error = _validate_time_order(args, prior_events or [])
+    if time_order_error:
+        return time_order_error, None
 
     # Commute/placement rules — only after basic shape passes.
     placement_error = await _validate_placement(args, prior_events or [])

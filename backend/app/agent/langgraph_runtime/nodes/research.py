@@ -69,7 +69,7 @@ async def _parse_llm_research_json(text: Optional[str]) -> dict:
         return {}
 
 async def research_node(state: PlannerState) -> Dict[str, Any]:
-    run_id = (state.get("trip_id") + "-" + state.get("owner_id")) if state.get("owner_id") and state.get("trip_id") else str(uuid.uuid4())
+    run_id = (state.get("trip_id") + "-" + state.get("user_id")) if state.get("user_id") and state.get("trip_id") else str(uuid.uuid4())
     set_agent_log_context(run_id=run_id, node="research", day=0)
 
     trip_payload = state.get("trip_input", {})

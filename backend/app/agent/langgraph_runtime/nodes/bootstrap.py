@@ -25,7 +25,7 @@ log = get_agent_logger("bootstrap")
 
 
 async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
-    run_id = (state.get("trip_id") + "-" + state.get("owner_id")) if state.get("owner_id") and state.get("trip_id") else str(uuid.uuid4())
+    run_id = (state.get("trip_id") + "-" + state.get("user_id")) if state.get("user_id") and state.get("trip_id") else str(uuid.uuid4())
     set_agent_log_context(run_id=run_id, node="bootstrap")
 
     _wait_attempts = 0
@@ -45,11 +45,11 @@ async def bootstrap_node(state: PlannerState) -> Dict[str, Any]:
 
 
     mode = state.get("mode", "autonomous")
-    if mode != "autonomous":
+    if mode == "editing":
         emit({
             "type": "system",
             "content": f"Mode '{mode}' not wired yet.",
-            "error": "Only 'autonomous' mode is supported currently.",
+            "error": "Only 'autonomous' and 'collaborative' modes are supported currently.",
         })
         log.warning(f"Mode '{mode}' not wired yet.", mode=mode)
         return {"phase": "done", "cancelled": True}

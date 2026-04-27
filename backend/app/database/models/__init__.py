@@ -12,3 +12,4 @@ from app.database.models.tripItinerariesTable import TripItinerary
 from app.database.models.placePhotoCache import PlacePhotoCache
 from app.database.models.rateLimitConfigs import RateLimitConfigs
 from app.database.models.rateLimitUsage import RateLimitUsage
+from app.database.models.tripCollabQATable import TripCollabQA

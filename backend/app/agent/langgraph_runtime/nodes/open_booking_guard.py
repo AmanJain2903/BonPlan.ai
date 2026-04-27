@@ -14,11 +14,15 @@ FLIGHT_TAKEOFF) lacks its matching closer in prior_events.
     routing to finalizer anyway so the trip still terminates cleanly.
 """
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List
 
+from sqlalchemy import select
+
+from app.database.database import Session
+from app.database.models.tripItinerariesTable import TripItinerary
 from app.logging import get_agent_logger, set_agent_log_context
 from app.agent.langgraph_runtime.state import PlannerState
-from app.agent.langgraph_runtime.nodes.day_planner import _compute_open_bookings
+from app.agent.langgraph_runtime.validator import _compute_open_bookings
 
 log = get_agent_logger("open_booking_guard")
 
@@ -34,15 +38,37 @@ def _next_event_number_for_day(prior_events: list, day: int) -> int:
 
 async def open_booking_guard_node(state: PlannerState) -> Dict[str, Any]:
     run_id = (
-        (state.get("trip_id") + "-" + state.get("owner_id"))
-        if state.get("owner_id") and state.get("trip_id")
+        (state.get("trip_id") + "-" + state.get("user_id"))
+        if state.get("user_id") and state.get("trip_id")
         else str(uuid.uuid4())
     )
     set_agent_log_context(run_id=run_id, node="open_booking_guard", day=-1)
 
-    prior_events = state.get("prior_events", []) or []
+    prior_events: List[Dict] = list(state.get("prior_events") or [])
     total_days = state.get("total_days", 1)
-    open_items = _compute_open_bookings(prior_events)
+
+    # Load full events from DB — prior_events in state may be pruned (closers
+    # dropped), which would make _compute_open_bookings inaccurate.
+    full_events_for_check = prior_events  # fallback if DB unavailable
+    trip_id = state.get("trip_id")
+    if trip_id:
+        try:
+            async with Session() as db:
+                itin = (
+                    await db.execute(
+                        select(TripItinerary).where(TripItinerary.trip_id == trip_id)
+                    )
+                ).scalar_one_or_none()
+                if itin and itin.events:
+                    full_events_for_check = list(itin.events)
+        except Exception as exc:
+            log.warning(
+                "open_booking_guard: DB load failed, falling back to state events. This means that the open bookings are not being computed correctly.",
+                trip_id=trip_id,
+                error=str(exc),
+            )
+
+    open_items = _compute_open_bookings(full_events_for_check)
 
     if not open_items:
         return {"close_pass": False, "phase": "finalize"}

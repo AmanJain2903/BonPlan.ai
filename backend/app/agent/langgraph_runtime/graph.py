@@ -15,20 +15,28 @@ Graph topology - Planning Mode (autonomous mode/collaborative mode):
   research_and_start
     │
     ▼
-  collaboration_checkpoint  ← no-op today; future interrupt point (for human intervention in collaborative mode)
-    │
-    ▼ (routed by _should_plan_day)
-  day_planner ──────────────────────┐
-    │  (increments current_day)     │
-    │  routed by _route             │
-    ▼ (more days)                   │
-  day_planner (loop) ◄──────────────┘
-    │ (no more days)
+  collaboration_checkpoint  ← no-op in autonomous; in collaborative, runs a
+    │                         small LLM call to generate ONE seed question
+    │                         tailored to the actual trip + research facts,
+    │                         then awaits the user's reply before day planning.
+    ▼ (routed by _route_initial)
+  day_planner
+    │  (always routes to day_validator)
     ▼
-  open_booking_guard ───────────────┐ (close_pass=True → re-run last day)
+  day_validator  ──────────────────────────────────────────────┐
+    │  (on error, attempts < MAX: same current_day)            │
+    │  (on success / max attempts: current_day += 1)           │
+    ├─ errors + attempts ≤ MAX ──────────────────────────────► day_planner (retry same day)
+    │
+    ├─ no errors, current_day ≤ total_days ─────────────────► day_planner (next day)
+    │
+    └─ no errors, current_day > total_days
+         │
+         ▼
+  open_booking_guard ───────────────┐ (close_pass=True → re-run last day via day_planner)
     │                               │
     ▼ (no open bookings)            ▼
-  finalizer                     day_planner
+  finalizer                     day_planner → day_validator (close pass)
     │
     ▼
    END
@@ -45,6 +53,7 @@ from app.agent.langgraph_runtime.nodes.collaboration_checkpoint import (
     collaboration_checkpoint_node,
 )
 from app.agent.langgraph_runtime.nodes.day_planner import day_planner_node
+from app.agent.langgraph_runtime.nodes.day_validator import day_validator_node, MAX_VALIDATION_ATTEMPTS
 from app.agent.langgraph_runtime.nodes.open_booking_guard import open_booking_guard_node
 from app.agent.langgraph_runtime.nodes.finalizer import finalizer_node
 from app.agent.core.runtime import runtime
@@ -54,37 +63,63 @@ from app.logging import get_agent_logger
 log = get_agent_logger("graph")
 
 
-def _route(state: PlannerState):
-    # A cancelled/errored run is terminal — the frontend has already been told
-    # to stop via the `error` chunk, so we MUST NOT run finalizer (which would
-    # try to emit more events and confuse the client).
+def _route_after_bootstrap(state: PlannerState):
     if state.get("cancelled"):
-        log.info(f"Cancelled state detected. Routing to END")
+        log.info("Cancelled state detected. Routing to END")
+        return END
+    # Resuming with at least one day already in progress → skip research +
+    # START (START must not be re-emitted) and jump straight to checkpoint
+    # then day loop.
+    if state.get("is_resuming") and state.get("current_day", 0) > 0:
+        return "collaboration_checkpoint"
+    return "research_and_start"
+
+
+def _route_initial(state: PlannerState):
+    """Route from collaboration_checkpoint or resume to first day / guard."""
+    if state.get("cancelled"):
+        log.info("Cancelled state detected. Routing to END")
         return END
     current_day = state.get("current_day", 1)
     total_days = state.get("total_days", 1)
-    # All days done → guard checks for un-closed bookings before finalizing.
+    return "day_planner" if current_day <= total_days else "open_booking_guard"
+
+
+def _route_after_day_planner(state: PlannerState):
+    """After day_planner: always go to day_validator (or END if cancelled)."""
+    if state.get("cancelled"):
+        log.info("Cancelled state detected. Routing to END")
+        return END
+    return "day_validator"
+
+
+def _route_after_validator(state: PlannerState):
+    """
+    After day_validator:
+      - errors + attempts within limit → day_planner (retry same day)
+      - otherwise (success or max exceeded):
+          current_day ≤ total_days → day_planner (next day)
+          current_day > total_days → open_booking_guard
+    """
+    if state.get("cancelled"):
+        log.info("Cancelled state detected. Routing to END")
+        return END
+    errors = state.get("day_validation_errors")
+    attempts = state.get("day_validator_attempts", 0)
+    if errors and attempts <= MAX_VALIDATION_ATTEMPTS:
+        return "day_planner"
+    current_day = state.get("current_day", 1)
+    total_days = state.get("total_days", 1)
     return "day_planner" if current_day <= total_days else "open_booking_guard"
 
 
 def _route_after_guard(state: PlannerState):
     if state.get("cancelled"):
-        log.info(f"Cancelled state detected. Routing to END")
+        log.info("Cancelled state detected. Routing to END")
         return END
     # Guard sets close_pass=True when it needs the day_planner to run one
     # more close-only pass on the final day.
     return "day_planner" if state.get("close_pass") else "finalizer"
-
-
-def _route_after_bootstrap(state: PlannerState):
-    if state.get("cancelled"):
-        log.info(f"Cancelled state detected. Routing to END")
-        return END
-    # Resuming with at least one day already in progress → skip research +
-    # START (START must not be re-emitted) and jump straight to day loop.
-    if state.get("is_resuming") and state.get("current_day", 0) > 0:
-        return "collaboration_checkpoint"
-    return "research_and_start"
 
 
 def build_planner_graph(checkpointer=None):
@@ -102,6 +137,7 @@ def build_planner_graph(checkpointer=None):
     builder.add_node("research_and_start", research_node)
     builder.add_node("collaboration_checkpoint", collaboration_checkpoint_node)
     builder.add_node("day_planner", day_planner_node)
+    builder.add_node("day_validator", day_validator_node)
     builder.add_node("open_booking_guard", open_booking_guard_node)
     builder.add_node("finalizer", finalizer_node)
 
@@ -118,16 +154,23 @@ def build_planner_graph(checkpointer=None):
     builder.add_edge("research_and_start", "collaboration_checkpoint")
     builder.add_conditional_edges(
         "collaboration_checkpoint",
-        _route,
+        _route_initial,
         {
             "day_planner": "day_planner",
             "open_booking_guard": "open_booking_guard",
             END: END,
         },
     )
+    # day_planner always hands off to day_validator (cancel → END)
     builder.add_conditional_edges(
         "day_planner",
-        _route,
+        _route_after_day_planner,
+        {"day_validator": "day_validator", END: END},
+    )
+    # day_validator decides: retry same day, advance to next day, or guard
+    builder.add_conditional_edges(
+        "day_validator",
+        _route_after_validator,
         {
             "day_planner": "day_planner",
             "open_booking_guard": "open_booking_guard",

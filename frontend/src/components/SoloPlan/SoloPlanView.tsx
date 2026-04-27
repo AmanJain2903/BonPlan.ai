@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { api, Plan, TripItinerary } from '../../apis/plan';
-import { Bot, Minimize2 } from 'lucide-react';
+import { Bot, Minimize2, ArrowLeftRight } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
 import { ItineraryState, ChatTurn, ChatMode, PageState, GenerationSession } from './types';
@@ -53,6 +53,8 @@ export default function SoloPlanView() {
   const [itineraryState, setItineraryState] = useState<ItineraryState>({ days: [] });
   const [errorType, setErrorType] = useState<'stopped' | 'error' | null>(null);
   const [generatingOverride, setGeneratingOverride] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [isWaitingForUser, setIsWaitingForUser] = useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -80,6 +82,14 @@ export default function SoloPlanView() {
     setTurns([...session.turns]);
     setItineraryState({ ...session.itineraryState });
     setErrorType(session.errorType);
+    setIsSessionActive(session.isActive);
+    setIsWaitingForUser(!!session.isWaitingForUser);
+
+    if (session.isActive) {
+      // While the run is active, lock the displayed mode to whatever the
+      // session was started in. Survives navigation away & back.
+      setChatMode(session.mode);
+    }
 
     if (!session.isActive && session.errorType == null) {
       setGeneratingOverride(false);
@@ -151,6 +161,10 @@ export default function SoloPlanView() {
           setErrorType(existingSession.errorType);
           if (existingSession.isActive) {
             setGeneratingOverride(true);
+            // Restore the chat-header label to whatever the session was
+            // actually running in (collaborative vs autonomous), not the
+            // local default that just got reset by the remount.
+            setChatMode(existingSession.mode);
           }
         } else if (itin) {
           const replayed = replayEvents(itin);
@@ -161,6 +175,9 @@ export default function SoloPlanView() {
           const itinStatus = (itin.status || '').toUpperCase();
           if (hasEvents && itinStatus !== 'GENERATED') {
             setErrorType('error');
+          }
+          else if (hasEvents && itinStatus === 'GENERATED') {
+            setChatMode('editing');
           }
         }
       } catch (err) {
@@ -204,6 +221,11 @@ export default function SoloPlanView() {
     });
   }, [plan, tripId, contextMessage, chatMode, itineraryState]);
 
+  const toggleMode = useCallback(() => {
+    if (isSessionActive) return;
+    setChatMode((prev) => (prev === 'collaborative' ? 'autonomous' : 'collaborative'));
+  }, [isSessionActive]);
+
   const stopPlanner = useCallback(() => {
     if (!tripId) return;
     generationManager.stopGeneration(tripId);
@@ -212,6 +234,21 @@ export default function SoloPlanView() {
   const handleRetry = useCallback(() => {
     startPlanner();
   }, [startPlanner]);
+
+  const handleAnswerQuestion = useCallback(
+    async (params: { callId: string; answer: string | null; skipped: boolean }) => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!tripId || !token) return;
+      await generationManager.answerQuestion(
+        tripId,
+        params.callId,
+        params.answer,
+        params.skipped,
+        token,
+      );
+    },
+    [tripId],
+  );
 
   const handleMessageSend = useCallback(() => {
     const message = chatInput.trim();
@@ -223,13 +260,14 @@ export default function SoloPlanView() {
       {
         id: `${Date.now()}-bot`,
         type: 'bot',
-        toolHistory: [],
         activeToolIndicator: null,
+        activePruningChunk: null,
         thoughtHistory: '',
         activeThinkingBubble: '',
         finalSummary: 'Message Received. Pending Development.',
         systemLog: null,
         isStreaming: false,
+        pendingQuestion: null,
       },
     ]);
     setChatInput('');
@@ -304,9 +342,10 @@ export default function SoloPlanView() {
   }
 
   // ─── GENERATING / EDITING View ───────────────────────────────
-  const modeLabel = isGenerating
-    ? `${chatMode === 'editing' ? 'autonomous' : chatMode} mode`
-    : 'editing mode';
+  // ─── GENERATING / EDITING View ───────────────────────────────
+  const modeLabel = pageState === 'EDITING'
+    ? 'editing mode'
+    : `${chatMode} mode`;
 
   return (
     <motion.div
@@ -372,9 +411,20 @@ export default function SoloPlanView() {
                       <Bot className="w-8 h-8 text-cyan shrink-0" />
                       <div className="flex flex-col">
                         <h3 className="text-sm font-bold text-white">BonPlan AI Planner</h3>
-                        <span className="text-[10px] uppercase tracking-widest text-cyan/70 font-semibold">
-                          {modeLabel}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-widest text-cyan/70 font-semibold">
+                            {modeLabel}
+                          </span>
+                          {!isSessionActive && pageState !== 'EDITING' && (
+                            <button
+                              onClick={toggleMode}
+                              className="p-1 rounded-md text-cyan/40 hover:text-cyan hover:bg-cyan/10 transition-all"
+                              title={`Switch to ${chatMode === 'autonomous' ? 'collaborative' : 'autonomous'} mode`}
+                            >
+                              <ArrowLeftRight className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <button
                         onClick={() => setIsChatMinimized(true)}
@@ -400,6 +450,8 @@ export default function SoloPlanView() {
                       messageEndRef={messageEndRef}
                       thinkingEndRef={thinkingEndRef}
                       summaryEndRef={summaryEndRef}
+                      onAnswerQuestion={handleAnswerQuestion}
+                      isWaitingForUser={isWaitingForUser}
                     />
 
                     <ChatInputBar
