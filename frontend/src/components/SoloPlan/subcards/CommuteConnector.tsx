@@ -98,7 +98,7 @@ export default function CommuteConnector({ event, contentKey }: Props) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }}
       transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
-      className="relative w-full group"
+      className={`relative w-full group ${tipsOpen ? 'z-40' : 'z-0'}`}
     >
       <div
         role={clickable ? 'button' : undefined}

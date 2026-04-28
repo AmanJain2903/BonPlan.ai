@@ -14,7 +14,7 @@ whether to loop back for the next day or route to finalizer.
 import json
 import os
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from google.genai import types
 
@@ -23,7 +23,12 @@ from app.agent.core.runtime import runtime
 from app.agent.langgraph_runtime.gemini_adapter import run_chat_loop
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
-from app.agent.langgraph_runtime.validator import _compute_open_bookings
+from app.agent.langgraph_runtime.validator import (
+    _compute_open_bookings,
+    _event_end_dt,
+    _event_start_dt,
+    _event_coords,
+)
 
 log = get_agent_logger("day_planner")
 
@@ -44,6 +49,26 @@ with open(_COLLABORATIVE_PROMPT_PATH, "r", encoding="utf-8") as _f:
 # )
 # with open(_EDITING_PROMPT_PATH, "r", encoding="utf-8") as _f:
 #     EDITING_SYSTEM_PROMPT = _f.read()
+
+
+def _get_midnight_carryover(prior_events: List[Dict], current_day: int) -> Optional[Dict]:
+    """
+    Return the last event of the previous day if its end_time crosses midnight
+    into the next calendar day (i.e. start_date != end_date).
+    Returns None when there is no carryover or times are unavailable.
+    """
+    prev_day = current_day - 1
+    prev_events = [e for e in prior_events if e.get("day_number") == prev_day]
+    if not prev_events:
+        return None
+    last = max(prev_events, key=lambda e: e.get("event_number") or 0)
+    start_dt = _event_start_dt(last)
+    end_dt = _event_end_dt(last)
+    if start_dt is None or end_dt is None:
+        return None
+    if end_dt.date() > start_dt.date():
+        return last
+    return None
 
 
 async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
@@ -98,6 +123,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     resume_preamble = (
         "RESUME MODE — the events listed under 'Already-Emitted Events' have "
         "already been persisted. DO NOT re-emit them. DO NOT emit a START event."
+        "If you feel like the already emitted events have planned the whole day, you should stop immediately. Do not plan the whole day again."
         "\n\n"
         if is_resuming
         else ""
@@ -169,20 +195,43 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
             f"When Day {current_day} is fully emitted, stop — no summary, no recap."
         )
 
+    midnight_block = ""
+    if current_day > 1 and not close_pass:
+        carryover = _get_midnight_carryover(prior_events, current_day)
+        if carryover:
+            end_dt = _event_end_dt(carryover)
+            _, dest_coords = _event_coords(carryover)
+            end_time_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S") if end_dt else "unknown"
+            end_clock = end_dt.strftime("%H:%M") if end_dt else "unknown"
+            midnight_block = (
+                f"MIDNIGHT CARRYOVER — Day {current_day - 1} ended with a midnight-spanning event:\n"
+                f"  Name: {carryover.get('name') or carryover.get('event_type', '')}\n"
+                f"  Ends at: {end_time_str}\n"
+                f"  Location: {dest_coords}\n\n"
+                f"Day {current_day} MUST start from that event. Required first steps:\n"
+                f"  1. If the traveler is not already at a place somewhere they can rest for the night or they are at an activity, emit a COMMUTE from "
+                f"{dest_coords or 'the carryover event location'}.\n"
+                f"  2. Leave a rest gap of at least 6-9 hours from {end_clock} before "
+                f"the first scheduled activity of day {current_day}. Emit the event for this gap using the OTHER event type.\n"
+                f"  3. Only then plan normal day {current_day} content.\n\n"
+            )
+
     validation_error_block = ""
     if day_validation_errors:
         validation_error_block = (
             "VALIDATION ERRORS FROM PREVIOUS ATTEMPT — you MUST fix all of these:\n"
             f"{day_validation_errors}\n\n"
             "Fix rules:\n"
-            "  - Wrong day_number → re-emit with correct day_number.\n"
+            "  - Wrong day_number → re-emit the particular event with correct day_number.\n"
             "  - Missing event_number → fill the gap with the missing event.\n"
             "  - Missing COMMUTE → insert a COMMUTE event at the gap position and "
             "re-emit all subsequent events with event_number shifted up by 1.\n"
             "  - Timing violation → adjust start/end times of affected events "
             "or the commute durationSeconds, then re-emit those events.\n"
-            "Re-emit ALL events that need to change; downstream event_numbers "
-            "may cascade.\n\n"
+            "Do not re-emit the whole day again, only the events that need to change."
+            "If adding a new event in the middle of the day, shift the event_number of all the subsequent events up by 1."
+            "If changing an event needs changes in the subsequent events, re-emit the subsequent events as well."
+            "Never re-emit the events prior to the event that needs to change. Treat them as fixed and changing them will break the itinerary."
         )
 
     seed_block = ""
@@ -220,6 +269,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         f"Already-Emitted Events (ground truth — do NOT re-emit, do NOT re-search what these establish):\n"
         f"{trip_state_json}\n\n"
         f"{open_bookings_block}"
+        f"{midnight_block}"
         f"{validation_error_block}"
         f"{resume_preamble}"
         f"{task_instructions}"

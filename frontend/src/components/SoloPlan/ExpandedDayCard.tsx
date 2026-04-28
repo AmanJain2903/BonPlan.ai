@@ -46,7 +46,7 @@ export default function ExpandedDayCardBody({ day, onViewOnMap, navDirection = 1
   }, [day.dayNumber]);
 
   return (
-    <div className="w-full h-full overflow-y-auto px-5 py-5">
+    <div className="w-full h-full overflow-y-auto px-5 py-5 scrollbar-hide">
       <AnimatePresence mode="wait" custom={navDirection}>
         <motion.div
           key={day.dayNumber}

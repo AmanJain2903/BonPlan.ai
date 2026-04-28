@@ -79,8 +79,8 @@ async def _get_static_overhead(
     try:
         resp = await client.aio.models.count_tokens(
             model=_MODEL,
-            contents=[],
-            config=types.CountTokensConfig(
+            contents=[" "],
+            config=types.GenerateContentConfig(
                 system_instruction=config.system_instruction,
                 tools=config.tools,
             ),
@@ -112,7 +112,7 @@ async def _count_tokens_safe(
     try:
         count_cfg = None
         if config is not None:
-            count_cfg = types.CountTokensConfig(
+            count_cfg = types.GenerateContentConfig(
                 system_instruction=config.system_instruction,
                 tools=config.tools,
             )

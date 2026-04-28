@@ -101,18 +101,11 @@ Thinking budget is tight. If you catch yourself drafting prose, stop and emit th
 - **Meals**: unless the user opted out, every day has breakfast, lunch, dinner or maybe brunch or coffee as `DINING` events if time permits but try to schedule meals paced naturally. Never emit two meals or dining events very closely in time.
 - **Days are local, not UTC**: assign each event to the `day_number` matching the traveler's local wall-clock date at the event's location, even when a flight crosses midnight or a date line.
 
-## When to Close Open Bookings
-
-- **HOTEL_CHECKOUT**: emit this ONLY at the checkout time of the hotel on the traveler's **last day at that hotel** — either the final day of the trip, or the day they are physically moving to a different destination. On any intermediate day where the traveler sleeps at the same hotel again that night, do NOT emit `HOTEL_CHECKOUT`. Do NOT check out mid-stay only to re-check-in.
-- **CAR_DROPOFF**: emit only when the rental is genuinely over (switching to a flight, final day of trip, or no longer needing the car at this destination).
-- **FLIGHT_LAND**: emit only at the natural arrival of that flight leg — never manufacture an early landing.
-- **Rule of thumb**: if `Days remaining AFTER today > 0` and the traveler is staying at the same hotel tomorrow, skip `HOTEL_CHECKOUT` entirely for today.
-
 ## End-of-day Rule — A Day Must Always End at a Restful Location
 
 - **The last event of every day must leave the traveler somewhere they can rest for the night** — almost always back at the `HOTEL_CHECKIN` location (or a carried-over hotel). It must NEVER be a `DINING`, `ACTIVITY`, `FLIGHT_TAKEOFF`, `CAR_PICKUP`, or `OTHER` event that leaves them stranded at a venue, airport, or attraction.
 - If the last planned content-event of the day is a dinner, a sight, a show, or any activity away from the hotel, emit a `COMMUTE` (or, for non-transit rest such as a red-eye overnight on a flight, an `OTHER`) event that brings the traveler back to the hotel before you stop the day.
-- **Exception — midnight-spanning events**: if an ACTIVITY or other event legitimately runs past 00:00 local (e.g., a night show ending 01:30), you MAY end the day on that event without a return commute **only if** you then close the day immediately (no further events). The next day's planner is responsible for adding the return commute and leaving an appropriate rest gap.
+- **Exception — midnight-spanning events**: if an ACTIVITY or other event legitimately runs past 00:00 local (e.g., a night show ending 01:30), you **MUST** end the day on that event without emiting any further events. Use the correct end date for the such events. The next day's planner is responsible for adding the return commute and leaving an appropriate rest gap and scheduling other events after that for the next day. If you rather receive in prior events that a previous days event was ending midnight, you must start the day planning from that event.
 - Same rule applies to the final day of the trip — the day must end by bringing the traveler back to the origin (`FLIGHT_LAND` / `CAR_DROPOFF` etc. at origin coordinates), not stranded mid-activity.
 
 ## Midnight-Spanning Events
