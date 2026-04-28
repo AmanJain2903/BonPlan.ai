@@ -50,15 +50,21 @@ export const formatDate = (dateObj: any) => {
 
 export const getDateDifference = (start?: any, end?: any): number => {
   if (!start || !end) return 0;
-  const startObj = safelyParseJSON(start);
-  const endObj = safelyParseJSON(end);
-  if (startObj?.year && startObj?.month && startObj?.day && endObj?.year && endObj?.month && endObj?.day) {
-    const startDate = new Date(startObj.year, startObj.month - 1, startObj.day);
-    const endDate = new Date(endObj.year, endObj.month - 1, endObj.day);
-    const diff = endDate.getTime() - startDate.getTime();
-    return Math.round(diff / (1000 * 60 * 60 * 24));
-  }
-  return 0;
+
+  // 1. Convert to Date objects (handles ISO strings and objects)
+  const s = new Date(start);
+  const e = new Date(end);
+
+  // 2. Normalize both to Midnight (00:00:00) in the same timezone
+  // This ensures we are comparing "Calendar Days" regardless of the hour
+  const startDate = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  const endDate = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+
+  // 3. Calculate difference in days
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const diff = endDate.getTime() - startDate.getTime();
+  
+  return Math.round(diff / msPerDay);
 };
 
 export const formatDateForDayCard = (date: string) => {
