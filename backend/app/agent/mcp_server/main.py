@@ -56,6 +56,10 @@ from app.agent.mcp_server.tools.car_rental import search_rental_cars
 from app.agent.mcp_server.tools.accommodations import search_hotels
 from app.agent.mcp_server.tools.accommodations import get_hotel_booking_url
 
+# Currency Tools
+from app.agent.mcp_server.tools.currency import get_supported_currencies
+from app.agent.mcp_server.tools.currency import convert_currency_to_USD
+
 
 # This name will be visible to the LLM/Agent
 mcp = FastMCP("BonPlan_MCP_Server")
@@ -249,6 +253,19 @@ get_hotel_booking_url_tool = Tool.from_function(
     name="get_hotel_booking_url"
 )
 mcp.add_tool(get_hotel_booking_url_tool)
+
+# Currency Tools
+get_supported_currencies_tool = Tool.from_function(
+    get_supported_currencies,
+    name="get_supported_currencies"
+)
+mcp.add_tool(get_supported_currencies_tool)
+
+convert_currency_to_USD_tool = Tool.from_function(
+    convert_currency_to_USD,
+    name="convert_currency_to_USD"
+)
+mcp.add_tool(convert_currency_to_USD_tool)
 
 
 if __name__ == "__main__":

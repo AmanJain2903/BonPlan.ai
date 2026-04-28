@@ -74,7 +74,10 @@ _RESEARCH_MCP_TOOLS: set[str] = {
     "get_optimal_route",
     # Web
     "search_web",
-    "get_content_from_url"
+    "get_content_from_url",
+    # Currency
+    "get_supported_currencies",
+    "convert_currency_to_USD",
 }
 
 _DAY_MCP_TOOLS: set[str] = {
@@ -111,10 +114,16 @@ _DAY_MCP_TOOLS: set[str] = {
     # Hotels
     "search_hotels",
     "get_hotel_booking_url",
+    # Currency
+    "get_supported_currencies",
+    "convert_currency_to_USD",
 }
 
 _FINALIZER_MCP_TOOLS: set[str] = {
-    # No tools needed for the finalizer
+    # No tools needed for the finalizer but currency tools are needed for the finalizer to convert the currency to USD for the final summary if not in USD already.(RARE)
+    # Currency
+    "get_supported_currencies",
+    "convert_currency_to_USD",
 }
 
 
