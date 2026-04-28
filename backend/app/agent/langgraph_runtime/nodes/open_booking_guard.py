@@ -47,28 +47,7 @@ async def open_booking_guard_node(state: PlannerState) -> Dict[str, Any]:
     prior_events: List[Dict] = list(state.get("prior_events") or [])
     total_days = state.get("total_days", 1)
 
-    # Load full events from DB — prior_events in state may be pruned (closers
-    # dropped), which would make _compute_open_bookings inaccurate.
-    full_events_for_check = prior_events  # fallback if DB unavailable
-    trip_id = state.get("trip_id")
-    if trip_id:
-        try:
-            async with Session() as db:
-                itin = (
-                    await db.execute(
-                        select(TripItinerary).where(TripItinerary.trip_id == trip_id)
-                    )
-                ).scalar_one_or_none()
-                if itin and itin.events:
-                    full_events_for_check = list(itin.events)
-        except Exception as exc:
-            log.warning(
-                "open_booking_guard: DB load failed, falling back to state events. This means that the open bookings are not being computed correctly.",
-                trip_id=trip_id,
-                error=str(exc),
-            )
-
-    open_items = _compute_open_bookings(full_events_for_check)
+    open_items = _compute_open_bookings(prior_events)
 
     if not open_items:
         return {"close_pass": False, "phase": "finalize"}

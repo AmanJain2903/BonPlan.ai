@@ -9,20 +9,22 @@ Responsibilities:
        c. missing-commute check (second pass after real-time validator)
        d. timing correctness including commute duration (durationSeconds)
   2. On validation failure (and attempts < MAX_VALIDATION_ATTEMPTS):
-       - Strip current_day events from prior_events
-       - Return errors to state so day_planner includes them in next prompt
+       - Keep events before the first broken event_number (smart partial retry)
+       - Strip from first broken event onward
+       - Return errors + first_broken pointer so day_planner re-emits only what changed
        - Do NOT advance current_day
   3. On success (or max attempts exceeded):
        - Emit a `day_end` SSE chunk (instant — no LLM call)
-       - Prune prior_events to minimise context passed to subsequent planners:
+       - Slim prior_events from older completed days to reduce context:
+           * Never drop events (avoids phantom-booking state desync)
            * Open openers (no matching closer): keep full
-           * Last event per day: keep full
-           * Closers (HOTEL_CHECKOUT, CAR_DROPOFF, FLIGHT_LAND): drop
-           * Closed opener+closer pairs: drop both sides
-           * All other events: slim {event_type, event_number, day_number,
-                                     day_title, date, name, description}
+           * Last event of each completed day: keep full
+           * Yesterday's events (current_day - 1): keep full (midnight carryover)
+           * All other older events: slim to {event_type, event_number, day_number,
+                                              day_title, date, name, description}
        - Advance current_day by 1 and reset per-day counters
 """
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -44,108 +46,144 @@ log = get_agent_logger("day_validator")
 
 MAX_VALIDATION_ATTEMPTS = 2  # after this many failures, advance anyway
 
-_CLOSER_TYPES = {"HOTEL_CHECKOUT", "CAR_DROPOFF", "FLIGHT_LAND"}
-_OPENER_TYPES = {"HOTEL_CHECKIN", "CAR_PICKUP", "FLIGHT_TAKEOFF"}
-_SPECIAL_TYPES = {"START", "END"}
+
+# ─── Prior-events slim helpers ────────────────────────────────────────────────
+
+_SLIM_KEYS = frozenset({
+    "event_type", "event_number", "day_number", "date", "name", "description",
+})
 
 
-# ─── Slim-event helper ───────────────────────────────────────────────────────
+def _slim_event(event: Dict) -> Dict:
+    result = {k: v for k, v in event.items() if k in _SLIM_KEYS and v is not None}
+    # Preserve the pairing field used by _compute_open_bookings/_booking_bucket_key
+    # so that slimmed openers and closers always land in the same bucket.
+    # Without this, a full opener and a slimmed closer (or vice versa) end up in
+    # different buckets and the pair appears as a phantom open booking.
+    et = event.get("event_type", "")
+    if et in ("HOTEL_CHECKIN", "HOTEL_CHECKOUT"):
+        field = "hotel_checkin_details" if et == "HOTEL_CHECKIN" else "hotel_checkout_details"
+        hotel_name = (event.get(field) or {}).get("hotel_name")
+        if hotel_name:
+            result[field] = {"hotel_name": hotel_name}
+    elif et in ("CAR_PICKUP", "CAR_DROPOFF"):
+        field = "car_pickup_details" if et == "CAR_PICKUP" else "car_dropoff_details"
+        company = (event.get(field) or {}).get("rental_company_name")
+        if company:
+            result[field] = {"rental_company_name": company}
+    # FLIGHT_TAKEOFF/LAND always bucket to ("FLIGHT", "") — no details needed.
+    return result
 
-def _slim_event(e: Dict[str, Any]) -> Dict[str, Any]:
-    """Return a minimal summary dict for an event (no coordinates or cost data)."""
-    et = e.get("event_type", "")
-    details_field = EVENT_TYPE_TO_DETAIL_FIELD.get(et, "")
-    details: Dict = e.get(details_field) or {} if details_field else {}
 
-    name = (
-        details.get("hotel_name")
-        or details.get("place_name")
-        or details.get("event_name")
-        or details.get("rental_company_name")
-        or details.get("flight_number")
-        or ""
-    )
-    description = (
-        details.get("event_description")
-        or details.get("summary")
-        or details.get("description")
-        or ""
-    )
+def _prune_prior_events(prior_events: List[Dict], validated_day: int) -> List[Dict]:
+    """
+    Slim events from days that are 2+ days before the just-validated day.
 
-    return {
-        "event_type": et,
-        "event_number": e.get("event_number"),
-        "day_number": e.get("day_number"),
-        "day_title": e.get("day_title") or "",
-        "date": e.get("date") or "",
-        "name": name,
-        "description": description,
+    Strategy — never drop events (dropping closers caused phantom open-booking
+    state in earlier attempts).  Instead, reduce payload by slimming old event
+    objects down to scheduling fields only.
+
+    Rules (applied to each event):
+      - day <= 0 or day >= validated_day (current session): keep full
+      - day == validated_day - 1 (yesterday): keep full for midnight-carryover context
+      - open opener from any older day: keep full (planner needs details to close it)
+      - last event of each older completed day: keep full (end-of-day state reference)
+      - everything else from older days: slim
+    """
+    if not prior_events:
+        return prior_events
+
+    open_bookings = _compute_open_bookings(prior_events)
+    open_opener_keys: set = {
+        (item.get("opening_day_number"), item.get("opening_event_number"))
+        for item in open_bookings
+        if item.get("opening_event_number") is not None
     }
 
+    day_max_evnum: Dict[int, int] = {}
+    for e in prior_events:
+        dn = e.get("day_number")
+        en = e.get("event_number")
+        if isinstance(dn, int) and isinstance(en, int):
+            if day_max_evnum.get(dn, -1) < en:
+                day_max_evnum[dn] = en
 
-# ─── Pruning ─────────────────────────────────────────────────────────────────
+    yesterday = validated_day - 1
 
-def _prune_prior_events(all_events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    result: List[Dict] = []
+    for e in prior_events:
+        dn = e.get("day_number")
+        en = e.get("event_number")
+
+        # Keep special events and anything from today onward untouched
+        if not isinstance(dn, int) or dn <= 0 or dn >= validated_day:
+            result.append(e)
+            continue
+
+        # Keep yesterday's events full (midnight carryover detection in day_planner)
+        if dn == yesterday:
+            result.append(e)
+            continue
+
+        # Older completed day: apply slim-only pruning
+        is_open_opener = (dn, en) in open_opener_keys
+        is_last_of_day = isinstance(en, int) and day_max_evnum.get(dn) == en
+
+        if is_open_opener or is_last_of_day:
+            result.append(e)
+        else:
+            result.append(_slim_event(e))
+
+    return result
+
+
+# ─── Smart retry helper ───────────────────────────────────────────────────────
+
+def _find_first_broken_event_number(errors: List[str]) -> int:
     """
-    Prune the full prior_events list after a day completes.
+    Parse validation error strings to find the minimum event_number that needs
+    to be regenerated, so we can keep all good events before that point.
 
-    Rules applied across ALL events (not just the current day) so that opener
-    events from earlier days which became closed today are also compacted:
-
-    1. SPECIAL (START/END): keep full.
-    2. CLOSER types: always drop.
-    3. OPENER types with no matching closer (open_keys): keep full.
-    4. OPENER types that are now closed (not in open_keys): slim.
-    5. Last event of each real day: keep full.
-    6. Everything else: slim.
+    Error patterns handled:
+      - "Timing violation: event #N ..."          → first broken = N
+      - "Missing COMMUTE between event #N and event #M ..." → insert at N+1
+      - "Missing event_number(s) [X, Y, Z] ..."   → first broken = min(X,Y,Z)
+      - "Event #N has day_number=..."              → first broken = N
+      - "Duplicate event_number N ..."             → first broken = N
     """
-    # Which openers still have no matching closer across all events
-    open_bookings = _compute_open_bookings(all_events)
-    open_keys = {
-        (b["opening_day_number"], b["opening_event_number"])
-        for b in open_bookings
-    }
-
-    # Last event_number per real day
-    last_per_day: Dict[int, int] = {}
-    for e in all_events:
-        d = e.get("day_number")
-        n = e.get("event_number") or 0
-        if isinstance(d, int) and d > 0:
-            if d not in last_per_day or n > last_per_day[d]:
-                last_per_day[d] = n
-    last_event_keys = {(d, n) for d, n in last_per_day.items()}
-
-    pruned: List[Dict[str, Any]] = []
-    for e in all_events:
-        et = e.get("event_type")
-        key = (e.get("day_number"), e.get("event_number"))
-
-        if et in _SPECIAL_TYPES:
-            pruned.append(e)
+    affected: set = set()
+    for err in errors:
+        # Timing violation — the starting event is the one with the wrong time
+        m = re.match(r'Timing violation: event #(\d+)', err)
+        if m:
+            affected.add(int(m.group(1)))
             continue
-
-        if et == "COMMUTE":
-            # Drop COMMUTE events entirely
+        # Missing COMMUTE between #N and #M → new commute slots in at N+1
+        m = re.search(r'Missing COMMUTE between event #(\d+)', err)
+        if m:
+            affected.add(int(m.group(1)) + 1)
             continue
-
-        if et in _CLOSER_TYPES:
-            # Drop closers entirely
+        # Gap: missing event_number(s) [X, Y, Z]
+        m = re.search(r'Missing event_number\(s\) \[([^\]]+)\]', err)
+        if m:
+            try:
+                nums = [int(x.strip()) for x in m.group(1).split(',')]
+                affected.update(nums)
+            except ValueError:
+                pass
             continue
-
-        if key in open_keys:
-            # Open opener — keep full so later planners know to close it
-            pruned.append(e)
+        # Duplicate event_number N
+        m = re.search(r'Duplicate event_number (\d+)', err)
+        if m:
+            affected.add(int(m.group(1)))
             continue
+        # Fallback: any "event #N" reference
+        for fm in re.finditer(r'event\s+#(\d+)', err, re.IGNORECASE):
+            n = int(fm.group(1))
+            if n > 0:
+                affected.add(n)
 
-        if key in last_event_keys:
-            # Last event of any day — keep full for cross-day placement checks
-            pruned.append(e)
-            continue
-
-        pruned.append(_slim_event(e))
-
-    return pruned
+    return max(1, min(affected)) if affected else 1
 
 
 # ─── Validation helpers ───────────────────────────────────────────────────────
@@ -248,7 +286,7 @@ def _check_timing(day_events: List[Dict]) -> List[str]:
             if pre_end is None:
                 continue
             commute_end = pre_end + timedelta(seconds=duration_s)
-            if curr_start < commute_end:
+            if commute_end - curr_start > timedelta(minutes=10): # 10 minutes tolerance
                 errors.append(
                     f"Timing violation: event #{curr.get('event_number')} "
                     f"[{curr.get('event_type')}] starts at "
@@ -309,18 +347,27 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
     # ── Retry path ────────────────────────────────────────────────────────────
     if errors and attempts < MAX_VALIDATION_ATTEMPTS:
         error_msg = "\n".join(f"- {e}" for e in errors)
+        first_broken = _find_first_broken_event_number(errors)
+        # Keep events before the first broken one — only strip from first_broken onward
+        good_events = [
+            e for e in prior_events
+            if e.get("day_number") != current_day
+            or (isinstance(e.get("event_number"), int) and e["event_number"] < first_broken)
+        ]
         log.warning(
-            f"Day {current_day} validation failed (attempt {attempts + 1}/{MAX_VALIDATION_ATTEMPTS})",
+            f"Day {current_day} validation failed (attempt {attempts + 1}/{MAX_VALIDATION_ATTEMPTS})"
+            f" — smart retry from event #{first_broken}",
             error_count=len(errors),
             errors=errors,
+            first_broken=first_broken,
+            kept_events=len(good_events),
+            stripped_events=len(prior_events) - len(good_events),
         )
-        # Strip current day's events so day_planner re-emits them from scratch
-        stripped = [e for e in prior_events if e.get("day_number") != current_day]
         return {
             "day_validation_errors": error_msg,
             "day_validator_attempts": attempts + 1,
-            "next_event_number": 1,
-            "prior_events": stripped,
+            "next_event_number": first_broken,
+            "prior_events": good_events,
         }
 
     # ── Success / max-attempts path ────────────────────────────────────────────
@@ -336,13 +383,20 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
     # Emit lightweight day_end signal — no LLM call, instant
     emit({"type": "day_end", "day_number": current_day})
 
-    # Prune for context window before handing off to the next node
-    pruned = _prune_prior_events(prior_events)
+    # Slim older completed days to keep subsequent planners' context lean.
+    # validated_day + 1 = first day that will run next; days < (validated_day)
+    # are completed but yesterday (current_day - 1) stays full for midnight-carryover.
+    pruned_events = _prune_prior_events(prior_events, validated_day=current_day + 1)
+    log.info(
+        f"Day {current_day} prior_events after pruning",
+        before=len(prior_events),
+        after=len(pruned_events),
+    )
 
     return {
         "current_day": current_day + 1,
         "next_event_number": 1,
         "day_validation_errors": None,
         "day_validator_attempts": 0,
-        "prior_events": pruned,
+        "prior_events": pruned_events,
     }
