@@ -63,6 +63,7 @@ SKU = {
     "serper_content_parser": "serper_content_parser",        # get_content_from_url Gemini parse
     "google_flights": "google_flights",                      # all flights.py RapidAPI tools
     "booking_com": "booking_com",                            # all accommodations.py RapidAPI tools
+    "exchange_rates": "exchange_rates",                      # currency.py RapidAPI tools
     "context_pruning": "context_pruning",                    # planner history-summarization Gemini call
     "planner_agent": "planner_agent",                        # each planner Gemini turn
 }
@@ -146,6 +147,8 @@ TOOL_TO_SKU: dict[str, SkuResolver] = {
     "search_hotels": lambda **_: SKU["booking_com"],
     "get_hotel_booking_url": lambda **_: SKU["booking_com"],
     "search_rental_cars": lambda **_: SKU["booking_com"],
+    "get_supported_currencies": lambda **_: SKU["exchange_rates"],
+    "convert_currency_to_USD": lambda **_: SKU["exchange_rates"],
     # Backend endpoints (not MCP tools, still go through consume())
     "get_destination_image_by_place_id": lambda **_: SKU["places_place_details_essentials_ids_only"],
     "get_destination_images_by_name": lambda **_: SKU["places_text_search_essentials_ids_only"],

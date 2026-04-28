@@ -27,7 +27,9 @@ TIMEOUTS = {
     "get_next_flights": 30,
     "get_flight_booking_details": 10,
     "get_flight_booking_url": 5,
-    "get_content_from_url": 45
+    "get_content_from_url": 45,
+    "get_supported_currencies": 5,
+    "convert_currency_to_USD": 5,
 }
 
 
