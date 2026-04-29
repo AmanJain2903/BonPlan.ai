@@ -66,6 +66,8 @@ SKU = {
     "exchange_rates": "exchange_rates",                      # currency.py RapidAPI tools
     "context_pruning": "context_pruning",                    # planner history-summarization Gemini call
     "planner_agent": "planner_agent",                        # each planner Gemini turn
+    "conversation_agent": "conversation_agent",              # each conversation Gemini turn
+    "editing_agent": "editing_agent",                        # each editing Gemini turn
 }
 
 

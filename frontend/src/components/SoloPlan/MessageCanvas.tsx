@@ -1,9 +1,9 @@
 import { RefObject, useState, useEffect, useRef, useCallback, useLayoutEffect, MutableRefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Wrench, Brain, ChevronDown, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown } from 'lucide-react';
+import { User, Brain, ChevronDown, Loader2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { EASE_OUT_EXPO } from './constants';
-import { ToolEntry, SystemLog, ChatTurn, BotTurn, UserTurn, QAPairTurn } from './types';
+import { SystemLog, ChatTurn, BotTurn, UserTurn, QAPairTurn } from './types';
 import { BotAvatar, BouncingDots } from './Atoms';
 import QuestionCard from './QuestionCard';
 
@@ -22,7 +22,7 @@ function UserMessage({ text }: { text: string }) {
       className="flex items-start justify-end gap-2.5"
     >
       <div className="max-w-70 px-4 py-2.5 bg-white/[0.04] border border-white/[0.06] rounded-2xl rounded-tr-sm">
-        <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-word">
+        <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-words">
           {displayText}
           {needsTruncation && (
             <button
@@ -160,7 +160,7 @@ function ActivePruningIndicator({ activePruningChunk }: { activePruningChunk: an
                 transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
                 className="overflow-hidden"
               >
-                <pre className="mt-2 text-[11px] text-white/50 bg-black/40 rounded-lg p-3 max-h-48 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-word">
+                <pre className="mt-2 text-[11px] text-white/50 bg-black/40 rounded-lg p-3 max-h-48 overflow-y-auto scrollbar-hide font-mono whitespace-pre-wrap break-words">
                   {typeof activePruningChunk.content === 'string'
                     ? activePruningChunk.content
                     : JSON.stringify(activePruningChunk, null, 2)}
@@ -411,7 +411,7 @@ function QAPairMessage({ turn }: { turn: QAPairTurn }) {
       {/* User's answer — same bubble style as a regular user message */}
       <div className="flex items-start justify-end gap-2.5">
         <div className="max-w-70 px-4 py-2.5 bg-white/[0.04] border border-white/[0.06] rounded-2xl rounded-tr-sm">
-          <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-word">
+          <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-words">
             {turn.answer || (turn.skipped ? 'Skipped' : '')}
           </p>
         </div>

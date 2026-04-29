@@ -4,7 +4,7 @@
 This file contains the models for the trip itineraries table.
 """
 
-from sqlalchemy import Column, Index, String, DateTime, Boolean, Enum, Integer, ForeignKey, Float
+from sqlalchemy import Column, Index, String, DateTime, Boolean, Enum, Integer, ForeignKey, Float, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from app.database.database import Base
@@ -38,6 +38,10 @@ class TripItinerary(Base):
     tips = Column(ARRAY(String), nullable=False, default=[])
 
     status = Column(Enum(TripItineraryStatus), nullable=False, default=TripItineraryStatus.PENDING)
+
+    # Tracks current position in the edit snapshot stack (0 = original generation).
+    # /revert and /ahead move this cursor and restore events from the snapshots table.
+    snapshot_cursor = Column(Integer, nullable=False, server_default=text("0"))
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
