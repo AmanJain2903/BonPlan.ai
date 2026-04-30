@@ -34,11 +34,15 @@ dist-ssr
 
 # Claude Code
 .claude
-.mcp.json
-CLAUDE.md
+
+# Codex
+.codex
 
 # Graphify
 graphify-out
+
+# Caveman
+caveman
 
 # Test Results
 backend/app/agent/dumps/

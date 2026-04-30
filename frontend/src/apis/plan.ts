@@ -119,6 +119,17 @@ export const api = {
             signal
         });
     },
+    chatWithItinerary: async (token: string, id: string, bodyData: any, signal?: AbortSignal): Promise<Response> => {
+        return await fetch(`${AGENT_BASE}/agent/api/v1/chat/${id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(bodyData),
+            signal
+        });
+    },
     respondToQuestion: async (
         token: string,
         id: string,

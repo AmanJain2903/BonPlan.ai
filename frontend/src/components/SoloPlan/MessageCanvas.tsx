@@ -566,34 +566,7 @@ export default function MessageCanvas({
   // }, [turns]);
 
   return (
-    <div className="relative flex-1 flex flex-col min-h-0">
-      {/* Scroll Navigation Controls */}
-      {/* <div className="absolute left-6 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2 pointer-events-none">
-        <AnimatePresence>
-          {showScrollTop && (
-            <motion.button
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              onClick={scrollToTop}
-              className="p-2 rounded-full bg-white/5 border border-white/10 text-white/40 hover:text-cyan hover:bg-white/10 transition-all pointer-events-auto backdrop-blur-md"
-            >
-              <ArrowUp className="w-4 h-4" />
-            </motion.button>
-          )}
-          {showScrollBottom && (
-            <motion.button
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              onClick={scrollToBottom}
-              className="p-2 rounded-full bg-white/5 border border-white/10 text-white/40 hover:text-cyan hover:bg-white/10 transition-all pointer-events-auto backdrop-blur-md"
-            >
-              <ArrowDown className="w-4 h-4" />
-            </motion.button>
-          )}
-        </AnimatePresence>
-      </div> */}
+    <div className="relative flex-1 flex flex-col min-h-0 pb-3">
 
       {/* Scroll to Top - Top Right */}
       <div className="absolute right-0 top-0 z-20 pointer-events-none">

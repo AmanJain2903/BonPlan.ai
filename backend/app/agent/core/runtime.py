@@ -145,6 +145,7 @@ class AgentRuntime:
     day_tool_block_collaborative: Optional[types.Tool] = None
     finalizer_tool_block: Optional[types.Tool] = None
     planner_graph: Optional[Any] = None
+    editor_graph: Optional[Any] = None
     checkpointer: Optional[Any] = None
     mcp_healthy: bool = True
 
@@ -254,9 +255,10 @@ async def agent_runtime_context():
             checkpointer = MemorySaver()
             runtime.checkpointer = checkpointer
 
-            from app.agent.langgraph_runtime.graph import build_planner_graph
+            from app.agent.langgraph_runtime.graph import build_planner_graph, build_editor_graph
             # Build the compiled graph once, with the resolved checkpointer.
             runtime.planner_graph = build_planner_graph(checkpointer=checkpointer)
+            runtime.editor_graph = build_editor_graph(checkpointer=checkpointer)
 
             log.info(
                 f"MCP Session initialized with {len(mcp_response.tools)} "
@@ -281,6 +283,7 @@ async def agent_runtime_context():
                 runtime.day_tool_block_collaborative = None
                 runtime.finalizer_tool_block = None
                 runtime.planner_graph = None
+                runtime.editor_graph = None
                 runtime.checkpointer = None
                 runtime.genai_client = None
                 runtime.pruning_client = None

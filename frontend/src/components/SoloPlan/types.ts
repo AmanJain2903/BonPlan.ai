@@ -102,4 +102,28 @@ export interface GenerationSession {
   isActive: boolean;
   isWaitingForUser: boolean;
   abortController: AbortController | null;
+  lastRequest: GenerationStartOptions | null;
+}
+
+export interface AttachedEventRef {
+  day_number: number;
+  event_number: number;
+}
+
+export interface ChatHistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface GenerationStartOptions {
+  chatInput: string;
+  mode: string;
+  initialItineraryState?: ItineraryState;
+  attachedEvents?: AttachedEventRef[];
+  chatHistory?: ChatHistoryEntry[];
+  cachedItineraryEvents?: any[];
+  cachedTripInput?: Record<string, any>;
+  cachedResearchFacts?: Record<string, any>;
+  forceReloadItinerary?: boolean;
+  appendUserTurn?: boolean;
 }
