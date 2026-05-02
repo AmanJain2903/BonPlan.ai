@@ -33,7 +33,7 @@ from app.core.config import settings
 
 import sys
 
-testResultsFolder = os.path.join(os.path.dirname(__file__), "results")
+testResultsFolder = os.path.join(os.path.dirname(__file__), "results", "planner")
 os.makedirs(testResultsFolder, exist_ok=True)
 
 if len(sys.argv) > 1:

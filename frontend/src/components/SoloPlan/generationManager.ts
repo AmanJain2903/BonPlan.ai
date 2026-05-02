@@ -1,5 +1,5 @@
 import { api } from '../../apis/plan';
-import { GenerationSession, ChatTurn, BotTurn, ItineraryState, ItineraryDay, PendingQuestion, ChatMode, QAPairTurn } from './types';
+import { GenerationSession, ChatTurn, BotTurn, ItineraryState, ItineraryDay, PendingQuestion, ChatMode, QAPairTurn, GenerationStartOptions } from './types';
 
 type Subscriber = (session: GenerationSession) => void;
 
@@ -138,6 +138,21 @@ function flushThinking(turn: BotTurn): Pick<BotTurn, 'thoughtHistory' | 'activeT
   };
 }
 
+function splitSummaryIntoFragments(content: string): string[] {
+  const tokens = content.match(/\S+\s*/g) || [content];
+  const out: string[] = [];
+  let bucket = '';
+  for (const token of tokens) {
+    bucket += token;
+    if (bucket.length >= 24) {
+      out.push(bucket);
+      bucket = '';
+    }
+  }
+  if (bucket) out.push(bucket);
+  return out.length > 0 ? out : [content];
+}
+
 function handleSSEChunk(session: GenerationSession, chunk: any): void {
   switch (chunk.type) {
     case 'heartbeat':
@@ -259,6 +274,11 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.errorType = 'error';
       break;
 
+    case 'conversation_end':
+    case 'intent':
+    case 'structural_change':
+      return;
+
     default:
       console.log('[UNKNOWN CHUNK]', chunk);
   }
@@ -311,10 +331,52 @@ class GenerationManager {
     };
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async applySummaryChunk(
+    tripId: string,
+    session: GenerationSession,
+    content: string,
+    animated: boolean,
+  ): Promise<void> {
+    const text = content || '';
+    if (!text) return;
+
+    if (!animated) {
+      handleSSEChunk(session, { type: 'summary', content: text });
+      this.notify(tripId);
+      return;
+    }
+
+    const parts = splitSummaryIntoFragments(text);
+    let first = true;
+    for (const part of parts) {
+      if (session.abortController?.signal.aborted) break;
+      session.turns = updateLastBotTurn(session.turns, (turn) => {
+        const thinking = first
+          ? flushThinking(turn)
+          : { thoughtHistory: turn.thoughtHistory, activeThinkingBubble: turn.activeThinkingBubble };
+        return {
+          ...turn,
+          ...thinking,
+          activeToolIndicator: null,
+          activePruningChunk: null,
+          finalSummary: turn.finalSummary + part,
+          systemLog: null,
+        };
+      });
+      first = false;
+      this.notify(tripId);
+      await this.sleep(14);
+    }
+  }
+
   async startGeneration(
     tripId: string,
     token: string,
-    options: { chatInput: string; mode: string; initialItineraryState?: ItineraryState }
+    options: GenerationStartOptions,
   ): Promise<void> {
     const existing = this.sessions.get(tripId);
     if (existing?.isActive && existing.abortController) {
@@ -370,13 +432,24 @@ class GenerationManager {
       isActive: true,
       isWaitingForUser: false,
       abortController: controller,
+      lastRequest: {
+        chatInput: options.chatInput,
+        mode: options.mode,
+        attachedEvents: [...(options.attachedEvents || [])],
+        chatHistory: [...(options.chatHistory || [])],
+        cachedItineraryEvents: [...(options.cachedItineraryEvents || [])],
+        cachedTripInput: { ...(options.cachedTripInput || {}) },
+        cachedResearchFacts: { ...(options.cachedResearchFacts || {}) },
+        forceReloadItinerary: !!options.forceReloadItinerary,
+      },
     };
 
     // Append a user turn only when the user actually typed something. On a
     // resume / retry click the chatInput is empty and an empty user turn
     // would render as a 0-height invisible row but still pollute the array.
     const newTurns: ChatTurn[] = [...session.turns];
-    if (options.chatInput && options.chatInput.trim().length > 0) {
+    const shouldAppendUserTurn = options.appendUserTurn !== false;
+    if (shouldAppendUserTurn && options.chatInput && options.chatInput.trim().length > 0) {
       newTurns.push({
         id: `${Date.now()}-user`,
         type: 'user' as const,
@@ -401,12 +474,28 @@ class GenerationManager {
     this.notify(tripId);
 
     try {
-      const response = await api.generateSoloPlan(
-        token,
-        tripId,
-        { chatInput: options.chatInput, mode: options.mode },
-        controller.signal,
-      );
+      const isEditingRequest = options.mode === 'editing';
+      const response = isEditingRequest
+        ? await api.chatWithItinerary(
+            token,
+            tripId,
+            {
+              message: options.chatInput,
+              attached_events: options.attachedEvents || [],
+              chat_history: options.chatHistory || [],
+              cached_itinerary_events: options.cachedItineraryEvents || [],
+              cached_trip_input: options.cachedTripInput || {},
+              cached_research_facts: options.cachedResearchFacts || {},
+              force_reload_itinerary: !!options.forceReloadItinerary,
+            },
+            controller.signal,
+          )
+        : await api.generateSoloPlan(
+            token,
+            tripId,
+            { chatInput: options.chatInput, mode: options.mode },
+            controller.signal,
+          );
 
       if (!response.ok || !response.body) {
         session.turns = updateLastBotTurn(session.turns, (turn) => ({
@@ -416,7 +505,7 @@ class GenerationManager {
         }));
         session.errorType = 'error';
         session.isActive = false;
-        this.markLoadingDaysAsError(session);
+        if (!isEditingRequest) this.markLoadingDaysAsError(session);
         this.notify(tripId);
         return;
       }
@@ -437,12 +526,16 @@ class GenerationManager {
           if (!part.startsWith('data: ')) continue;
           try {
             const chunk = JSON.parse(part.replace('data: ', ''));
-            handleSSEChunk(session, chunk);
-            this.notify(tripId);
+            if (chunk.type === 'summary') {
+              await this.applySummaryChunk(tripId, session, chunk.content || '', isEditingRequest);
+            } else {
+              handleSSEChunk(session, chunk);
+              this.notify(tripId);
+            }
 
             if (chunk.type === 'error') {
               session.isActive = false;
-              this.markLoadingDaysAsError(session);
+              if (!isEditingRequest) this.markLoadingDaysAsError(session);
               this.notify(tripId);
               return;
             }
@@ -455,7 +548,12 @@ class GenerationManager {
       if (buffer.trim() && buffer.trim().startsWith('data: ')) {
         try {
           const chunk = JSON.parse(buffer.trim().replace('data: ', ''));
-          handleSSEChunk(session, chunk);
+          if (chunk.type === 'summary') {
+            await this.applySummaryChunk(tripId, session, chunk.content || '', isEditingRequest);
+          } else {
+            handleSSEChunk(session, chunk);
+            this.notify(tripId);
+          }
         } catch (err) {
           console.error('Error parsing final buffered SSE chunk', err);
         }
@@ -476,12 +574,23 @@ class GenerationManager {
           isStreaming: false,
         }));
         session.errorType = 'error';
-        this.markLoadingDaysAsError(session);
+        if (options.mode !== 'editing') this.markLoadingDaysAsError(session);
       }
       session.isActive = false;
       session.isWaitingForUser = false;
       this.notify(tripId);
     }
+  }
+
+  retryGeneration(tripId: string, token: string): void {
+    const session = this.sessions.get(tripId);
+    if (!session?.lastRequest) return;
+    const retryPayload: GenerationStartOptions = {
+      ...session.lastRequest,
+      appendUserTurn: false,
+      initialItineraryState: { ...session.itineraryState, days: [...session.itineraryState.days] },
+    };
+    void this.startGeneration(tripId, token, retryPayload);
   }
 
   /**
@@ -644,7 +753,7 @@ class GenerationManager {
     session.errorType = 'stopped';
     session.isActive = false;
     session.isWaitingForUser = false;
-    this.markLoadingDaysAsError(session);
+    if (session.mode !== 'editing') this.markLoadingDaysAsError(session);
     this.notify(tripId);
   }
 

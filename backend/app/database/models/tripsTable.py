@@ -54,4 +54,5 @@ class Trip(Base):
     members = relationship("TripMember", back_populates="trip", cascade="all, delete-orphan", lazy="selectin")
     itineraries = relationship("TripItinerary", back_populates="trip", cascade="all, delete-orphan", lazy="selectin")
     collab_qa = relationship("TripCollabQA", back_populates="trip", cascade="all, delete-orphan", lazy="selectin")
+    itinerary_snapshots = relationship("TripItinerarySnapshot", back_populates="trip", cascade="all, delete-orphan", lazy="selectin")
     owner = relationship("User", back_populates="owned_trips", lazy="selectin")

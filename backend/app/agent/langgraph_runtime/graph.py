@@ -2,7 +2,7 @@
 LangGraph graph definitions for BonPlan.
 
 build_planner_graph() → compiled StateGraph for autonomous trip planning.
-build_editor_graph()  → stub; returns None until editing mode is implemented.
+build_editor_graph()  → compiled StateGraph for itinerary chat.
 
 Graph topology - Planning Mode (autonomous mode/collaborative mode):
 
@@ -41,8 +41,6 @@ Graph topology - Planning Mode (autonomous mode/collaborative mode):
     ▼
    END
 """
-from typing import Literal
-
 from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -188,17 +186,15 @@ def build_planner_graph(checkpointer=None):
     return builder.compile(checkpointer=_checkpointer)
 
 
-def build_editor_graph():
-    """Stub — editing mode not implemented yet."""
-    # TODO Implement editing graph.
-    # The graph must NEVER emit a START event (it receives existing events and
-    # only emits the modified ones identified by edit_scope).
-    return None
+def build_editor_graph(checkpointer=None):
+    from app.agent.langgraph_runtime.editor_graph import build_editor_graph as _build
+    return _build(checkpointer=checkpointer)
 
 
 # Module-level singleton for the default autonomous graph.
 # Callers that need a custom checkpointer should call build_planner_graph() directly.
 _default_graph = None
+_default_editor_graph = None
 
 
 def get_planner_graph():
@@ -216,3 +212,18 @@ def get_planner_graph():
         _default_graph = build_planner_graph()
     log.info("Using default graph built with MemorySaver")
     return _default_graph
+
+
+def get_editor_graph():
+    try:
+        if runtime.editor_graph is not None:
+            log.info("Using runtime-compiled editor graph")
+            return runtime.editor_graph
+    except Exception:
+        pass
+
+    global _default_editor_graph
+    if _default_editor_graph is None:
+        _default_editor_graph = build_editor_graph()
+    log.info("Using default editor graph built with MemorySaver")
+    return _default_editor_graph

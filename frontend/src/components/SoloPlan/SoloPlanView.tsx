@@ -6,7 +6,15 @@ import { api, Plan, TripItinerary } from '../../apis/plan';
 import { Bot, Minimize2, ArrowLeftRight } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
-import { ItineraryState, ChatTurn, ChatMode, PageState, GenerationSession } from './types';
+import {
+  ItineraryState,
+  ChatTurn,
+  ChatMode,
+  PageState,
+  GenerationSession,
+  AttachedEventRef,
+  ChatHistoryEntry,
+} from './types';
 import { generationManager } from './generationManager';
 import FloatingRestoreButton from './FloatingRestoreButton';
 import TripSummaryPills from './TripSummaryPills';
@@ -39,7 +47,7 @@ function derivePageState(
 export default function SoloPlanView() {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
 
   const [plan, setPlan] = useState<Plan | null>(null);
   const [tripItinerary, setTripItinerary] = useState<TripItinerary | null>(null);
@@ -48,6 +56,7 @@ export default function SoloPlanView() {
   const [chatMode, setChatMode] = useState<ChatMode>('autonomous');
   const [contextMessage, setContextMessage] = useState('');
   const [chatInput, setChatInput] = useState('');
+  const [selectedEvents, setSelectedEvents] = useState<AttachedEventRef[]>([]);
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [itineraryState, setItineraryState] = useState<ItineraryState>({ days: [] });
@@ -109,9 +118,15 @@ export default function SoloPlanView() {
     return unsubscribe;
   }, [tripId, handleSessionUpdate]);
 
-  // Timer for generation elapsed time
+  const isTimerRunning = isSessionActive && !errorType;
+
+  // Timer for active planner/editor run elapsed time
   useEffect(() => {
-    if (pageState === 'GENERATING' && !errorType) {
+    if (isTimerRunning) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       setElapsedSeconds(0);
       timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     } else {
@@ -123,7 +138,7 @@ export default function SoloPlanView() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [pageState, errorType]);
+  }, [isTimerRunning]);
 
   // Auth, RBAC, and initialization
   useEffect(() => {
@@ -232,8 +247,14 @@ export default function SoloPlanView() {
   }, [tripId]);
 
   const handleRetry = useCallback(() => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!tripId || !token) return;
+    if (chatMode === 'editing') {
+      generationManager.retryGeneration(tripId, token);
+      return;
+    }
     startPlanner();
-  }, [startPlanner]);
+  }, [chatMode, startPlanner, tripId]);
 
   const handleAnswerQuestion = useCallback(
     async (params: { callId: string; answer: string | null; skipped: boolean }) => {
@@ -252,26 +273,27 @@ export default function SoloPlanView() {
 
   const handleMessageSend = useCallback(() => {
     const message = chatInput.trim();
-    if (!message) return;
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!message || !tripId || !token || !plan || chatMode !== 'editing') return;
 
-    setTurns((prev) => [
-      ...prev,
-      { id: `${Date.now()}-user`, type: 'user', text: message },
-      {
-        id: `${Date.now()}-bot`,
-        type: 'bot',
-        activeToolIndicator: null,
-        activePruningChunk: null,
-        thoughtHistory: '',
-        activeThinkingBubble: '',
-        finalSummary: 'Message Received. Pending Development.',
-        systemLog: null,
-        isStreaming: false,
-        pendingQuestion: null,
-      },
-    ]);
+    const chatHistory = buildChatHistory(turns);
+    const cachedItineraryEvents = flattenItineraryEvents(itineraryState);
+    const cachedTripInput = buildCachedTripInput(plan, user?.preferences, message);
+    void generationManager.startGeneration(tripId, token, {
+      chatInput: message,
+      mode: 'editing',
+      initialItineraryState: itineraryState,
+      attachedEvents: [...selectedEvents],
+      chatHistory,
+      cachedItineraryEvents,
+      cachedTripInput,
+      cachedResearchFacts: {},
+      forceReloadItinerary: false,
+      appendUserTurn: true,
+    });
     setChatInput('');
-  }, [chatInput]);
+    setSelectedEvents([]);
+  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, user?.preferences, selectedEvents]);
 
   // Loading spinner
   if (loading) {
@@ -289,7 +311,7 @@ export default function SoloPlanView() {
 
   if (!plan) return null;
 
-  const isGenerating = pageState === 'GENERATING';
+  const isGenerating = pageState === 'GENERATING' || (pageState === 'EDITING' && isSessionActive);
 
   // ─── DRAFT View ──────────────────────────────────────────────
   if (pageState === 'DRAFT') {
@@ -459,6 +481,9 @@ export default function SoloPlanView() {
                       chatMode={chatMode}
                       chatInput={chatInput}
                       setChatInput={setChatInput}
+                      itineraryDays={itineraryState.days}
+                      selectedEvents={selectedEvents}
+                      setSelectedEvents={setSelectedEvents}
                       onSend={handleMessageSend}
                       onStop={stopPlanner}
                       elapsedSeconds={elapsedSeconds}
@@ -473,4 +498,60 @@ export default function SoloPlanView() {
       </main>
     </motion.div>
   );
+}
+
+function flattenItineraryEvents(itineraryState: ItineraryState): any[] {
+  return itineraryState.days
+    .flatMap((day) => day.events || [])
+    .map((event) => {
+      if (!event || typeof event !== 'object') return event;
+      const { _updatedAt, ...rest } = event;
+      return rest;
+    });
+}
+
+function buildCachedTripInput(plan: Plan, preferences: any, textualContext: string): Record<string, any> {
+  const destinations = Array.isArray(plan.destinations) ? plan.destinations : [];
+  return {
+    hasMultipleDestinations: destinations.length > 1,
+    planning_type: plan.planning_type,
+    routing_style: plan.routing_style,
+    origin: plan.origin,
+    destinations,
+    start_date: plan.start_date,
+    end_date: plan.end_date,
+    pace: plan.pace,
+    budget: plan.budget,
+    adults: plan.adults,
+    children: plan.children,
+    preferences: preferences || {},
+    textualContext,
+  };
+}
+
+function buildChatHistory(turns: ChatTurn[]): ChatHistoryEntry[] {
+  const history: ChatHistoryEntry[] = [];
+
+  for (const turn of turns) {
+    if (turn.type === 'user') {
+      const text = turn.text?.trim();
+      if (text) history.push({ role: 'user', content: text });
+      continue;
+    }
+
+    if (turn.type === 'qa_pair') {
+      const question = turn.question?.trim();
+      const answer = turn.answer?.trim();
+      if (question) history.push({ role: 'assistant', content: question });
+      if (answer) history.push({ role: 'user', content: answer });
+      continue;
+    }
+
+    if (turn.type === 'bot') {
+      const summary = turn.finalSummary?.trim();
+      if (summary) history.push({ role: 'assistant', content: summary });
+    }
+  }
+
+  return history.slice(-24);
 }

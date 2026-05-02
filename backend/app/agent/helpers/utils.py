@@ -88,6 +88,7 @@ def _load_ask_user_question_description() -> str:
         logger.warning("Failed to load ask_user_question.md. Returning fallback description.")
         return "Ask the user a question to gather missing information."
 
+
 ADD_EVENT_TOOL = types.FunctionDeclaration(
     name="add_itinerary_event",
     description=_load_add_event_description(),
@@ -276,15 +277,20 @@ DAY_EVENT_TOOL_NAMES: List[str] = [
     "add_other_event",
 ]
 FINALIZER_EVENT_TOOL_NAMES: List[str] = ["add_end_event"]
-
-
 def build_phase_tool_block(
     mcp_tools: List[types.FunctionDeclaration],
     event_tool_names: List[str],
     ask_user_question_tool: Optional[types.FunctionDeclaration] = None
 ) -> types.Tool:
     """Compose MCP tools + the phase's per-type event tools into one Tool block."""
-    decls = list(mcp_tools) + [PER_TYPE_EVENT_TOOLS[n] for n in event_tool_names]
+    event_tools: List[types.FunctionDeclaration] = []
+    for n in event_tool_names:
+        if n in PER_TYPE_EVENT_TOOLS:
+            event_tools.append(PER_TYPE_EVENT_TOOLS[n])
+        else:
+            raise KeyError(f"Unknown event tool name: {n}")
+
+    decls = list(mcp_tools) + event_tools
     if ask_user_question_tool:
         decls.append(ask_user_question_tool)
     return types.Tool(function_declarations=decls)

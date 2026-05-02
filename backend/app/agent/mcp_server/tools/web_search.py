@@ -67,11 +67,11 @@ async def pre_process_content(content):
         response = await asyncio.to_thread(
             client.models.generate_content,
             model=serper_content_parser_model,
-            max_output_tokens=512,
             contents=f"INSTRUCTIONS: {SERPER_CONTENT_PARSER_PROMPT}\n\nCONTENT TO PROCESS:\n{content}",
             config={
                 "response_mime_type": "application/json",
                 "response_json_schema": ContentResponse.model_json_schema(),
+                "max_output_tokens": 512,
             },
         )
         content_response = ContentResponse.model_validate_json(response.text)
