@@ -78,7 +78,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
     if is_structural:
         conversation_notes = (
             "That change cannot be applied inside this itinerary chat "
-            f"because it modifies {reason or 'trip structure'}. "
+            f"{reason}"
             "I can only answer questions about this current itinerary or make event-level edits to it."
         )
         emit({"type": "structural_change", "reason": reason or "trip structure"})
