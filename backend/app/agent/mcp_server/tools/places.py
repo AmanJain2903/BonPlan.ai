@@ -112,7 +112,10 @@ def _format_place_info(data: dict) -> dict:
             .get("text", "")
         )[:_SUMMARY_MAX_CHARS]
     }
-    base["reviews"]["reviewSummary"] = (data.get("reviewSummary", {}).get("text", "") or "")[:_SUMMARY_MAX_CHARS]
+    _review_summary_raw = data.get("reviewSummary", {}).get("text", "") or ""
+    if isinstance(_review_summary_raw, dict):
+        _review_summary_raw = _review_summary_raw.get("text", "") or ""
+    base["reviews"]["reviewSummary"] = str(_review_summary_raw)[:_SUMMARY_MAX_CHARS]
     base["phoneNumber"] = data.get("internationalPhoneNumber", "")
     return base
 
