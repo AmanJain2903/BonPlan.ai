@@ -228,6 +228,15 @@ export default function SoloPlanView() {
           }
           else if (hasEvents && itinStatus === 'GENERATED') {
             setChatMode('editing');
+            // If itin is GENERATED but plan status lags behind (DB inconsistency),
+            // sync plan status locally so pageState resolves to EDITING, not DRAFT.
+            // Without this, chatMode='editing' + pageState='DRAFT' causes startPlanner
+            // to be reachable, which previously sent generation traffic to the chat endpoint.
+            setPlan((prev) => {
+              if (!prev) return prev;
+              const s = (prev.status || '').toUpperCase();
+              return s === 'GENERATED' || s === 'EDITING' ? prev : { ...prev, status: 'GENERATED' };
+            });
           }
         }
       } catch (err) {
@@ -266,7 +275,7 @@ export default function SoloPlanView() {
 
     generationManager.startGeneration(tripId, token, {
       chatInput: inputText,
-      mode: chatMode === 'editing' ? 'editing' : chatMode,
+      mode: chatMode === 'collaborative' ? 'collaborative' : 'autonomous',
       initialItineraryState: currentItineraryState,
     });
   }, [plan, tripId, contextMessage, chatMode, itineraryState]);
@@ -284,12 +293,13 @@ export default function SoloPlanView() {
   const handleRetry = useCallback(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (!tripId || !token) return;
-    if (chatMode === 'editing') {
+    const session = generationManager.getSession(tripId);
+    if (session?.lastRequest?.mode === 'editing') {
       generationManager.retryGeneration(tripId, token);
       return;
     }
     startPlanner();
-  }, [chatMode, startPlanner, tripId]);
+  }, [startPlanner, tripId]);
 
   const handleAnswerQuestion = useCallback(
     async (params: { callId: string; answer: string | null; skipped: boolean }) => {
