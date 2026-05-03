@@ -51,6 +51,17 @@ with open(_COLLABORATIVE_PROMPT_PATH, "r", encoding="utf-8") as _f:
 #     EDITING_SYSTEM_PROMPT = _f.read()
 
 
+def _compute_cardinal_bearing(
+    origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float
+) -> str:
+    """Returns the dominant cardinal direction from origin to destination."""
+    dlat = dest_lat - origin_lat
+    dlng = dest_lng - origin_lng
+    if abs(dlat) >= abs(dlng):
+        return "NORTH" if dlat > 0 else "SOUTH"
+    return "EAST" if dlng > 0 else "WEST"
+
+
 def _get_midnight_carryover(prior_events: List[Dict], current_day: int) -> Optional[Dict]:
     """
     Return the last event of the previous day if its end_time crosses midnight
@@ -134,12 +145,27 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         getattr(origin, "city", None)
         or "Origin"
     )
+    # Compute net travel direction so day planners can orient named-road commutes.
+    bearing_str = ""
+    origin_obj = getattr(trip_data, "origin", None)
+    destinations = list(getattr(trip_data, "destinations", None) or [])
+    if origin_obj and destinations:
+        dest_lats = [d.lat for d in destinations if hasattr(d, "lat")]
+        dest_lngs = [d.lng for d in destinations if hasattr(d, "lng")]
+        if dest_lats and dest_lngs:
+            mean_lat = sum(dest_lats) / len(dest_lats)
+            mean_lng = sum(dest_lngs) / len(dest_lngs)
+            bearing_str = _compute_cardinal_bearing(
+                origin_obj.lat, origin_obj.lng, mean_lat, mean_lng
+            )
+
     if journey:
         journey_chain = (
             f"{origin_label} -> "
             + " -> ".join(journey)
             + f" -> {origin_label}"
         )
+        bearing_note = f"\n  - Net travel direction: {bearing_str}. Each commute leg must advance toward the destination — do NOT route toward a named road's famous section if it lies in the opposite direction." if bearing_str else ""
         journey_block = (
             "MANDATORY DESTINATION ORDER (from the START event's `journey` field — "
             "locked in by the research phase, NOT a suggestion):\n"
@@ -150,10 +176,45 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
             "  - Use the already-emitted events to determine which destination the "
             "traveler is currently in and which is next.\n"
             "  - The trip starts and ends at the origin. Do NOT call "
-            "`get_optimal_route` to re-derive this order.\n\n"
+            f"`get_optimal_route` to re-derive this order.{bearing_note}\n\n"
         )
     else:
-        journey_block = ""
+        journey_block = (
+            f"Net travel direction: {bearing_str}. Each commute leg must advance toward the destination.\n\n"
+            if bearing_str else ""
+        )
+
+    # Build a compact list of already-scheduled venues so the LLM can avoid
+    # accidental duplicates while still allowing intentional revisits.
+    _venue_event_types = {"ACTIVITY", "DINING", "HOTEL_CHECKIN"}
+    seen_venues: dict = {}
+    for ev in prior_events:
+        etype = (ev or {}).get("event_type", "")
+        if etype not in _venue_event_types:
+            continue
+        name = (ev.get("name") or "").strip()
+        pid = (ev.get("place_id") or "").strip()
+        key = pid if pid else name
+        if key and key not in seen_venues:
+            seen_venues[key] = {
+                "name": name,
+                "type": etype,
+                "day": ev.get("day_number", "?"),
+            }
+    if seen_venues:
+        venue_lines = "\n".join(
+            f"  - {v['name']} ({v['type']}, Day {v['day']})"
+            for v in seen_venues.values()
+            if v["name"]
+        )
+        scheduled_venues_block = (
+            "Already Scheduled Venues (check before booking any new venue — "
+            "re-use only for hotel checkout or an explicit user request to return):\n"
+            f"{venue_lines}\n\n"
+            if venue_lines else ""
+        )
+    else:
+        scheduled_venues_block = ""
 
     open_bookings = _compute_open_bookings(prior_events)
     days_remaining_after_today = max(0, total_days - current_day)
@@ -266,6 +327,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         f"{seed_block}"
         f"{prior_qa_block}"
         f"{journey_block}"
+        f"{scheduled_venues_block}"
         f"Already-Emitted Events (ground truth — do NOT re-emit, do NOT re-search what these establish):\n"
         f"{trip_state_json}\n\n"
         f"{open_bookings_block}"
