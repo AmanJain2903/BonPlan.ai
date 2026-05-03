@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.agent.solo_planner import generate_trip_itinerary
+from app.agent.helpers.itinerary_event_cost import sum_chargeable_cost_usd
 from app.agent.langgraph_runtime.collaboration import (
     get_pending,
     submit_answer,
@@ -81,9 +82,8 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
                 if existing_start_event_index is not None:
                     itinerary.events[existing_start_event_index] = event
         elif event_type == "END":
-            end_details = event.get("end_details") or {}
+            end_details = dict(event.get("end_details") or {})
             itinerary.title = end_details.get("trip_title", itinerary.title)
-            itinerary.cost = end_details.get("trip_cost", itinerary.cost)
             itinerary.tips = end_details.get("trip_tips", itinerary.tips)
             # Persist to events so the full event record is available on load.
             if not any(e.get("event_type") == "END" for e in (itinerary.events or [])):
@@ -97,6 +97,11 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
                         break
                 if existing_end_event_index is not None:
                     itinerary.events[existing_end_event_index] = event
+            # Align column + END payload with summed event charges (frontend uses the same rollup).
+            rolled_up = sum_chargeable_cost_usd(itinerary.events)
+            itinerary.cost = rolled_up
+            end_details["trip_cost"] = rolled_up
+            event["end_details"] = end_details
         else:
             existing_event_index = None
             for i, existing_event in enumerate(itinerary.events):
