@@ -36,9 +36,10 @@ from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
 from app.agent.helpers.qa_persistence import persist_qa_entry
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
 
 log = get_agent_logger("nodes.collaboration_checkpoint")
+PLANNER_MODEL_SKU = resolve_gemini_model_sku(settings.PLANNER_AGENT_MODEL)
 
 
 # Fallback seed question if the LLM fails or its output is malformed.
@@ -153,10 +154,10 @@ async def _generate_seed_question(state: PlannerState) -> dict:
     journey = list(state.get("journey") or [])
 
     try:
-        await get_rate_limiter().consume(SKU["planner_agent"])
+        await get_rate_limiter().consume(PLANNER_MODEL_SKU)
     except RateLimitExceeded as exc:
         log.warning(
-            "planner_agent quota exhausted for seed question; using fallback",
+            "Planner model quota exhausted for seed question; using fallback",
             sku=exc.sku,
             retry_after=exc.retry_after_seconds,
         )

@@ -29,7 +29,7 @@ from app.agent.helpers.qa_persistence import load_collab_qa
 from app.core.config import settings
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary, TripItineraryStatus
-from app.database.models.tripMembersTable import TripMember
+from app.database.models.tripMembersTable import TripInvitationStatus, TripMember
 from app.database.models.tripsTable import PlanStatus, Trip
 from app.logging import get_api_logger
 
@@ -148,7 +148,9 @@ async def generate_solo_plan(request: Request, id: str):
             rbac = (
                 await db.execute(
                     select(TripMember).where(
-                        TripMember.trip_id == id, TripMember.user_id == user_id
+                        TripMember.trip_id == id,
+                        TripMember.user_id == user_id,
+                        TripMember.invitation_status == TripInvitationStatus.ACCEPTED.value,
                     )
                 )
             ).scalar_one_or_none()
@@ -472,7 +474,9 @@ async def respond_to_question(request: Request, id: str):
         rbac = (
             await db.execute(
                 select(TripMember).where(
-                    TripMember.trip_id == id, TripMember.user_id == user_id
+                    TripMember.trip_id == id,
+                    TripMember.user_id == user_id,
+                    TripMember.invitation_status == TripInvitationStatus.ACCEPTED.value,
                 )
             )
         ).scalar_one_or_none()

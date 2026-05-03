@@ -12,9 +12,10 @@ from app.agent.langgraph_runtime.streaming import emit
 from app.core.config import settings
 from app.logging import get_agent_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
 
 log = get_agent_logger("structural_classifier")
+CONVERSATION_MODEL_SKU = resolve_gemini_model_sku(settings.CONVERSATION_AGENT_MODEL)
 
 _PROMPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "prompts", "editor", "structuralClassifierPrompt.md"
@@ -51,7 +52,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
     }
 
     try:
-        await get_rate_limiter().consume(SKU["conversation_agent"])
+        await get_rate_limiter().consume(CONVERSATION_MODEL_SKU)
     except RateLimitExceeded:
         return {"is_structural_change": False, "structural_reason": ""}
 
@@ -77,8 +78,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
     conversation_notes = ""
     if is_structural:
         conversation_notes = (
-            "That change cannot be applied inside this itinerary chat "
-            f"{reason}"
+            "That change cannot be applied inside this itinerary chat."
             "I can only answer questions about this current itinerary or make event-level edits to it."
         )
         emit({"type": "structural_change", "reason": reason or "trip structure"})

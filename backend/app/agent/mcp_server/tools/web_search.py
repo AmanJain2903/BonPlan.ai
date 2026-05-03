@@ -11,7 +11,7 @@ from google import genai
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import SKU, resolve_gemini_model_sku
 
 
 from app.logging import get_mcp_logger
@@ -19,6 +19,7 @@ logger = get_mcp_logger("tools.web_search")
 serper_api_key = settings.SERPER_API_KEY
 gemini_api_key_serper_content_parser = settings.SERPER_CONTENT_PARSER_API_KEY
 serper_content_parser_model = settings.SERPER_CONTENT_PARSER_MODEL
+serper_content_parser_sku = resolve_gemini_model_sku(serper_content_parser_model)
 
 class ContentResponse(BaseModel):
     title: str = Field(description="The title of the content")
@@ -54,7 +55,7 @@ async def pre_process_content(content):
         }
         # Rate-limit gate.
     try:
-        await get_rate_limiter().consume(SKU["serper_content_parser"], cache_hit=False)
+        await get_rate_limiter().consume(serper_content_parser_sku, cache_hit=False)
     except RateLimitExceeded as exc:
         return {
             "title": "Unknown Title",

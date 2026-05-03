@@ -10,7 +10,7 @@ from app.agent.langgraph_runtime.editor_state import EditorState
 from app.agent.langgraph_runtime.streaming import emit
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary
-from app.database.models.tripMembersTable import TripMember
+from app.database.models.tripMembersTable import TripInvitationStatus, TripMember
 from app.database.models.tripsTable import Trip
 from app.logging import get_agent_logger, set_agent_log_context
 
@@ -110,6 +110,7 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
                 select(TripMember).where(
                     TripMember.trip_id == trip_id,
                     TripMember.user_id == state.get("user_id"),
+                    TripMember.invitation_status == TripInvitationStatus.ACCEPTED.value,
                 )
             )
         ).scalar_one_or_none()

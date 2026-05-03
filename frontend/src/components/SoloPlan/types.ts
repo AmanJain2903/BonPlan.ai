@@ -37,6 +37,7 @@ export interface UserTurn {
   id: string;
   type: 'user';
   text: string;
+  attachedEvents?: AttachedEventRef[];
 }
 
 export interface PendingQuestion {

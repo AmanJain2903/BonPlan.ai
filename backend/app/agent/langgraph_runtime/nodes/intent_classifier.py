@@ -13,9 +13,10 @@ from app.agent.langgraph_runtime.streaming import emit
 from app.core.config import settings
 from app.logging import get_agent_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
 
 log = get_agent_logger("intent_classifier")
+CONVERSATION_MODEL_SKU = resolve_gemini_model_sku(settings.CONVERSATION_AGENT_MODEL)
 
 _PROMPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "prompts", "editor", "intentClassifierPrompt.md"
@@ -114,9 +115,9 @@ async def intent_classifier_node(state: EditorState) -> Dict[str, Any]:
     }
 
     try:
-        await get_rate_limiter().consume(SKU["conversation_agent"])
+        await get_rate_limiter().consume(CONVERSATION_MODEL_SKU)
     except RateLimitExceeded as exc:
-        log.error("conversation_agent quota exhausted", retry_after=exc.retry_after_seconds)
+        log.error("Conversation model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
         intent = "conversation"
         needs_itinerary_context = _fallback_needs_context(
             user_message=user_message,

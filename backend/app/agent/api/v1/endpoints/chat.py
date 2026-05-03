@@ -13,7 +13,7 @@ from app.agent.editor_planner import run_editor_chat
 from app.core.config import settings
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary
-from app.database.models.tripMembersTable import TripMember
+from app.database.models.tripMembersTable import TripInvitationStatus, TripMember
 from app.logging import get_api_logger
 
 logger = get_api_logger("chat")
@@ -42,6 +42,7 @@ async def _assert_trip_access(trip_id: str, user_id: str) -> None:
                 select(TripMember).where(
                     TripMember.trip_id == trip_id,
                     TripMember.user_id == user_id,
+                    TripMember.invitation_status == TripInvitationStatus.ACCEPTED.value,
                 )
             )
         ).scalar_one_or_none()

@@ -13,6 +13,7 @@ import Register from './components/Auth/Register';
 import VerifyEmail from './components/Auth/VerifyEmail';
 import ForgotPassword from './components/Auth/ForgotPassword';
 import ResetPassword from './components/Auth/ResetPassword';
+import ShareInvite from './components/Auth/ShareInvite';
 import AccountLayout from './components/Account/AccountLayout';
 import PlanSetup from './components/DraftPlan/PlanSetup';
 import SoloPlanView from './components/SoloPlan/SoloPlanView';
@@ -80,6 +81,7 @@ function HomePage() {
         <Hero plans={plans} isLoadingPlans={isFetchingPlans} />
         {plans.length > 0 && <DraftPlansComponent plans={plans} />}
         {plans.length > 0 && <PersonalPlansComponent plans={plans} />}
+        {plans.length > 0 && <PersonalPlansComponent plans={plans} variant="shared" />}
         <Features />
       </main>
       <Footer />
@@ -97,6 +99,7 @@ function AnimatedRoutes() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/share-invite" element={<ShareInvite />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/account/:section?" element={<AccountLayout />} />

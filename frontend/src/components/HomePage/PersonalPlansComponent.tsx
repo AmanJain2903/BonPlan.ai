@@ -3,11 +3,12 @@ import { motion } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Calendar } from 'lucide-react';
 import { Plan } from '../../apis/plan';
 import DestinationPolaroid from './DestinationPolaroid';
-import { usePersonalPlans } from '../../hooks/useTripFilters';
+import { usePersonalPlans, useSharedPlans } from '../../hooks/useTripFilters';
 import { useNavigate } from 'react-router-dom';
 
 interface PersonalPlansComponentProps {
     plans: Plan[];
+    variant?: 'personal' | 'shared';
 }
 
 const formatDate = (dateObj?: any) => {
@@ -27,7 +28,7 @@ const formatDate = (dateObj?: any) => {
     return null;
 };
 
-export default function PersonalPlansComponent({ plans }: PersonalPlansComponentProps) {
+export default function PersonalPlansComponent({ plans, variant = 'personal' }: PersonalPlansComponentProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const cardsRef = useRef<(HTMLDivElement | null)[]>([]);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -37,6 +38,9 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
     const [isOverflowing, setIsOverflowing] = useState(true);
 
     const personalPlans = usePersonalPlans(plans);
+    const sharedPlans = useSharedPlans(plans);
+    const visiblePlans = variant === 'shared' ? sharedPlans : personalPlans;
+    const isShared = variant === 'shared';
 
     const navigate = useNavigate();
 
@@ -49,7 +53,7 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
 
             const cardWidth = w >= 640 ? 380 : 300;
             const gap = 24;
-            const cardsCount = personalPlans.length;
+            const cardsCount = visiblePlans.length;
 
             const innerTrackWidth = (cardsCount * cardWidth) + (Math.max(0, cardsCount - 1) * gap) + 1;
             const capacity = isMob ? w : 1240;
@@ -67,7 +71,7 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
         handleLayoutEngine();
         window.addEventListener('resize', handleLayoutEngine);
         return () => window.removeEventListener('resize', handleLayoutEngine);
-    }, [personalPlans.length]);
+    }, [visiblePlans.length]);
 
     // Synchronously update masks, arrows, and card scaling bound 1:1 to exact scroll pixels
     useEffect(() => {
@@ -127,9 +131,9 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
             if (container) container.removeEventListener('scroll', updateCarouselUI);
             window.removeEventListener('resize', updateCarouselUI);
         };
-    }, [personalPlans.length]);
+    }, [visiblePlans.length]);
 
-    if (!personalPlans || personalPlans.length === 0) return null;
+    if (!visiblePlans || visiblePlans.length === 0) return null;
 
     const scroll = (direction: 'left' | 'right') => {
         if (scrollRef.current) {
@@ -168,7 +172,7 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
     return (
         <>
             <style>{arrowAnimations}</style>
-            <section id="personal-plans" className="relative py-24 sm:py-32 overflow-hidden">
+            <section id={isShared ? 'shared-plans' : 'personal-plans'} className="relative py-24 sm:py-32 overflow-hidden">
 
                 {/* Top divider glow */}
                 <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-cyan/20 to-transparent" />
@@ -177,10 +181,12 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
                 <div className="w-full max-w-7xl mx-auto px-6 lg:px-12 xl:px-20">
                     <div className="text-center">
                         <h2 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white mb-4">
-                            Your Personal Plans
+                            {isShared ? 'Shared With Me' : 'Your Personal Plans'}
                         </h2>
                         <p className="text-sm font-bold text-cyan uppercase tracking-widest">
-                            {personalPlans.length === 1 ? '1 PLAN SAVED' : `${personalPlans.length} PLANS SAVED`}
+                            {isShared
+                                ? (visiblePlans.length === 1 ? '1 SHARED ITINERARY' : `${visiblePlans.length} SHARED ITINERARIES`)
+                                : (visiblePlans.length === 1 ? '1 PLAN SAVED' : `${visiblePlans.length} PLANS SAVED`)}
                         </p>
                     </div>
                 </div>
@@ -222,7 +228,7 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
                                 className={`flex gap-6 w-max min-w-full transition-[padding] duration-300 ${!isOverflowing ? 'justify-center' : ''} mt-16`}
                                 style={isOverflowing ? { paddingLeft: trackPadding } : {}}
                             >
-                                {personalPlans.map((plan, index) => {
+                                {visiblePlans.map((plan, index) => {
                                     const totalAdults = plan.adults || 1;
                                     const totalChildren = plan.children || 0;
                                     const guestString = totalAdults === 1 && totalChildren === 0 ? '1 Adult' : totalAdults === 1 ? `1 Adult • ${totalChildren} Children` : totalChildren === 0 ? `${totalAdults} Adults` : `${totalAdults} Adults • ${totalChildren} Children`;
@@ -233,6 +239,9 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
 
                                     const originLoc = plan.origin as any;
                                     const originCity = originLoc ? (typeof originLoc === 'string' ? originLoc : (originLoc.city || originLoc.state || originLoc.country || 'Unknown Destination')) : 'Unknown Destination';
+                                    const ownerName = plan.owner
+                                        ? `${plan.owner.first_name || ''} ${plan.owner.last_name || ''}`.trim() || plan.owner.email
+                                        : '';
 
                                     return (
                                         <div
@@ -246,6 +255,11 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
                                         >
                                             {/* Background gradient on hover */}
                                             <div className="absolute inset-0 bg-gradient-to-br from-cyan/[0.03] to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-500" />
+                                            {isShared && plan.role === 'shared_editor' && (
+                                                <div className="absolute top-1 right-1 z-20 rounded-full border border-cyan/25 bg-cyan/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan">
+                                                    Editing Access
+                                                </div>
+                                            )}
 
                                             <div className="relative z-10 flex flex-col h-full">
                                                 {/* Polaroid Area (auto-rotates when multiple destinations exist) */}
@@ -259,9 +273,16 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
 
                                                     {/* Badges and Subtitle row */}
                                                     <div className="flex items-center justify-center mb-4">
-                                                        <span className="text-[10px] sm:text-xs text-cyan/90 font-medium">
-                                                            {guestString}
-                                                        </span>
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            <span className="text-[10px] sm:text-xs text-cyan/90 font-medium">
+                                                                {guestString}
+                                                            </span>
+                                                            {isShared && ownerName && (
+                                                                <span className="text-[10px] text-cyan/40 font-medium truncate max-w-[240px]">
+                                                                    Owned By: {ownerName}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
 
                                                     {/* Details (Chip UI) */}
@@ -276,7 +297,7 @@ export default function PersonalPlansComponent({ plans }: PersonalPlansComponent
                                                     {/* Footer Action */}
                                                     <div className="mt-auto flex items-center justify-center border-t border-white/[0.08] pt-5">
                                                         <span className="uppercase text-sm font-medium text-slate/80 transition-colors group-hover/card:text-cyan">
-                                                            Resume Plan
+                                                            {isShared ? 'Open Itinerary' : 'Resume Plan'}
                                                         </span>
                                                         <div className="w-8 h-8 flex items-center justify-center transition-colors">
                                                             <ChevronRight className="w-4 h-4 text-slate transition-colors group-hover/card:text-cyan" />

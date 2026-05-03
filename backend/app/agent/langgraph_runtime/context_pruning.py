@@ -17,7 +17,7 @@ from app.agent.langgraph_runtime.collaboration import (
     validate_question_args,
 )
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
 
 log = get_agent_logger("context_pruning")
 
@@ -31,6 +31,7 @@ _PRUNE_TARGET_RATIO = 0.50
 _PRUNE_MAX_ITERS = 8
 
 _MODEL = settings.PLANNER_AGENT_MODEL
+_PRUNING_SKU = resolve_gemini_model_sku(settings.CONTEXT_PRUNING_MODEL)
 
 # One-time cache for the static token overhead (system instruction + tool
 # schemas).  Keyed by id(config) so each node's config is measured once.
@@ -179,9 +180,9 @@ async def _summarize_dropped(dropped: list) -> Optional[str]:
             return None
         # Rate-limit gate.
         try:
-            await get_rate_limiter().consume(SKU["context_pruning"])
+            await get_rate_limiter().consume(_PRUNING_SKU)
         except RateLimitExceeded as exc:
-            log.warning("context_pruning quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
+            log.warning("Pruning model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
             return None
         resp = await runtime.pruning_client.aio.models.generate_content(
             model=settings.CONTEXT_PRUNING_MODEL,

@@ -14,9 +14,10 @@ from app.agent.langgraph_runtime.streaming import emit
 from app.core.config import settings
 from app.logging import get_agent_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
 
 log = get_agent_logger("conversational_node")
+CONVERSATION_MODEL_SKU = resolve_gemini_model_sku(settings.CONVERSATION_AGENT_MODEL)
 
 _PROMPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "prompts", "editor", "conversationalPrompt.md"
@@ -136,7 +137,7 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
     max_turns = 24
     for _turn in range(max_turns):
         try:
-            await get_rate_limiter().consume(SKU["conversation_agent"])
+            await get_rate_limiter().consume(CONVERSATION_MODEL_SKU)
         except RateLimitExceeded as exc:
             emit({"type": "error", "content": f"Conversation quota exhausted. Retry after {exc.retry_after_seconds}s."})
             return {"cancelled": True}

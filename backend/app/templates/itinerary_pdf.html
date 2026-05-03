@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }} - BonPlan.ai Itinerary</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 14mm 18mm 14mm;
+      @bottom-left {
+        content: "BonPlan.ai Travel Itinerary";
+        color: #64748b;
+        font-size: 8.5pt;
+      }
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        color: #64748b;
+        font-size: 8.5pt;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #0f172a;
+      background: #ffffff;
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+    }
+
+    a {
+      color: #0369a1;
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    .cover {
+      min-height: 245mm;
+      padding: 18mm 16mm 14mm;
+      border: 1px solid #d8e0eb;
+      background: linear-gradient(135deg, #f8fafc 0%, #eef7f8 44%, #ffffff 100%);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cover:before {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 50mm;
+      height: 50mm;
+      background: #66fcf1;
+      opacity: 0.18;
+      border-bottom-left-radius: 50mm;
+    }
+
+    .brand-row {
+      position: relative;
+      display: table;
+      width: 100%;
+      margin-bottom: 20mm;
+    }
+
+    .brand-mark,
+    .brand-copy {
+      display: table-cell;
+      vertical-align: middle;
+    }
+
+    .brand-mark {
+      width: 16mm;
+    }
+
+    .brand-mark img {
+      width: 13mm;
+      height: 13mm;
+      object-fit: contain;
+      border-radius: 4mm;
+    }
+
+    .brand-fallback {
+      width: 13mm;
+      height: 13mm;
+      border-radius: 4mm;
+      background: #0b0c10;
+      color: #66fcf1;
+      font-weight: 800;
+      text-align: center;
+      line-height: 13mm;
+    }
+
+    .brand-name {
+      font-size: 19pt;
+      font-weight: 800;
+      color: #0b0c10;
+      letter-spacing: 0;
+    }
+
+    .brand-subtitle {
+      margin-top: 1mm;
+      color: #64748b;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 700;
+    }
+
+    .kicker {
+      position: relative;
+      color: #0f766e;
+      font-size: 9pt;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 5mm;
+    }
+
+    h1 {
+      position: relative;
+      margin: 0;
+      max-width: 155mm;
+      color: #0f172a;
+      font-size: 36pt;
+      line-height: 1.04;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .route {
+      position: relative;
+      margin: 8mm 0 0;
+      max-width: 160mm;
+      color: #334155;
+      font-size: 13.5pt;
+      line-height: 1.45;
+    }
+
+    .cover-meta {
+      margin-top: 20mm;
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 4mm;
+      margin-left: -4mm;
+    }
+
+    .cover-meta td {
+      width: 33.333%;
+      padding: 5mm;
+      border: 1px solid #d8e0eb;
+      border-radius: 4mm;
+      background: rgba(255,255,255,0.86);
+      vertical-align: top;
+    }
+
+    .meta-label {
+      color: #64748b;
+      font-size: 7.6pt;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+      margin-bottom: 2mm;
+    }
+
+    .meta-value {
+      color: #0f172a;
+      font-size: 13pt;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .cover-footer {
+      margin-top: auto;
+      padding-top: 5mm;
+      border-top: 1px solid #d8e0eb;
+      color: #475569;
+      font-size: 9pt;
+    }
+
+    .prepared-line {
+      color: #475569;
+      font-size: 9pt;
+    }
+
+    .section {
+      page-break-inside: avoid;
+      margin: 0 0 9mm;
+    }
+
+    .section-title {
+      display: table;
+      width: 100%;
+      margin: 0 0 5mm;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 3mm;
+    }
+
+    .section-title h2 {
+      display: table-cell;
+      margin: 0;
+      font-size: 17pt;
+      line-height: 1.1;
+      color: #0f172a;
+      font-weight: 850;
+    }
+
+    .section-title span {
+      display: table-cell;
+      text-align: right;
+      vertical-align: bottom;
+      color: #64748b;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 800;
+    }
+
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 6mm;
+      border: 1px solid #d8e0eb;
+    }
+
+    .details-table th,
+    .details-table td {
+      padding: 3mm 3.5mm;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .details-table th {
+      width: 36mm;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+
+    .details-table td {
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    .tips {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tips li {
+      margin: 0 0 3mm;
+      padding: 3mm 4mm;
+      border-left: 3px solid #0f766e;
+      background: #f0fdfa;
+      color: #164e63;
+      page-break-inside: avoid;
+    }
+
+    .overview {
+      page-break-before: always;
+      page-break-inside: auto;
+      margin-bottom: 9mm;
+    }
+
+    .overview-list {
+      display: block;
+    }
+
+    .overview-card {
+      border: 1px solid #d8e0eb;
+      border-radius: 4mm;
+      background: #ffffff;
+      padding: 5mm;
+      page-break-inside: avoid;
+      margin: 0 0 4mm;
+    }
+
+    .overview-card-head {
+      display: table;
+      width: 100%;
+      margin-bottom: 3mm;
+    }
+
+    .overview-card-head h3,
+    .overview-card-head .overview-meta {
+      display: table-cell;
+      vertical-align: top;
+    }
+
+    .overview-card-head h3 {
+      margin: 0;
+      color: #0f172a;
+      font-size: 13pt;
+      font-weight: 850;
+      line-height: 1.15;
+    }
+
+    .overview-meta {
+      text-align: right;
+      color: #64748b;
+      font-size: 8pt;
+      font-weight: 800;
+      white-space: nowrap;
+      padding-left: 4mm;
+    }
+
+    .overview-event-list {
+      display: block;
+      margin-top: 2mm;
+    }
+
+    .overview-event {
+      display: table;
+      width: 100%;
+      padding: 2.4mm 0;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .overview-event-time,
+    .overview-event-main,
+    .overview-event-cost {
+      display: table-cell;
+      vertical-align: top;
+    }
+
+    .overview-event-time {
+      width: 34mm;
+      color: #0f766e;
+      font-size: 8.2pt;
+      font-weight: 850;
+      white-space: nowrap;
+      padding-right: 4mm;
+    }
+
+    .overview-event-main {
+      color: #0f172a;
+    }
+
+    .overview-event-label {
+      color: #64748b;
+      font-size: 7.2pt;
+      font-weight: 850;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.6mm;
+    }
+
+    .overview-event-title {
+      font-size: 10.3pt;
+      font-weight: 850;
+      line-height: 1.25;
+    }
+
+    .overview-event-subtitle {
+      margin-top: 0.6mm;
+      color: #64748b;
+      font-size: 8.5pt;
+      font-weight: 650;
+    }
+
+    .overview-event-cost {
+      width: 24mm;
+      text-align: right;
+      color: #334155;
+      font-size: 8.2pt;
+      font-weight: 850;
+      white-space: nowrap;
+      padding-left: 4mm;
+    }
+
+    .overview-cost {
+      margin-top: 3mm;
+      color: #0f172a;
+      font-size: 9pt;
+      font-weight: 850;
+    }
+
+    .day {
+      page-break-before: always;
+    }
+
+    .day-header {
+      margin-bottom: 6mm;
+      padding: 6mm 7mm;
+      background: #0f172a;
+      color: #ffffff;
+      border-radius: 4mm;
+      page-break-inside: avoid;
+    }
+
+    .day-kicker {
+      color: #66fcf1;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-weight: 850;
+      margin-bottom: 2mm;
+    }
+
+    .day-header h2 {
+      margin: 0;
+      font-size: 22pt;
+      line-height: 1.1;
+      font-weight: 850;
+    }
+
+    .day-date {
+      margin-top: 2mm;
+      color: #cbd5e1;
+      font-size: 10pt;
+      font-weight: 650;
+    }
+
+    .day-stats {
+      width: 100%;
+      margin: 4mm 0 7mm;
+      border-collapse: separate;
+      border-spacing: 3mm 0;
+      margin-left: -3mm;
+      page-break-inside: avoid;
+    }
+
+    .day-stats td {
+      width: 25%;
+      padding: 3mm;
+      border: 1px solid #d8e0eb;
+      border-radius: 3mm;
+      background: #f8fafc;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+
+    .stat-value {
+      margin-top: 1mm;
+      color: #0f172a;
+      font-size: 12pt;
+      font-weight: 850;
+    }
+
+    .event {
+      position: relative;
+      margin: 0 0 6mm;
+      padding: 0;
+      border: 1px solid #d8e0eb;
+      border-radius: 4mm;
+      background: #ffffff;
+      page-break-inside: avoid;
+      overflow: hidden;
+    }
+
+    .event-accent {
+      height: 1.6mm;
+      background: #334155;
+    }
+
+    .event-body {
+      padding: 5mm 5.5mm 5mm;
+    }
+
+    .event-header {
+      display: table;
+      width: 100%;
+      margin-bottom: 3mm;
+    }
+
+    .event-main,
+    .event-time {
+      display: table-cell;
+      vertical-align: top;
+    }
+
+    .event-time {
+      width: 34mm;
+      text-align: right;
+      color: #475569;
+      font-size: 9pt;
+      font-weight: 800;
+      padding-left: 5mm;
+    }
+
+    .event-type {
+      color: #64748b;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 850;
+      margin-bottom: 1.5mm;
+    }
+
+    .event h3 {
+      margin: 0;
+      color: #0f172a;
+      font-size: 15.5pt;
+      line-height: 1.18;
+      font-weight: 850;
+    }
+
+    .event-subtitle {
+      margin: 1.5mm 0 0;
+      color: #475569;
+      font-size: 9.5pt;
+      font-weight: 650;
+    }
+
+    .badges {
+      margin: 3mm 0 2mm;
+    }
+
+    .badge {
+      display: inline-block;
+      margin: 0 2mm 2mm 0;
+      padding: 1.5mm 2.5mm;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 8pt;
+      font-weight: 750;
+    }
+
+    .badge b {
+      color: #64748b;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-size: 6.8pt;
+      margin-right: 1mm;
+    }
+
+    .location {
+      margin: 3mm 0;
+      padding: 2.5mm 3mm;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 2.5mm;
+      color: #334155;
+      font-weight: 650;
+    }
+
+    .paragraph {
+      margin: 3mm 0 0;
+      color: #334155;
+    }
+
+    .event-grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4mm;
+      border: 1px solid #e2e8f0;
+    }
+
+    .event-grid th,
+    .event-grid td {
+      padding: 2.5mm 3mm;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .event-grid th {
+      width: 37mm;
+      color: #64748b;
+      background: #f8fafc;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-size: 7pt;
+      font-weight: 850;
+    }
+
+    .event-grid td {
+      color: #1e293b;
+      white-space: pre-line;
+    }
+
+    .links {
+      margin-top: 4mm;
+      padding-top: 3mm;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .link-pill {
+      display: inline-block;
+      margin: 0 2mm 2mm 0;
+      padding: 1.8mm 3mm;
+      border: 1px solid #bae6fd;
+      border-radius: 999px;
+      background: #f0f9ff;
+      color: #0369a1;
+      font-size: 8pt;
+      font-weight: 850;
+    }
+
+    .event-tips {
+      margin-top: 4mm;
+      padding: 3.5mm 4mm;
+      border-radius: 3mm;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #713f12;
+    }
+
+    .event-tips-title {
+      margin-bottom: 2mm;
+      color: #92400e;
+      font-size: 7.5pt;
+      font-weight: 850;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    .event-tips ul {
+      margin: 0;
+      padding-left: 4mm;
+    }
+
+    .event-tips li {
+      margin-bottom: 1.5mm;
+    }
+
+    .empty-day {
+      padding: 8mm;
+      border: 1px dashed #cbd5e1;
+      border-radius: 4mm;
+      color: #64748b;
+      text-align: center;
+      background: #f8fafc;
+    }
+
+    .closing {
+      page-break-before: always;
+      padding: 18mm 12mm;
+      border: 1px solid #d8e0eb;
+      background: #f8fafc;
+      min-height: 120mm;
+    }
+
+    .closing h2 {
+      margin: 0 0 5mm;
+      color: #0f172a;
+      font-size: 22pt;
+      font-weight: 850;
+    }
+
+    .closing p {
+      color: #334155;
+      font-size: 11pt;
+      max-width: 145mm;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div>
+      <div class="brand-row">
+        <div class="brand-mark">
+          {% if has_logo %}
+            <img src="{{ logo_data_uri }}" alt="BonPlan.ai logo">
+          {% else %}
+            <div class="brand-fallback">B</div>
+          {% endif %}
+        </div>
+        <div class="brand-copy">
+          <div class="brand-name">BonPlan.ai</div>
+          <div class="brand-subtitle">Tell us When. We Tell the How.</div>
+        </div>
+      </div>
+
+      <div class="kicker">Travel itinerary</div>
+      <h1>{{ title }}</h1>
+      <p class="route">{{ route_label }}</p>
+
+      <table class="cover-meta">
+        <tr>
+          {% for card in summary_cards[:3] %}
+            <td>
+              <div class="meta-label">{{ card.label }}</div>
+              <div class="meta-value">{{ card.value }}</div>
+            </td>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for card in summary_cards[3:6] %}
+            <td>
+              <div class="meta-label">{{ card.label }}</div>
+              <div class="meta-value">{{ card.value }}</div>
+            </td>
+          {% endfor %}
+        </tr>
+      </table>
+    </div>
+
+    <div class="cover-footer">
+      <div class="prepared-line">
+        Prepared{% if prepared_for %} for {{ prepared_for }}{% endif %} on {{ generated_on }}.
+        Includes {{ total_events }} scheduled items across the current generated itinerary.
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="page-break-before: always;">
+    <div class="section-title">
+      <h2>Trip Brief</h2>
+      <span>{{ date_range }}</span>
+    </div>
+    <table class="details-table">
+      {% for row in trip_details %}
+        <tr>
+          <th>{{ row.label }}</th>
+          <td>{{ row.value }}</td>
+        </tr>
+      {% endfor %}
+      <tr>
+        <th>Total Estimate</th>
+        <td>{{ total_cost }}</td>
+      </tr>
+    </table>
+  </section>
+
+  {% if trip_tips %}
+    <section class="section">
+      <div class="section-title">
+        <h2>Planner Notes</h2>
+        <span>Before you go</span>
+      </div>
+      <ul class="tips">
+        {% for tip in trip_tips %}
+          <li>{{ tip }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if day_overviews %}
+    <section class="overview">
+      <div class="section-title">
+        <h2>Trip Overview</h2>
+        <span>Quick view</span>
+      </div>
+      <div class="overview-list">
+        {% for day in day_overviews %}
+          <div class="overview-card">
+            <div class="overview-card-head">
+              <h3>Day {{ day.day_number }} - {{ day.title }}</h3>
+              <div class="overview-meta">
+                {{ day.date_label }}<br>
+                {{ day.cost }}
+              </div>
+            </div>
+                {% if day.events %}
+                  <div class="overview-event-list">
+                    {% for event in day.events %}
+                      <div class="overview-event">
+                        <div class="overview-event-time">{{ event.time }}</div>
+                        <div class="overview-event-main">
+                          <div class="overview-event-label">{{ event.label }}</div>
+                          <div class="overview-event-title">{{ event.title }}</div>
+                          {% if event.subtitle %}
+                            <div class="overview-event-subtitle">{{ event.subtitle }}</div>
+                          {% endif %}
+                        </div>
+                        <div class="overview-event-cost">{{ event.cost }}</div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="empty-day" style="padding:4mm;margin-top:2mm;">No scheduled events yet.</div>
+                {% endif %}
+            <div class="overview-cost">Day Cost: {{ day.cost }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% for day in days %}
+    <section class="day">
+      <div class="day-header">
+        <div class="day-kicker">Day {{ day.day_number }}</div>
+        <h2>{{ day.title }}</h2>
+        {% if day.date_label %}
+          <div class="day-date">{{ day.date_label }}</div>
+        {% endif %}
+      </div>
+
+      <table class="day-stats">
+        <tr>
+          <td>
+            <div class="stat-label">Scheduled</div>
+            <div class="stat-value">{{ day.scheduled_count }}</div>
+          </td>
+          <td>
+            <div class="stat-label">Commute</div>
+            <div class="stat-value">{{ day.transfer_count }}</div>
+          </td>
+          <td>
+            <div class="stat-label">All Items</div>
+            <div class="stat-value">{{ day.event_count }}</div>
+          </td>
+          <td>
+            <div class="stat-label">Day Cost</div>
+            <div class="stat-value">{{ day.cost }}</div>
+          </td>
+        </tr>
+      </table>
+
+      {% if not day.events %}
+        <div class="empty-day">No itinerary items are scheduled for this day yet.</div>
+      {% endif %}
+
+      {% for event in day.events %}
+        <article class="event">
+          <div class="event-accent"{{ event.accent_attr|safe }}></div>
+          <div class="event-body">
+            <div class="event-header">
+              <div class="event-main">
+                <div class="event-type">{{ event.label }}</div>
+                <h3>{{ event.title }}</h3>
+                {% if event.subtitle %}
+                  <div class="event-subtitle">{{ event.subtitle }}</div>
+                {% endif %}
+              </div>
+              {% if event.time_label %}
+                <div class="event-time">{{ event.time_label }}</div>
+              {% endif %}
+            </div>
+
+            {% if event.badges %}
+              <div class="badges">
+                {% for badge in event.badges %}
+                  <span class="badge"><b>{{ badge.label }}</b>{{ badge.value }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+
+            {% if event.location %}
+              <div class="location">{{ event.location }}</div>
+            {% endif %}
+
+            {% for paragraph in event.descriptions %}
+              <p class="paragraph">{{ paragraph }}</p>
+            {% endfor %}
+
+            {% if event.details %}
+              <table class="event-grid">
+                {% for detail in event.details %}
+                  <tr>
+                    <th>{{ detail.label }}</th>
+                    <td>{{ detail.value }}</td>
+                  </tr>
+                {% endfor %}
+              </table>
+            {% endif %}
+
+            {% if event.tips %}
+              <div class="event-tips">
+                <div class="event-tips-title">Planner Tips</div>
+                <ul>
+                  {% for tip in event.tips %}
+                    <li>{{ tip }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endif %}
+
+            {% if event.links %}
+              <div class="links">
+                {% for link in event.links %}
+                  <a class="link-pill" href="{{ link.url }}">{{ link.label }}</a>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% endfor %}
+
+  <section class="closing">
+    <div class="brand-row" style="margin-bottom: 12mm;">
+      <div class="brand-mark">
+        {% if has_logo %}
+          <img src="{{ logo_data_uri }}" alt="BonPlan.ai logo">
+        {% else %}
+          <div class="brand-fallback">B</div>
+        {% endif %}
+      </div>
+      <div class="brand-copy">
+        <div class="brand-name">BonPlan.ai</div>
+        <div class="brand-subtitle">Generated itinerary package</div>
+      </div>
+    </div>
+    <h2>Have a great trip.</h2>
+    <p>
+      This itinerary reflects the current generated state saved in BonPlan.ai.
+      Confirm operating hours, reservation terms, travel times, ticket availability, and booking prices before departure.
+    </p>
+  </section>
+</body>
+</html>

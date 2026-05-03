@@ -450,10 +450,12 @@ class GenerationManager {
     const newTurns: ChatTurn[] = [...session.turns];
     const shouldAppendUserTurn = options.appendUserTurn !== false;
     if (shouldAppendUserTurn && options.chatInput && options.chatInput.trim().length > 0) {
+      const attachedEvents = [...(options.attachedEvents || [])];
       newTurns.push({
         id: `${Date.now()}-user`,
         type: 'user' as const,
         text: options.chatInput,
+        ...(attachedEvents.length > 0 ? { attachedEvents } : {}),
       });
     }
     newTurns.push({

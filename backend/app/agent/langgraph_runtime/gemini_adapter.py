@@ -35,7 +35,7 @@ from app.agent.langgraph_runtime.collaboration import (
 )
 from app.agent.helpers.qa_persistence import fire_persist_qa
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
 
 from app.agent.langgraph_runtime.context_pruning import (
     _needs_pruning,
@@ -45,6 +45,7 @@ from app.agent.langgraph_runtime.context_pruning import (
 log = get_agent_logger("gemini_adapter")
 
 _MODEL = settings.PLANNER_AGENT_MODEL
+_MODEL_SKU = resolve_gemini_model_sku(_MODEL)
 
 
 # Per-tool cap on how many characters of a tool response get forwarded to the
@@ -226,14 +227,14 @@ async def run_chat_loop(
 
             # Rate-limit gate.
             try:
-                await get_rate_limiter().consume(SKU["planner_agent"])
+                await get_rate_limiter().consume(_MODEL_SKU)
             except RateLimitExceeded as exc:
-                log.error("planner_agent quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
+                log.error("Gemini model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
                 emit({"type": "error", "content": f"Planner quota exhausted. Retry after {exc.retry_after_seconds}s."})
                 return ChatResult(
                     emitted_events=list(session_events), last_text=last_text_buffer,
                     success=False, next_event_number=next_event_number,
-                    is_complete=is_complete, error="planner_agent quota exhausted",
+                    is_complete=is_complete, error=f"{_MODEL_SKU} quota exhausted",
                 )
 
             try:

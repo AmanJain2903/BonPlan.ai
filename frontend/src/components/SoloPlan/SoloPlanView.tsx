@@ -22,6 +22,12 @@ import ItineraryPanel from './ItineraryPanel';
 import HeroPanel from './HeroPanel';
 import MessageCanvas from './MessageCanvas';
 import ChatInputBar from './ChatInputBar';
+import TripShareMenu from './TripShareMenu';
+import {
+  DeleteTripModal,
+  OpenBookingsMenu,
+  TripNavigationControls,
+} from './TripHeaderControls';
 
 function derivePageState(
   plan: Plan | null,
@@ -72,6 +78,9 @@ export default function SoloPlanView() {
   const [thoughtsExpanded, setThoughtsExpanded] = useState(false);
   const [systemLogExpanded, setSystemLogExpanded] = useState(false);
   const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const [deleteTripOpen, setDeleteTripOpen] = useState(false);
+  const [deletingTrip, setDeletingTrip] = useState(false);
+  const [deleteTripError, setDeleteTripError] = useState('');
 
   const messageEndRef = useRef<HTMLDivElement>(null);
   const thinkingEndRef = useRef<HTMLDivElement>(null);
@@ -85,6 +94,32 @@ export default function SoloPlanView() {
     () => derivePageState(plan, tripItinerary, generatingOverride),
     [plan, tripItinerary, generatingOverride],
   );
+
+  const handleDeleteTrip = useCallback(async () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+
+    setDeletingTrip(true);
+    setDeleteTripError('');
+    try {
+      const res = await api.deletePlan(token, tripId);
+      if (res.status_code && res.status_code >= 400) {
+        setDeleteTripError(res.message || 'Could not delete this trip.');
+        return;
+      }
+      generationManager.clearSession(tripId);
+      navigate('/');
+    } catch (err: unknown) {
+      const detail =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string; message?: string } } }).response?.data?.detail ||
+            (err as { response?: { data?: { detail?: string; message?: string } } }).response?.data?.message
+          : undefined;
+      setDeleteTripError(detail || 'Could not delete this trip.');
+    } finally {
+      setDeletingTrip(false);
+    }
+  }, [navigate, tripId]);
 
   // Sync from generationManager subscription
   const handleSessionUpdate = useCallback((session: GenerationSession) => {
@@ -153,7 +188,7 @@ export default function SoloPlanView() {
         if (!token || !tripId) return;
 
         const rbacRes = await api.getRBAC(token, tripId);
-        if (!rbacRes.rbac || (rbacRes.rbac !== 'owner' && rbacRes.rbac !== 'shared_editor')) {
+        if (!rbacRes.rbac || !['owner', 'shared_editor', 'shared_viewer'].includes(rbacRes.rbac)) {
           navigate('/');
           return;
         }
@@ -312,28 +347,99 @@ export default function SoloPlanView() {
   if (!plan) return null;
 
   const isGenerating = pageState === 'GENERATING' || (pageState === 'EDITING' && isSessionActive);
+  const canEdit = plan.role === 'owner' || plan.role === 'shared_editor';
+  const isItineraryGenerated = (tripItinerary?.status || '').toLowerCase() === 'generated';
+  const tripTitleForDelete = itineraryState.tripTitle || tripItinerary?.title || 'this trip';
+  const leftControl = (
+    <TripNavigationControls
+      canDelete={plan.role === 'owner'}
+      deleting={deletingTrip}
+      deleteDisabled={isSessionActive}
+      onBack={() => navigate('/')}
+      onDelete={() => {
+        setDeleteTripError('');
+        setDeleteTripOpen(true);
+      }}
+    />
+  );
+  const shareControl = tripId && isItineraryGenerated && !isGenerating
+    ? (
+      <div className="flex items-center gap-2">
+        <OpenBookingsMenu itineraryState={itineraryState} />
+        <TripShareMenu tripId={tripId} plan={plan} />
+      </div>
+    )
+    : undefined;
+  const deleteModal = deleteTripOpen ? (
+    <DeleteTripModal
+      tripTitle={tripTitleForDelete}
+      deleting={deletingTrip}
+      error={deleteTripError}
+      onCancel={() => {
+        if (deletingTrip) return;
+        setDeleteTripOpen(false);
+        setDeleteTripError('');
+      }}
+      onConfirm={handleDeleteTrip}
+    />
+  ) : null;
 
   // ─── DRAFT View ──────────────────────────────────────────────
   if (pageState === 'DRAFT') {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0, transition: { duration: 0.3 } }}
-        className="h-screen overflow-hidden bg-black flex flex-col pt-16"
-      >
-        <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+    if (!canEdit) {
+      return (
+        <>
+          {deleteModal}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.3 } }}
+            className="h-screen overflow-hidden bg-black flex flex-col pt-16"
+          >
+            <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+              <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
+                <TripSummaryPills
+                  plan={plan}
+                  tripCostEstimate={tripItinerary?.cost ?? undefined}
+                  actualCost={0}
+                  isGenerating={false}
+                  dynamicTitle={itineraryState.tripTitle}
+                  dynamicJourney={itineraryState.journey}
+                  leftControl={leftControl}
+                />
+                <div className="flex flex-1 items-center justify-center text-sm text-white/45">
+                  This shared itinerary is not ready to view yet.
+                </div>
+              </div>
+            </main>
+          </motion.div>
+        </>
+      );
+    }
 
-          <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
-            <TripSummaryPills
-              plan={plan}
-              tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
-              actualCost={0}
-              isGenerating={false}
-              dynamicTitle={itineraryState.tripTitle}
-              dynamicJourney={itineraryState.journey}
-            />
+    return (
+      <>
+        {deleteModal}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.3 } }}
+          className="h-screen overflow-hidden bg-black flex flex-col pt-16"
+        >
+          <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+
+            <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
+              <TripSummaryPills
+                plan={plan}
+                tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
+                actualCost={0}
+                isGenerating={false}
+                dynamicTitle={itineraryState.tripTitle}
+                dynamicJourney={itineraryState.journey}
+                leftControl={leftControl}
+              />
 
             <motion.div
               layout
@@ -357,9 +463,10 @@ export default function SoloPlanView() {
                 />
               </motion.div>
             </motion.div>
-          </div>
-        </main>
-      </motion.div>
+            </div>
+          </main>
+        </motion.div>
+      </>
     );
   }
 
@@ -370,25 +477,29 @@ export default function SoloPlanView() {
     : `${chatMode} mode`;
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: 0.3 } }}
-      className="h-screen overflow-hidden bg-black flex flex-col pt-16"
-    >
-      <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
-        <FloatingRestoreButton visible={isChatMinimized} onRestore={() => setIsChatMinimized(false)} />
+    <>
+      {deleteModal}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: { duration: 0.3 } }}
+        className="h-screen overflow-hidden bg-black flex flex-col pt-16"
+      >
+        <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+          <FloatingRestoreButton visible={isChatMinimized} onRestore={() => setIsChatMinimized(false)} />
 
-        <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
-          <TripSummaryPills
-            plan={plan}
-            tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
-            actualCost={itineraryState.days.reduce((acc, day) => acc + day.cost, 0)}
-            isGenerating={isGenerating}
-            dynamicTitle={itineraryState.tripTitle}
-            dynamicJourney={itineraryState.journey}
-          />
+          <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
+            <TripSummaryPills
+              plan={plan}
+              tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
+              actualCost={itineraryState.days.reduce((acc, day) => acc + day.cost, 0)}
+              isGenerating={isGenerating}
+              dynamicTitle={itineraryState.tripTitle}
+              dynamicJourney={itineraryState.journey}
+              leftControl={leftControl}
+              shareControl={shareControl}
+            />
 
           <motion.div
             initial={{ opacity: 0, scale: 0.9, clipPath: 'inset(10% 40% 10% 40% round 24px)', filter: 'blur(8px)' }}
@@ -398,16 +509,16 @@ export default function SoloPlanView() {
           >
             {/* LEFT: Itinerary Panel */}
             <ItineraryPanel
-              isChatMinimized={isChatMinimized}
+              isChatMinimized={isChatMinimized || !canEdit}
               planStatus={pageState}
               itineraryState={itineraryState}
               errorType={errorType}
-              onRetry={handleRetry}
+              onRetry={canEdit ? handleRetry : undefined}
             />
 
             {/* RIGHT: Chat Panel */}
             <AnimatePresence>
-              {!isChatMinimized && (
+              {canEdit && !isChatMinimized && (
                 <motion.div
                   layout
                   initial={{ opacity: 0, width: 0, x: 20 }}
@@ -494,9 +605,10 @@ export default function SoloPlanView() {
               )}
             </AnimatePresence>
           </motion.div>
-        </div>
-      </main>
-    </motion.div>
+          </div>
+        </main>
+      </motion.div>
+    </>
   );
 }
 

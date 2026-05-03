@@ -21,7 +21,7 @@ import { PlanSummary } from './PlanSummary.tsx';
 import { api } from '../../api';
 
 export default function PlanSetup() {
-  const { isLoggedIn, user, token } = useAuth();
+  const { user, token } = useAuth();
   const { trip, setTrip, updateTripData } = useTrip();
   const navigate = useNavigate();
 

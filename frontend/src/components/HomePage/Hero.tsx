@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import RoutingVisual from './RoutingVisual';
 import { useAuth } from '../../context/AuthContext';
 import { Plan } from '../../apis/plan';
-import { useDraftPlans, usePersonalPlans } from '../../hooks/useTripFilters';
+import { useDraftPlans, usePersonalPlans, useSharedPlans } from '../../hooks/useTripFilters';
 
 interface HeroProps {
   plans?: Plan[];
@@ -19,6 +19,7 @@ export default function Hero({ plans = [], isLoadingPlans = false }: HeroProps) 
 
   const draftPlans = useDraftPlans(plans);
   const personalPlans = usePersonalPlans(plans);
+  const sharedPlans = useSharedPlans(plans);
 
   // Setup dynamic pills based on drafted plans
   const pills = [];
@@ -27,6 +28,9 @@ export default function Hero({ plans = [], isLoadingPlans = false }: HeroProps) 
   }
   if (personalPlans && personalPlans.length > 0) {
     pills.push({ label: 'Personal Plans', href: '#personal-plans' });
+  }
+  if (sharedPlans && sharedPlans.length > 0) {
+    pills.push({ label: 'Shared With Me', href: '#shared-plans' });
   }
   pills.push({ label: 'Explore Features', href: '#features' });
 

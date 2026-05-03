@@ -1,6 +1,6 @@
 import { RefObject, useState, useEffect, useRef, useCallback, useLayoutEffect, MutableRefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Brain, ChevronDown, Loader2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown } from 'lucide-react';
+import { User, Brain, ChevronDown, Loader2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown, CalendarCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { EASE_OUT_EXPO } from './constants';
 import { SystemLog, ChatTurn, BotTurn, UserTurn, QAPairTurn } from './types';
@@ -9,11 +9,12 @@ import QuestionCard from './QuestionCard';
 
 // ─── Sub-sections ─────────────────────────────────────────────
 
-function UserMessage({ text }: { text: string }) {
+function UserMessage({ text, attachedEventsCount = 0 }: { text: string; attachedEventsCount?: number }) {
   const [expanded, setExpanded] = useState(false);
   if (!text.trim()) return null;
   const needsTruncation = text.length > 50;
   const displayText = needsTruncation && !expanded ? text.slice(0, 50) + '...' : text;
+  const hasAttachedEvents = attachedEventsCount > 0;
   return (
     <motion.div
       initial={{ opacity: 0, y: 10, scale: 0.97 }}
@@ -33,6 +34,18 @@ function UserMessage({ text }: { text: string }) {
             </button>
           )}
         </p>
+        {hasAttachedEvents && (
+          <div className="mt-2 flex justify-end">
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-cyan/25 bg-cyan/10 px-2 py-0.5 text-[11px] font-semibold leading-none text-cyan/85"
+              title={`${attachedEventsCount} attached ${attachedEventsCount === 1 ? 'event' : 'events'}`}
+              aria-label={`${attachedEventsCount} attached ${attachedEventsCount === 1 ? 'event' : 'events'}`}
+            >
+              <CalendarCheck className="w-3 h-3" />
+              +{attachedEventsCount}
+            </span>
+          </div>
+        )}
       </div>
       <div className="w-7 h-7 rounded-full bg-cyan/10 border border-cyan/20 flex items-center justify-center shrink-0 mt-0.5">
         <User className="w-3.5 h-3.5 text-cyan" />
@@ -473,7 +486,6 @@ interface MessageCanvasProps {
 export default function MessageCanvas({
   turns,
   toolsExpanded,
-  onToggleTools,
   thoughtsExpanded,
   onToggleThoughts,
   systemLogExpanded,
@@ -615,7 +627,14 @@ export default function MessageCanvas({
               first, newest just before the separator). */}
           {historyTurns.map((turn) => {
             if (turn.type === 'user') {
-              return <UserMessage key={turn.id} text={(turn as UserTurn).text} />;
+              const userTurn = turn as UserTurn;
+              return (
+                <UserMessage
+                  key={userTurn.id}
+                  text={userTurn.text}
+                  attachedEventsCount={userTurn.attachedEvents?.length || 0}
+                />
+              );
             }
             if (turn.type === 'qa_pair') {
               return <QAPairMessage key={turn.id} turn={turn as QAPairTurn} />;

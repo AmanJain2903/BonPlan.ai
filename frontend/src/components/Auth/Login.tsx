@@ -42,8 +42,14 @@ export default function Login() {
           isAdmin,
         });
 
-        const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-        const next = fromPath && fromPath.startsWith('/admin') && isAdmin ? fromPath : '/';
+        const from = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+        const fromPath = from?.pathname;
+        const fromSearch = from?.search || '';
+        const isInviteRedirect = fromPath === '/share-invite';
+        const next =
+          fromPath && fromPath.startsWith('/admin')
+            ? (isAdmin ? `${fromPath}${fromSearch}` : '/')
+            : (fromPath && fromPath !== '/login' && fromPath !== '/register' ? `${fromPath}${fromSearch}` : '/');
 
         const submitDraft = (location.state as any)?.submitDraft;
         
@@ -60,7 +66,7 @@ export default function Login() {
             console.error('Failed to submit draft post-login', err);
             navigate(next, { replace: true });
           }
-        } else if (res.is_new_user) {
+        } else if (res.is_new_user && !isInviteRedirect) {
           setShowWelcome(true);
         } else {
           navigate(next);
@@ -188,7 +194,7 @@ export default function Login() {
 
           <p className="text-center text-xs text-white/30 mt-8">
             Don't have an account?{' '}
-            <Link to="/register" className="text-cyan hover:text-cyan/80 transition-colors font-medium">Sign up</Link>
+            <Link to="/register" state={location.state} className="text-cyan hover:text-cyan/80 transition-colors font-medium">Sign up</Link>
           </p>
         </motion.div>
       </div>

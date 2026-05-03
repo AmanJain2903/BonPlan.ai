@@ -6,7 +6,10 @@ This file contains the functions for email verification.
 
 import asyncio
 import smtplib
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 from app.core.config import settings
 from app.logging import get_utils_logger
@@ -17,10 +20,33 @@ SMTP_LOGIN_EMAIL = settings.SENDER_EMAIL
 EMAIL_PASSWORD = settings.GMAIL_APP_PASSWORD
 
 DISPLAY_FROM = "BonPlan.ai <no-reply@bonplan.ai>"
+BONPLAN_LOGO_CID = "bonplan-logo"
+BONPLAN_LOGO_PATH = Path(__file__).resolve().parents[3] / "frontend" / "public" / "logo.png"
 
 
-async def send_email(to_email, subject, body):
-    msg = MIMEText(body, "html")
+async def send_email(to_email, subject, body, inline_images: dict[str, str | Path] | None = None):
+    if inline_images:
+        msg = MIMEMultipart("related")
+        alternative = MIMEMultipart("alternative")
+        alternative.attach(MIMEText(body, "html"))
+        msg.attach(alternative)
+
+        for content_id, image_path in inline_images.items():
+            path = Path(image_path)
+            if not path.exists():
+                logger.warning("Inline email image missing", content_id=content_id, path=str(path))
+                continue
+            subtype = path.suffix.lstrip(".").lower() or "png"
+            if subtype == "jpg":
+                subtype = "jpeg"
+            with path.open("rb") as image_file:
+                image = MIMEImage(image_file.read(), _subtype=subtype)
+            image.add_header("Content-ID", f"<{content_id}>")
+            image.add_header("Content-Disposition", "inline", filename=path.name)
+            msg.attach(image)
+    else:
+        msg = MIMEText(body, "html")
+
     msg["Subject"] = subject
     msg["From"] = DISPLAY_FROM
     msg["To"] = to_email
