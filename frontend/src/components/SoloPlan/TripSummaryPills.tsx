@@ -70,6 +70,7 @@ function Pill({
 }) {
   const isActive = hoveredPill === id;
   const isFaded = hoveredPill !== null && !isActive;
+  const activeWidth = `calc(${label.length}ch + 4rem)`;
 
   return (
     <motion.div
@@ -78,7 +79,10 @@ function Pill({
       transition={{ ...SPRING_PILL, delay: 0.1 + index * 0.08 }}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
-      className={`flex items-center gap-2.5 bg-black/60 border border-white/10 rounded-full px-5 py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,max-width,border-color,box-shadow] duration-300 ${isActive ? 'max-w-[800px] transition-smooth duration-800 z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'max-w-[200px] sm:max-w-[250px] z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
+      style={{
+        width: isActive ? activeWidth : undefined,
+      }}
+      className={`flex h-11 min-w-0 flex-none items-center gap-2.5 bg-black/60 border border-white/10 rounded-full px-4 sm:px-5 py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,width,border-color,box-shadow] duration-300 ${isActive ? 'z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'w-40 sm:w-48 lg:w-52 z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
     >
       <Icon className="text-cyan w-4 h-4 shrink-0" />
       <AnimatePresence mode="wait">
@@ -117,7 +121,7 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, i
           transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
           className="w-full shrink-0 relative mb-6 sm:mb-8"
         >
-          <div className="flex flex-wrap items-center justify-center gap-4 px-24 sm:gap-6 lg:gap-8">
+          <div className="scrollbar-hide flex min-h-11 w-full flex-nowrap items-center justify-start gap-3 overflow-x-auto overflow-y-visible px-12 sm:justify-center sm:px-16 lg:gap-4 lg:px-20">
             {PILLS_CONFIG.map(({ id, icon, dataKey }, i) => (
               <Pill
                 key={id}
