@@ -104,6 +104,10 @@ export interface GenerationSession {
   isWaitingForUser: boolean;
   abortController: AbortController | null;
   lastRequest: GenerationStartOptions | null;
+  // Unix ms when the current active run started. Survives navigation so the
+  // elapsed timer in SoloPlanView is computed from this rather than local
+  // component state (which resets to 0 on remount).
+  startedAt: number | null;
 }
 
 export interface AttachedEventRef {

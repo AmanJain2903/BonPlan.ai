@@ -30,6 +30,9 @@ export interface Plan {
     owner?: UserSummary;
     created_at: string;
     updated_at: string;
+    cost?: number | null;
+    itinerary_title?: string | null;
+    has_events?: boolean;
 }
 
 export type ShareAccessRole = 'shared_viewer' | 'shared_editor';

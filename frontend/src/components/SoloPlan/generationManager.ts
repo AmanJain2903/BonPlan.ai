@@ -432,6 +432,7 @@ class GenerationManager {
       isActive: true,
       isWaitingForUser: false,
       abortController: controller,
+      startedAt: Date.now(),
       lastRequest: {
         chatInput: options.chatInput,
         mode: options.mode,
@@ -564,6 +565,7 @@ class GenerationManager {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({ ...turn, isStreaming: false }));
       session.isActive = false;
       session.isWaitingForUser = false;
+      session.startedAt = null;
       this.notify(tripId);
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -580,6 +582,7 @@ class GenerationManager {
       }
       session.isActive = false;
       session.isWaitingForUser = false;
+      session.startedAt = null;
       this.notify(tripId);
     }
   }
@@ -755,6 +758,7 @@ class GenerationManager {
     session.errorType = 'stopped';
     session.isActive = false;
     session.isWaitingForUser = false;
+    session.startedAt = null;
     if (session.mode !== 'editing') this.markLoadingDaysAsError(session);
     this.notify(tripId);
   }

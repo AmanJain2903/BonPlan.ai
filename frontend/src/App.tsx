@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Navbar from './components/shared/Navbar';
@@ -27,6 +27,10 @@ import TripFlushOnHome from './components/shared/TripFlushOnHome';
 import AdminLayout from './components/Admin/AdminLayout';
 import SkuManager from './components/Admin/Pages/SkuManager';
 import UsageViewer from './components/Admin/Pages/UsageViewer';
+import FaqManager from './components/Admin/Pages/FaqManager';
+import SupportTickets from './components/Admin/Pages/SupportTickets';
+import PrivacyPolicy from './components/Legal/PrivacyPolicy';
+import TermsOfService from './components/Legal/TermsOfService';
 
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -75,13 +79,17 @@ function HomePage() {
     fetchPlans();
   }, [isLoggedIn]);
 
+  const handlePlanDelete = useCallback((id: string) => {
+    setPlans(prev => prev.filter(p => p.id !== id));
+  }, []);
+
   return (
     <>
       <main className="relative w-full min-h-screen pt-[24px]">
         <Hero plans={plans} isLoadingPlans={isFetchingPlans} />
-        {plans.length > 0 && <DraftPlansComponent plans={plans} />}
-        {plans.length > 0 && <PersonalPlansComponent plans={plans} />}
-        {plans.length > 0 && <PersonalPlansComponent plans={plans} variant="shared" />}
+        {plans.length > 0 && <DraftPlansComponent plans={plans} onDelete={handlePlanDelete} />}
+        {plans.length > 0 && <PersonalPlansComponent plans={plans} onDelete={handlePlanDelete} />}
+        {plans.length > 0 && <PersonalPlansComponent plans={plans} variant="shared" onDelete={handlePlanDelete} />}
         <Features />
       </main>
       <Footer />
@@ -117,7 +125,11 @@ function AnimatedRoutes() {
           <Route index element={<Navigate to="skus" replace />} />
           <Route path="skus" element={<SkuManager />} />
           <Route path="usage" element={<UsageViewer />} />
+          <Route path="faq" element={<FaqManager />} />
+          <Route path="tickets" element={<SupportTickets />} />
         </Route>
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
         <Route path="/rate-limits/skus" element={<Navigate to="/admin/skus" replace />} />
         <Route path="/rate-limits/usage" element={<Navigate to="/admin/usage" replace />} />
       </Routes>

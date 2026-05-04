@@ -36,29 +36,30 @@ const SoloVisual = () => (
 );
 
 const SquadVisual = () => (
-  <div className="absolute inset-0 flex items-center px-6 gap-3">
-    <div className="flex -space-x-3">
+  <div className="absolute inset-0 flex items-center px-4 sm:px-6 gap-2 sm:gap-3">
+    <div className="flex -space-x-2 sm:-space-x-3 shrink-0">
       {[0, 1, 2, 3].map((i) => (
         <div
           key={i}
-          className="h-12 w-12 rounded-full bg-cyan/15 border-2 border-carbon/60 flex items-center justify-center"
+          className="h-9 w-9 sm:h-12 sm:w-12 rounded-full bg-cyan/15 border-2 border-carbon/60 flex items-center justify-center"
           style={{ animation: `fade-in 400ms ease-out ${i * 120}ms both`, zIndex: 4 - i }}
         >
-          <User size={18} className="text-cyan/70" />
+          <User size={14} className="text-cyan/70 sm:hidden" />
+          <User size={18} className="text-cyan/70 hidden sm:block" />
         </div>
       ))}
     </div>
-    <div className="flex-1 flex flex-col items-center gap-1.5">
+    <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
       <div className="flex gap-1">
         {[0, 1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="h-2 w-2 rounded-full bg-cyan/30"
+            className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-cyan/30"
             style={{ animation: `pulse 1.5s ease-in-out ${i * 0.2}s infinite` }}
           />
         ))}
       </div>
-      <div className="h-3 w-24 rounded-full bg-cyan/10 animate-[pulse_2s_ease-in-out_infinite]" />
+      <div className="h-2.5 sm:h-3 w-16 sm:w-24 rounded-full bg-cyan/10 animate-[pulse_2s_ease-in-out_infinite]" />
     </div>
   </div>
 );
@@ -111,7 +112,7 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
             <button
               key={option.id}
               onClick={() => onSelect(option.id as PlanningStyle)}
-              className={`group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-10 text-left transition-all duration-300 hover:bg-carbon/60 cursor-pointer overflow-hidden ${theme.borderColorHover} ${theme.shadowHover}`}
+              className={`group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-6 sm:p-10 text-left transition-all duration-300 hover:bg-carbon/60 cursor-pointer overflow-hidden ${theme.borderColorHover} ${theme.shadowHover}`}
             >
               {/* Background Glows */}
               <div className="pointer-events-none absolute -inset-24 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-3xl">

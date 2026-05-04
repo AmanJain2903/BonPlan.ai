@@ -11,9 +11,7 @@ Design:
 - A single Lua script performs the atomic check-then-INCR + sets TTL only on
   the first write in a period. This prevents race conditions under concurrent
   requests and guarantees that going over the limit is impossible.
-- TTLs are computed at increment time using "Lazy Reset" semantics. All
-  periods reset at `RATE_LIMITER_RESET_HOUR`:00 in `RATE_LIMITER_RESET_TZ`
-  (default 7:00 AM America/Los_Angeles).
+- TTLs are computed at increment time using "Lazy Reset" semantics.
 - The limiter is cache-aware: callers pass `cache_hit=True` when they served
   the response from their own cache, which skips the counter entirely.
 - When Redis is unreachable, behaviour is controlled by `RATE_LIMITER_MODE`:

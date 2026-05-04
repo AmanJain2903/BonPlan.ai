@@ -459,6 +459,7 @@ async def get_plans(token: str):
             role = role_by_trip.get(plan.id)
             if not role:
                 raise HTTPException(status_code=404, detail="No RBAC found.")
+            itinerary = plan.itineraries[0] if plan.itineraries else None
             response.append({
                 "id": plan.id,
                 "planning_type": plan.planning_type,
@@ -467,11 +468,18 @@ async def get_plans(token: str):
                 "destinations": plan.destinations,
                 "start_date": plan.start_date,
                 "end_date": plan.end_date,
+                "pace": plan.pace,
+                "budget": plan.budget,
                 "adults": plan.adults,
                 "children": plan.children,
                 "status": plan.status,
                 "role": role,
                 "owner": _user_response(plan.owner),
+                "cost": itinerary.cost if itinerary else None,
+                "itinerary_title": itinerary.title if itinerary else None,
+                "has_events": bool(itinerary and itinerary.events),
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
             })
         return {"message": "Plans fetched successfully.", "status_code": 200, "plans": response}
 

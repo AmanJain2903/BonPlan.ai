@@ -280,7 +280,7 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
   };
 
   return (
-    <div ref={rootRef} className="relative flex items-center gap-2">
+    <div ref={rootRef} className="flex items-center gap-2">
       <button
         onClick={() => {
           setOpen((value) => !value);
@@ -299,8 +299,8 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-[80] w-[min(92vw,380px)] overflow-hidden rounded-2xl border border-white/10 bg-carbon/95 shadow-2xl backdrop-blur-xl">
-          <div className="border-b border-white/5 px-4 py-3">
+        <div className="absolute right-0 top-12 z-[80] w-[min(92vw,380px)] overflow-hidden rounded-2xl border border-white/10 bg-carbon/95 shadow-2xl backdrop-blur-xl flex flex-col max-h-[min(80vh,560px)]">
+          <div className="border-b border-white/5 px-4 py-3 shrink-0">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-white">Shared Access</h3>
@@ -312,7 +312,7 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
             </div>
           </div>
 
-          <div className="max-h-[280px] overflow-y-auto px-3 py-3 chat-scrollbar">
+          <div className="max-h-[240px] overflow-y-auto px-3 py-3 chat-scrollbar shrink-0">
             {visibleMembers.length === 0 ? (
               <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-4 text-center text-xs text-white/40">
                 No shared access yet.
@@ -379,7 +379,7 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
             )}
           </div>
 
-          <div className="border-t border-white/5 px-4 py-3">
+          <div className="border-t border-white/5 px-4 py-3 shrink-0 overflow-y-auto">
             {canInvite ? (
               <>
                 <div className="mb-3">

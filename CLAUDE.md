@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Codebase Discovery
 - For any query about project structure, architecture, or cross-file logic, **always call `graphify` tool**
-- Do not attempt to use `grep` or `ls` for codebase mapping; use the graph representation to save context tokens.
-- **Always** browse codebase using **graphify** only.
+- Do not attempt to use `grep` or `ls` or `cat` for codebase mapping; use the graph representation to save context tokens.
+- **Always** browse codebase using **graphify** only. Use of other methods is strictly prohibitted. Only use the other methods if graphify fails to resolve the context you want.
 
 ### 3-Layer Query Rule
 1. **First:** query `graphify-out/graph.json` or `graphify-out/wiki/index.md`

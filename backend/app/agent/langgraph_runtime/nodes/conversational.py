@@ -130,7 +130,7 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
         f"USER QUESTION: {state.get('user_message', '')}\n\n"
     )
 
-    client = genai.Client(api_key=settings.CONVERSATION_AGENT_API_KEY)
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
     chat = client.aio.chats.create(model=settings.CONVERSATION_AGENT_MODEL, config=config)
     current_message: Any = initial_message
 

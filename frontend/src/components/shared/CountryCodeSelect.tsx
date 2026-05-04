@@ -56,7 +56,7 @@ export default function CountryCodeSelect({ value, onChange, id, disabled }: Pro
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 w-64 max-h-60 rounded-xl border border-white/10 bg-carbon shadow-xl overflow-hidden">
+        <div className="absolute z-50 top-full left-0 mt-1 w-64 max-h-30 rounded-xl border border-white/10 bg-carbon shadow-xl overflow-hidden">
           <div className="px-2 py-2 border-b border-white/5">
             <input
               ref={inputRef}

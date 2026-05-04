@@ -27,13 +27,16 @@ streaming response. The file is the durable sink; tail it for live runs.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
 import threading
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, TextIO
+
+from app.core.config import settings
 
 # ── Context variables ────────────────────────────────────────────────────────
 # Set by LangGraph nodes (or any other request handler) so every emit downstream
@@ -50,16 +53,13 @@ _ctx_day: ContextVar[Optional[int]] = ContextVar("day", default=None)
 _PROJECT_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
-_DEFAULT_LOG_ROOT = os.path.join(_PROJECT_ROOT, "backend","logs")
-_env_log_root = os.environ.get("LOG_ROOT")
-if _env_log_root:
-    _LOG_ROOT = (
-        _env_log_root
-        if os.path.isabs(_env_log_root)
-        else os.path.abspath(os.path.join(_PROJECT_ROOT, _env_log_root))
-    )
-else:
-    _LOG_ROOT = _DEFAULT_LOG_ROOT
+_env_log_root = settings.LOG_ROOT
+
+_LOG_ROOT = (
+    _env_log_root
+    if os.path.isabs(_env_log_root)
+    else os.path.abspath(os.path.join(_PROJECT_ROOT, _env_log_root))
+)
 
 
 # Per-folder handle cache. Keyed by subdir so AgentLogger and APILogger can
@@ -67,6 +67,37 @@ else:
 _log_handles: dict[str, tuple[TextIO, str]] = {}
 _log_handles_lock = threading.Lock()
 
+async def _log_files_cleanup() -> None:
+    """Remove daily `YYYY-MM-DD.log` files under LOG_ROOT older than 7 days (UTC calendar date)."""
+    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=7)).date()
+    if not os.path.isdir(_LOG_ROOT):
+        return
+    for dirpath, _dirnames, filenames in os.walk(_LOG_ROOT):
+        for name in filenames:
+            if not name.endswith(".log"):
+                continue
+            stem = name[: -len(".log")]
+            try:
+                file_date = datetime.strptime(stem, "%Y-%m-%d").replace(tzinfo=timezone.utc).date()
+            except ValueError:
+                continue
+            if file_date >= cutoff_date:
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+async def _log_files_cleanup_task() -> None:
+    """Periodic cleanup so log volume does not grow without bound."""
+    while True:
+        try:
+            await _log_files_cleanup()
+        except Exception:
+            print("[logging] log file cleanup failed", file=sys.stderr, flush=True)
+        await asyncio.sleep(60 * 60)
 
 def _get_log_file(logs_subdir: str) -> Optional[TextIO]:
     """Return today's append-mode file handle for `logs_subdir`, rotating on UTC date."""

@@ -96,7 +96,7 @@ const DateCard = ({
   }, [rangeEnd, rangeMode, rangeStart]);
 
   return (
-    <div className="group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-8 flex flex-col overflow-hidden">
+    <div className="group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-4 sm:p-8 flex flex-col overflow-hidden">
       {/* Background Glow */}
       <div className="pointer-events-none absolute -inset-24 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-3xl">
         <div
@@ -121,7 +121,7 @@ const DateCard = ({
       </div>
 
       {/* Inline React Day Picker */}
-      <div className="flex-1 flex justify-center items-start bg-white/[0.01] rounded-xl border border-white/[0.04] p-4">
+      <div className="flex-1 flex justify-center items-start bg-white/[0.01] rounded-xl border border-white/[0.04] p-2 sm:p-4 overflow-x-auto scrollbar-hide">
         <DayPicker
           mode="single"
           selected={selectedDate}
@@ -360,22 +360,21 @@ export function Step4Dates({ tripData, updateTripData, onNext, registerCommit }:
           >
 
             <div className="pointer-events-auto">
-            <div className="flex items-center gap-4 rounded-full px-6 py-3">
-              <span className="text-sm text-white/80 text-center pl-2 select-none">
-                Are we travelling from{' '}
-                <span className="text-cyan font-semibold">{prettyStart}</span>{' '}
-                to{' '}
-                <span className="text-cyan font-semibold">{prettyEnd}</span>?
-              </span>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                className="ml-2 inline-flex items-center justify-center rounded-full bg-cyan text-midnight font-extrabold text-xs px-4 py-2 transition-transform duration-300 hover:scale-105 hover:bg-[#80fdf6] hover:shadow-[0_0_15px_rgba(102,252,241,0.4)] cursor-pointer"
-              >
-                YES
-              </button>
+              <div className="flex items-center gap-3 sm:gap-4 rounded-full px-4 sm:px-6 py-3">
+                <span className="text-xs sm:text-sm text-white/80 text-center pl-1 sm:pl-2 select-none">
+                  <span className="text-cyan font-semibold">{prettyStart}</span>
+                  {' '}→{' '}
+                  <span className="text-cyan font-semibold">{prettyEnd}</span>?
+                </span>
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  className="ml-1 sm:ml-2 inline-flex items-center justify-center rounded-full bg-cyan text-midnight font-extrabold text-xs px-4 py-2 transition-transform duration-300 hover:scale-105 hover:bg-[#80fdf6] hover:shadow-[0_0_15px_rgba(102,252,241,0.4)] cursor-pointer"
+                >
+                  YES
+                </button>
+              </div>
             </div>
-          </div>
         </motion.div>
       )}
       </AnimatePresence>

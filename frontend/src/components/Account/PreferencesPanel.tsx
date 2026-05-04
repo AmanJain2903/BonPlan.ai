@@ -438,7 +438,7 @@ export default function PreferencesPanel() {
         {/* Schedule Rhythm - Segmented Control */}
         <div>
           <SubLabel fieldKey="schedule_rhythm">Schedule Rhythm</SubLabel>
-          <div className="inline-flex rounded-xl border border-white/10 bg-white/[0.02] p-1 w-full sm:w-auto">
+          <div className="flex rounded-xl border border-white/10 bg-white/[0.02] p-1 w-full sm:w-auto sm:inline-flex">
             {[
               { value: 'early_bird', label: 'Early Bird', icon: Sunrise },
               { value: 'standard', label: 'Standard', icon: Sun },
@@ -450,12 +450,12 @@ export default function PreferencesPanel() {
                   key={opt.value}
                   type="button"
                   onClick={() => updateField('schedule_rhythm', opt.value)}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${active
+                  className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${active
                     ? 'bg-cyan/15 text-cyan border border-cyan/25 shadow-[0_0_15px_rgba(102,252,241,0.1)]'
                     : 'text-white/50 hover:text-white/80 border border-transparent'
                     }`}
                 >
-                  <opt.icon size={15} />
+                  <opt.icon size={15} className="shrink-0" />
                   {opt.label}
                 </button>
               );

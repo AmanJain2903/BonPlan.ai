@@ -249,18 +249,24 @@ export function OpenBookingsMenu({ itineraryState }: { itineraryState: Itinerary
   if (bookingLinks.length === 0) return null;
 
   return (
-    <div ref={rootRef} className="relative flex items-center">
-      <HeaderIconButton onClick={() => setOpen((value) => !value)} title="Open booking links">
+    <div ref={rootRef} className="flex items-center">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        title="Open booking links"
+        aria-label="Open booking links"
+        className={`h-10 w-10 shrink-0 rounded-full border backdrop-blur-md flex items-center justify-center transition-all ${open ? 'border-cyan/40 bg-cyan text-midnight shadow-[0_0_18px_rgba(102,252,241,0.25)]' : 'border-white/10 bg-black/60 text-cyan hover:border-cyan/40 hover:bg-cyan/10'}`}
+      >
         <ExternalLink className="h-4 w-4" />
-      </HeaderIconButton>
+      </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-[80] w-[min(90vw,360px)] overflow-hidden rounded-2xl border border-white/10 bg-carbon/95 shadow-2xl backdrop-blur-xl">
-          <div className="border-b border-white/5 px-4 py-3">
+        <div className="absolute right-0 top-12 z-[80] w-[min(92vw,380px)] rounded-2xl border border-white/10 bg-carbon/95 shadow-2xl backdrop-blur-xl flex flex-col max-h-[min(80vh,560px)]">
+          <div className="border-b border-white/5 px-4 py-3 shrink-0">
             <h3 className="text-sm font-bold text-white">Bookings</h3>
             <p className="mt-0.5 text-[11px] text-white/40">Flights, hotels, and rental cars</p>
           </div>
-          <div className="flex max-h-[340px] flex-col gap-2 overflow-y-auto p-3 chat-scrollbar">
+          <div className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto p-3 chat-scrollbar">
             {bookingLinks.map(({ key, type, label, detail, Icon, url }) => (
               <a
                 key={key}

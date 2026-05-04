@@ -82,7 +82,7 @@ function Pill({
       style={{
         width: isActive ? activeWidth : undefined,
       }}
-      className={`flex h-11 min-w-0 flex-none items-center gap-2.5 bg-black/60 border border-white/10 rounded-full px-4 sm:px-5 py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,width,border-color,box-shadow] duration-300 ${isActive ? 'z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'w-40 sm:w-48 lg:w-52 z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
+      className={`flex h-9 sm:h-11 min-w-0 flex-none items-center gap-2 sm:gap-2.5 bg-black/60 border border-white/10 rounded-full px-3 sm:px-4 lg:px-5 py-2 sm:py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,width,border-color,box-shadow] duration-300 ${isActive ? 'z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'w-28 sm:w-40 lg:w-48 xl:w-52 z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
     >
       <Icon className="text-cyan w-4 h-4 shrink-0" />
       <AnimatePresence mode="wait">
@@ -119,9 +119,18 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, i
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20, height: 0, marginBottom: 0, transition: { duration: 0.3  } }}
           transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
-          className="w-full shrink-0 relative mb-6 sm:mb-8"
+          className="w-full shrink-0 relative mb-2 sm:mb-6 lg:mb-8"
         >
-          <div className="scrollbar-hide flex min-h-11 w-full flex-nowrap items-center justify-start gap-3 overflow-x-auto overflow-y-visible px-12 sm:justify-center sm:px-16 lg:gap-4 lg:px-20">
+          {/* Mobile: two-row — controls on top, pills below */}
+          {(leftControl || shareControl) && (
+            <div className="flex sm:hidden items-center justify-between px-2 mb-2">
+              <div>{leftControl}</div>
+              <div>{shareControl}</div>
+            </div>
+          )}
+
+          {/* Pills row */}
+          <div className="scrollbar-hide flex min-h-11 w-full flex-nowrap items-center justify-start gap-2 sm:gap-3 overflow-x-auto overflow-y-visible px-3 sm:justify-center sm:px-14 lg:gap-4 lg:px-20">
             {PILLS_CONFIG.map(({ id, icon, dataKey }, i) => (
               <Pill
                 key={id}
@@ -150,13 +159,15 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, i
               />
             )}
           </div>
+
+          {/* Desktop: absolute-positioned controls */}
           {leftControl && (
-            <div className="absolute left-0 top-0 z-[70]">
+            <div className="hidden sm:block absolute left-0 top-0 z-[70]">
               {leftControl}
             </div>
           )}
           {shareControl && (
-            <div className="absolute right-0 top-0 z-[70]">
+            <div className="hidden sm:block absolute right-0 top-0 z-[70]">
               {shareControl}
             </div>
           )}

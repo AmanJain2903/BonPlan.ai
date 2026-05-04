@@ -173,12 +173,12 @@ export default function ItineraryPanel({
       <GoogleMapsApiLoader solutionChannel="GMP_BonPlan_soloPlan" />
 
       <div
-        className={`flex-1 flex flex-col items-center px-10 py-8 relative w-full scrollbar-hide ${selectedDay == null ? 'overflow-y-auto' : 'overflow-hidden'
+        className={`flex-1 flex flex-col items-center px-3 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 relative w-full scrollbar-hide ${selectedDay == null ? 'overflow-y-auto' : 'overflow-hidden'
           } ${(!hasStarted || (errorType && !hasDayCards)) ? 'justify-center' : 'justify-start'}`}
       >
         {/* Trip tips button (always visible, overlay or not). */}
         {hasStarted && itineraryState.tripTips && itineraryState.tripTips.length > 0 && (
-          <div ref={tipsRef} className="absolute top-4 right-4 z-50 flex flex-col items-end">
+          <div ref={tipsRef} className="absolute top-1 right-1 z-50 flex flex-col items-end sm:top-1 sm:right-1">
             <button
               onClick={() => setShowTips(!showTips)}
               className={`p-2 rounded-full transition-colors group ${showTips ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'

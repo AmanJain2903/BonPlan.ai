@@ -190,14 +190,14 @@ async def agent_runtime_context():
     """
 
     try:
-        runtime.genai_client = genai.Client(api_key=settings.PLANNER_AGENT_API_KEY)
+        runtime.genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
         log.info("GenAI client initialized")
     except Exception as e:
         log.error("Failed to initialize GenAI client", error=str(e))
         raise
 
     try:
-        runtime.pruning_client = genai.Client(api_key=settings.CONTEXT_PRUNING_API_KEY)
+        runtime.pruning_client = genai.Client(api_key=settings.GEMINI_API_KEY)
         log.info("Pruning client initialized")
     except Exception as e:
         # Non-fatal: summarization pruning falls back to drop-oldest behavior.

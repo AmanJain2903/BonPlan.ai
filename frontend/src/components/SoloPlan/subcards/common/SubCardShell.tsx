@@ -99,51 +99,100 @@ export default function SubCardShell({
             toggle();
           }
         }}
-        className={`relative z-10 flex items-center gap-4 px-4 py-3 select-none ${canExpand ? 'cursor-pointer hover:bg-white/[0.03]' : ''}`}
+        className={`relative z-10 select-none ${canExpand ? 'cursor-pointer hover:bg-white/[0.03]' : ''}`}
       >
-        {/* Purpose pill — stable, does not crossfade */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${accent.text}-${label}`}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.25 }}
-            className={`flex items-center gap-2 shrink-0 px-2.5 py-1 rounded-full min-w-[6.5rem] justify-center ${accent.bg} ${accent.border} border ${accent.text}`}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
-          </motion.div>
-        </AnimatePresence>
-
-        {/* Dynamic collapsed content — crossfades on contentKey change */}
-        <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
+        {/* ── MOBILE layout: stacked ──────────────────────────── */}
+        {/* Row 1: pill + chevron */}
+        <div className="flex sm:hidden items-center justify-between gap-2 px-3 pt-2.5 pb-1">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${accent.text}-${label}`}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.25 }}
+              className={`flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-full ${accent.bg} ${accent.border} border ${accent.text}`}
+            >
+              <Icon className="w-3 h-3" />
+              <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
+            </motion.div>
+          </AnimatePresence>
+          <div className="flex items-center gap-1.5">
+            {viewOnMapButton && (
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                {viewOnMapButton}
+              </div>
+            )}
+            {canExpand && (
+              <motion.div
+                animate={{ rotate: expanded ? 180 : 0 }}
+                transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+                className="shrink-0 text-white/40"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </motion.div>
+            )}
+          </div>
+        </div>
+        {/* Row 2: content full-width */}
+        <div className="flex sm:hidden items-center gap-2 overflow-hidden px-3 pb-2.5">
           <AnimatePresence mode="wait">
             <motion.div
               key={animKey}
               {...CONTENT_SWAP}
-              className="flex-1 min-w-0 flex items-center gap-3"
+              className="flex-1 min-w-0 flex items-center gap-2"
             >
               {collapsedContent}
             </motion.div>
           </AnimatePresence>
         </div>
 
-        {viewOnMapButton && (
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-            {viewOnMapButton}
-          </div>
-        )}
+        {/* ── DESKTOP layout: single row ──────────────────────── */}
+        <div className="hidden sm:flex items-center gap-4 px-4 py-3">
+          {/* Purpose pill */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${accent.text}-${label}`}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.25 }}
+              className={`flex items-center gap-2 shrink-0 px-2.5 py-1 rounded-full min-w-[6.5rem] justify-center ${accent.bg} ${accent.border} border ${accent.text}`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+            </motion.div>
+          </AnimatePresence>
 
-        {canExpand && (
-          <motion.div
-            animate={{ rotate: expanded ? 180 : 0 }}
-            transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-            className="shrink-0 text-white/40"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </motion.div>
-        )}
+          {/* Dynamic collapsed content */}
+          <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={animKey}
+                {...CONTENT_SWAP}
+                className="flex-1 min-w-0 flex items-center gap-3"
+              >
+                {collapsedContent}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {viewOnMapButton && (
+            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+              {viewOnMapButton}
+            </div>
+          )}
+
+          {canExpand && (
+            <motion.div
+              animate={{ rotate: expanded ? 180 : 0 }}
+              transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+              className="shrink-0 text-white/40"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </motion.div>
+          )}
+        </div>
       </div>
 
       <AnimatePresence initial={false}>

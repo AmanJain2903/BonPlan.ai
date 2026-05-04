@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { api, Plan, TripItinerary } from '../../apis/plan';
-import { Bot, Minimize2, ArrowLeftRight } from 'lucide-react';
+import { Bot, Minimize2, ArrowLeftRight, MessageSquare, X as XIcon } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
 import {
@@ -73,11 +73,14 @@ export default function SoloPlanView() {
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
 
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [thoughtsExpanded, setThoughtsExpanded] = useState(false);
   const [systemLogExpanded, setSystemLogExpanded] = useState(false);
   const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024);
   const [deleteTripOpen, setDeleteTripOpen] = useState(false);
   const [deletingTrip, setDeletingTrip] = useState(false);
   const [deleteTripError, setDeleteTripError] = useState('');
@@ -128,6 +131,7 @@ export default function SoloPlanView() {
     setErrorType(session.errorType);
     setIsSessionActive(session.isActive);
     setIsWaitingForUser(!!session.isWaitingForUser);
+    setGenerationStartedAt(session.startedAt ?? null);
 
     if (session.isActive) {
       // While the run is active, lock the displayed mode to whatever the
@@ -155,25 +159,32 @@ export default function SoloPlanView() {
 
   const isTimerRunning = isSessionActive && !errorType;
 
-  // Timer for active planner/editor run elapsed time
+  // Timer for active planner/editor run elapsed time.
+  // Uses generationStartedAt (stored in the singleton GenerationManager session)
+  // so elapsed survives navigation away and back without resetting to 0.
   useEffect(() => {
-    if (isTimerRunning) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (isTimerRunning && generationStartedAt) {
+      const tick = () => setElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
+      tick();
+      timerRef.current = setInterval(tick, 1000);
+    } else if (!isTimerRunning) {
       setElapsedSeconds(0);
-      timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isTimerRunning]);
+  }, [isTimerRunning, generationStartedAt]);
+
+  // Mobile screen detection
+  useEffect(() => {
+    const check = () => setIsMobileScreen(window.innerWidth < 1024);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   // Auth, RBAC, and initialization
   useEffect(() => {
@@ -406,7 +417,7 @@ export default function SoloPlanView() {
             exit={{ opacity: 0, transition: { duration: 0.3 } }}
             className="h-screen overflow-hidden bg-black flex flex-col pt-16"
           >
-            <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
+            <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-2 sm:p-4 lg:px-8 xl:px-12 pt-3 sm:pt-6 lg:pt-8 w-full max-h-[calc(100vh-64px)]">
               <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
               <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
                 <TripSummaryPills
@@ -437,7 +448,7 @@ export default function SoloPlanView() {
           exit={{ opacity: 0, transition: { duration: 0.3 } }}
           className="h-screen overflow-hidden bg-black flex flex-col pt-16"
         >
-          <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
+          <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-2 sm:p-4 lg:px-8 xl:px-12 pt-3 sm:pt-6 lg:pt-8 w-full max-h-[calc(100vh-64px)]">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
 
             <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
@@ -495,7 +506,7 @@ export default function SoloPlanView() {
         exit={{ opacity: 0, transition: { duration: 0.3 } }}
         className="h-screen overflow-hidden bg-black flex flex-col pt-16"
       >
-        <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
+        <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-2 sm:p-4 lg:px-8 xl:px-12 pt-3 sm:pt-6 lg:pt-8 w-full max-h-[calc(100vh-64px)]">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
           <FloatingRestoreButton visible={isChatMinimized} onRestore={() => setIsChatMinimized(false)} />
 
@@ -519,16 +530,16 @@ export default function SoloPlanView() {
           >
             {/* LEFT: Itinerary Panel */}
             <ItineraryPanel
-              isChatMinimized={isChatMinimized || !canEdit}
+              isChatMinimized={isChatMinimized || !canEdit || isMobileScreen}
               planStatus={pageState}
               itineraryState={itineraryState}
               errorType={errorType}
               onRetry={canEdit ? handleRetry : undefined}
             />
 
-            {/* RIGHT: Chat Panel */}
+            {/* RIGHT: Chat Panel — desktop only inline, mobile as overlay */}
             <AnimatePresence>
-              {canEdit && !isChatMinimized && (
+              {canEdit && !isChatMinimized && !isMobileScreen && (
                 <motion.div
                   layout
                   initial={{ opacity: 0, width: 0, x: 20 }}
@@ -615,6 +626,104 @@ export default function SoloPlanView() {
               )}
             </AnimatePresence>
           </motion.div>
+
+          {/* Mobile chat FAB */}
+          {canEdit && isMobileScreen && (
+            <button
+              onClick={() => setIsMobileChatOpen(true)}
+              className="fixed bottom-6 right-5 z-40 flex items-center gap-2 rounded-2xl border border-cyan/30 bg-midnight/90 backdrop-blur-md px-4 py-3 text-sm font-semibold text-cyan shadow-[0_0_20px_rgba(102,252,241,0.15)] hover:bg-cyan/10 transition-all"
+            >
+              <MessageSquare className="w-4 h-4" />
+              {isGenerating ? 'Live' : 'Chat'}
+              {isWaitingForUser && <span className="w-2 h-2 rounded-full bg-cyan animate-pulse ml-0.5" />}
+            </button>
+          )}
+
+          {/* Mobile chat drawer */}
+          <AnimatePresence>
+            {canEdit && isMobileScreen && isMobileChatOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+                  onClick={() => setIsMobileChatOpen(false)}
+                />
+                <motion.div
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+                  className="fixed bottom-0 left-0 right-0 z-50 flex flex-col bg-[#0a0d12] border-t border-white/[0.08] rounded-t-3xl overflow-hidden"
+                  style={{ height: '72vh' }}
+                >
+                  {/* Drawer handle */}
+                  <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] shrink-0">
+                    <div className="flex items-center gap-3">
+                      <Bot className="w-6 h-6 text-cyan shrink-0" />
+                      <div className="flex flex-col">
+                        <h3 className="text-sm font-bold text-white">BonPlan AI Planner</h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-widest text-cyan/70 font-semibold">
+                            {modeLabel}
+                          </span>
+                          {!isSessionActive && pageState !== 'EDITING' && (
+                            <button
+                              onClick={toggleMode}
+                              className="p-1 rounded-md text-cyan/40 hover:text-cyan hover:bg-cyan/10 transition-all"
+                            >
+                              <ArrowLeftRight className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setIsMobileChatOpen(false)}
+                      className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all"
+                    >
+                      <XIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <MessageCanvas
+                    scrollPositionRef={scrollPositionRef}
+                    isAtBottomRef={isAtBottomRef}
+                    turns={turns}
+                    toolsExpanded={toolsExpanded}
+                    onToggleTools={() => setToolsExpanded((p) => !p)}
+                    thoughtsExpanded={thoughtsExpanded}
+                    onToggleThoughts={() => setThoughtsExpanded((p) => !p)}
+                    systemLogExpanded={systemLogExpanded}
+                    onToggleSystemLog={() => setSystemLogExpanded((p) => !p)}
+                    onRetry={handleRetry}
+                    errorType={errorType}
+                    messageEndRef={messageEndRef}
+                    thinkingEndRef={thinkingEndRef}
+                    summaryEndRef={summaryEndRef}
+                    onAnswerQuestion={handleAnswerQuestion}
+                    isWaitingForUser={isWaitingForUser}
+                  />
+
+                  <ChatInputBar
+                    isGenerating={isGenerating}
+                    chatMode={chatMode}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    itineraryDays={itineraryState.days}
+                    selectedEvents={selectedEvents}
+                    setSelectedEvents={setSelectedEvents}
+                    onSend={handleMessageSend}
+                    onStop={stopPlanner}
+                    elapsedSeconds={elapsedSeconds}
+                    errorType={errorType}
+                  />
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
           </div>
         </main>
       </motion.div>

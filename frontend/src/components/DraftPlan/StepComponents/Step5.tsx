@@ -176,8 +176,8 @@ export function Step5BudgetPacing({ tripData, updateTripData, onNext, registerCo
   const paceChoices = paceOption?.choices ?? [];
   const budgetChoices = budgetOption?.choices ?? [];
 
-  const [pace, setPace] = useState<string | null>(tripData?.pace ?? null);
-  const [budget, setBudget] = useState<string | null>(tripData?.budget ?? null);
+  const [pace, setPace] = useState<string | null>(tripData?.pace ?? '3');
+  const [budget, setBudget] = useState<string | null>(tripData?.budget ?? '3');
 
   const paceChoice = paceChoices.find((c) => c.id === pace) ?? paceChoices[2];
   const budgetChoice = budgetChoices.find((c) => c.id === budget) ?? budgetChoices[2];
@@ -258,22 +258,21 @@ export function Step5BudgetPacing({ tripData, updateTripData, onNext, registerCo
             className="fixed bottom-0 left-0 w-full z-50 pointer-events-none flex justify-center pb-8 pt-32 bg-gradient-to-t from-black via-black/80 to-transparent"
           >
             <div className="pointer-events-auto">
-            <div className="flex items-center gap-4 rounded-full px-6 py-3">
-              <span className="text-sm text-white/70 text-center">
-                Do you want {/^[aeiou]/i.test(paceChoice?.title ?? '') ? 'an' : 'a'}{' '}
-                <span className="text-cyan font-semibold">{paceChoice?.title ?? 'Balanced'}</span>{' '}
-                trip on a{' '}
-                <span className="text-cyan font-semibold">{budgetChoice?.title ?? 'Comfortable'}</span> budget?
-              </span>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                className="ml-2 inline-flex items-center justify-center rounded-full bg-cyan text-midnight font-extrabold text-xs px-4 py-2 transition-transform duration-300 hover:scale-105 hover:bg-[#80fdf6] hover:shadow-[0_0_15px_rgba(102,252,241,0.4)] cursor-pointer"
-              >
-                YES
-              </button>
+              <div className="flex items-center gap-3 sm:gap-4 rounded-full px-4 sm:px-6 py-3">
+                <span className="text-xs sm:text-sm text-white/70 text-center pl-1 sm:pl-2 select-none">
+                  <span className="text-cyan font-semibold">{paceChoice?.title ?? 'Balanced'}</span>
+                  {' '}pace ·{' '}
+                  <span className="text-cyan font-semibold">{budgetChoice?.title ?? 'Comfortable'}</span> budget?
+                </span>
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  className="ml-1 sm:ml-2 inline-flex items-center justify-center rounded-full bg-cyan text-midnight font-extrabold text-xs px-4 py-2 transition-transform duration-300 hover:scale-105 hover:bg-[#80fdf6] hover:shadow-[0_0_15px_rgba(102,252,241,0.4)] cursor-pointer"
+                >
+                  YES
+                </button>
+              </div>
             </div>
-          </div>
         </motion.div>
       )}
       </AnimatePresence>

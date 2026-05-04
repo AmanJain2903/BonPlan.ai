@@ -47,21 +47,21 @@ export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, s
       transition={{ duration: 0.3 }}
       className="flex-1 flex flex-col min-h-0"
     >
-      <div className="flex-1 flex flex-col items-center justify-center min-h-0 overflow-y-auto px-6 py-6 sm:px-14 scrollbar-hide">
-        <div className="flex items-center justify-center mb-6 shrink-0 mt-auto">
-          <Bot className="w-16 h-16 text-cyan" />
+      <div className="flex-1 flex flex-col items-center justify-start min-h-0 overflow-y-auto px-4 py-4 sm:px-14 sm:py-6 scrollbar-hide">
+        <div className="flex items-center justify-center mb-3 sm:mb-6 shrink-0">
+          <Bot className="w-12 h-12 sm:w-16 sm:h-16 text-cyan" />
         </div>
 
-        <div className="text-center mb-8 shrink-0">
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">BonPlan AI Travel Planner</h2>
-          <p className="text-white/60 text-sm">
+        <div className="text-center mb-4 sm:mb-8 shrink-0">
+          <h2 className="text-xl sm:text-3xl font-bold text-white mb-2 sm:mb-3">BonPlan AI Travel Planner</h2>
+          <p className="text-white/60 text-xs sm:text-sm">
             Your trip parameters are locked in. Choose your planning mode and generate your detailed end-to-end
             itinerary.
           </p>
         </div>
 
         {/* Mode Toggle */}
-        <div className="flex flex-col items-center gap-4 w-full shrink-0 mb-auto">
+        <div className="flex flex-col items-center gap-3 sm:gap-4 w-full shrink-0">
           <div className="flex flex-col items-center max-w-md w-full gap-2">
             <div className="flex items-center justify-between bg-black/50 border border-white/10 rounded-full p-1.5 w-full relative">
               <button
@@ -100,7 +100,7 @@ export default function HeroPanel({ plannerMode, setPlannerMode, contextInput, s
       </div>
 
       {/* Bottom: Chat + Start Button */}
-      <div className="w-full shrink-0 flex flex-col px-6 pb-6 sm:px-14 sm:pb-8 mt-auto">
+      <div className="w-full shrink-0 flex flex-col px-4 pb-4 sm:px-14 sm:pb-8 mt-auto">
         <div className="w-full max-w-4xl mx-auto flex flex-col">
           <div className="relative group w-full mb-4">
             <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan/30 to-blue/30 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />

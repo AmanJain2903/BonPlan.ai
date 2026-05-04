@@ -14,9 +14,10 @@ from app.core.config import settings
 from app.core.redis_client import close_redis, ping_redis
 from app.database.database import Base, engine
 from app.database import models  # noqa: F401 - ensure models are registered with Base
-from app.logging import get_app_logger
+from app.logging import get_app_logger, _log_files_cleanup_task
 from app.services.rate_limiter.rate_limiter import get_rate_limiter
 from app.services.rate_limiter.usage_cleanup import usage_cleanup_task
+from app.services.trip_lifecycle import trip_lifecycle_task
 from app.utils.http import close_http_client
 import asyncio
 
@@ -26,6 +27,8 @@ logger = get_app_logger("app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cleanup_task = None
+    lifecycle_task = None
+    log_cleanup_task = None
     logger.info("Lifespan starting", project=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -59,12 +62,24 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(usage_cleanup_task())
     logger.info("Usage cleanup task scheduled")
 
+    # Start the trip lifecycle task (auto-transition DRAFT→delete, GENERATED→CURRENT, active→COMPLETED)
+    lifecycle_task = asyncio.create_task(trip_lifecycle_task())
+    logger.info("Trip lifecycle task scheduled")
+
+    # Start the log files cleanup task (async coroutine — must not block the event loop).
+    log_cleanup_task = asyncio.create_task(_log_files_cleanup_task())
+    logger.info("Log files cleanup task scheduled")
+
     try:
         yield
     finally:
         logger.info("Lifespan shutting down")
         if cleanup_task:
             cleanup_task.cancel()
+        if lifecycle_task:
+            lifecycle_task.cancel()
+        if log_cleanup_task:
+            log_cleanup_task.cancel()
         await close_http_client()
         await close_redis()
         await engine.dispose()

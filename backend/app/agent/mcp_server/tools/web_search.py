@@ -17,7 +17,7 @@ from app.services.rate_limiter.sku_resolver import SKU, resolve_gemini_model_sku
 from app.logging import get_mcp_logger
 logger = get_mcp_logger("tools.web_search")
 serper_api_key = settings.SERPER_API_KEY
-gemini_api_key_serper_content_parser = settings.SERPER_CONTENT_PARSER_API_KEY
+gemini_api_key_serper_content_parser = settings.GEMINI_API_KEY
 serper_content_parser_model = settings.SERPER_CONTENT_PARSER_MODEL
 serper_content_parser_sku = resolve_gemini_model_sku(serper_content_parser_model)
 

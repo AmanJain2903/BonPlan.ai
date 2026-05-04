@@ -57,7 +57,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
         return {"is_structural_change": False, "structural_reason": ""}
 
     try:
-        client = genai.Client(api_key=settings.CONVERSATION_AGENT_API_KEY)
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
         resp = await client.aio.models.generate_content(
             model=settings.CONVERSATION_AGENT_MODEL,
             contents=[json.dumps(prompt_body, default=str)],

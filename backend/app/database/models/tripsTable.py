@@ -25,6 +25,7 @@ class PlanStatus(str, enum.Enum):
     GENERATING = "generating"
     GENERATED = "generated"
     EDITING = "editing"
+    CURRENT = "current"
     COMPLETED = "completed"
 
 class Trip(Base):

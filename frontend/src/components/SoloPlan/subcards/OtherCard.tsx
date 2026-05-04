@@ -2,7 +2,6 @@ import { DollarSign, MapPin, ExternalLink, Sparkles } from 'lucide-react';
 import SubCardShell from './common/SubCardShell';
 import TipsSection from './common/TipsSection';
 import ViewOnMapButton from './common/ViewOnMapButton';
-import { Dot } from '../Atoms';
 import { EVENT_ACCENT, EVENT_ICON, EVENT_LABEL, formatClockTime, formatDurationEnglish, isValidUrl } from '../constants';
 
 interface Props {
@@ -60,12 +59,12 @@ export default function OtherCard({ event, onViewOnMap, contentKey }: Props) {
             {d.place_name && (
               <span className="text-[11px] text-white/50 truncate">{d.place_name}</span>
             )}
-            <div className="flex items-center gap-2 text-[11px] text-white/60 mt-0.5">
-              <span>{formatClockTime(d.start_time)} {duration && `– ${formatClockTime(d.end_time)}`}</span>
-              {duration && <><Dot /> {duration}</>}
+            <div className="mt-0.5 text-[10px] sm:text-[11px] text-white/60 leading-tight">
+              <span className="whitespace-nowrap">{formatClockTime(d.start_time)}{duration ? ` – ${formatClockTime(d.end_time)}` : ''}</span>
+              {duration && <span className="whitespace-nowrap"> · {duration}</span>}
             </div>
           </div>
-          <div className="flex flex-col items-center gap-1 shrink-0 w-[6rem]">
+          <div className="flex flex-col items-center gap-1 shrink-0 sm:w-[6rem]">
             <div className="flex items-center gap-1 shrink-0 justify-center">
               <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-sm font-semibold text-white/90">{(d.cost || 0).toFixed(2)}</span>
