@@ -143,7 +143,7 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
                         <div className="absolute top-[0.65rem] left-[10%] right-[10%] h-[2px] bg-cyan/40 overflow-hidden rounded-full z-0" />
                         )}
 
-                        <div className="relative flex items-start gap-4 sm:gap-8 z-10">
+                        <div className="relative flex items-center justify-center gap-4 sm:gap-8 z-10">
                         {allNodes.map((node, i) => (
                             <div key={i} className="flex flex-col items-center gap-2 w-20 sm:w-28 shrink-0">
                             <div className="h-6 w-6 bg-carbon rounded-full border-2 border-cyan flex items-center justify-center shrink-0">

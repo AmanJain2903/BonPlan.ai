@@ -41,8 +41,19 @@ Thinking budget is tight. If you catch yourself drafting prose, stop and emit th
 - **No teleportation**: if coordinates or cities change between consecutive events, bridge the gap with an explicit `COMMUTE` event whose distance and duration come from a routing tool — never estimate.
 - **Chronology is strict**: every emitted event must start at or after the previous event's end time in real wall-clock terms. Track times to the precision of 15 minutes; account for timezone shifts when legs cross zones.
 - **Meals**: unless the user opted out, every day has breakfast, lunch, dinner or maybe brunch or coffee as `DINING` events if time permits but try to schedule meals paced naturally. Never emit two meals or dining events very closely in time.
-- **Venue deduplication**: Before booking any venue, check the "Already Scheduled Venues" list in the phase prompt. If the venue already appears, only schedule it again if: (a) it is the same hotel being checked out, or (b) the user's `textualContext` or stated preferences explicitly request returning to it. Otherwise pick a different venue.
+- **Venue deduplication — hard rule**: The "Already Scheduled Venues" block in the phase prompt is a **mandatory exclusion list**. Any ACTIVITY or DINING venue on that list is **forbidden** this day. The validator will reject the entire day and force a retry if a duplicate is detected. The only exemptions: (a) the same hotel at checkout, or (b) the user's `textualContext` explicitly requests returning to that specific venue. When in doubt, pick a different venue.
 - **Days are local, not UTC**: assign each event to the `day_number` matching the traveler's local wall-clock date at the event's location, even when a flight crosses midnight or a date line.
+
+## Geographic Clustering — Required
+
+When the phase prompt includes a "GEOGRAPHIC FOCUS FOR DAY N" block:
+
+- Every ACTIVITY and DINING event **must** be within or immediately adjacent to the stated zone.
+- Do **not** schedule famous venues from other parts of the city simply because they are well-known. Popularity does not override zone assignment.
+- Sequence venues by proximity: finish all events in one sub-area before moving to the next. This minimizes backtracking and keeps commute legs short.
+- If a mandatory booking (hotel, first-day/last-day transit) lies outside the zone, schedule it and then return to the zone for activities.
+
+When no zone is specified (research phase produced no day_zones), apply the same spirit: cluster activities geographically and avoid city-wide zigzagging within a single day.
 
 ## End-of-day Rule — A Day Must Always End at a Restful Location
 

@@ -50,7 +50,7 @@ MAX_VALIDATION_ATTEMPTS = 2  # after this many failures, advance anyway
 # ─── Prior-events slim helpers ────────────────────────────────────────────────
 
 _SLIM_KEYS = frozenset({
-    "event_type", "event_number", "day_number", "date", "name", "description",
+    "event_type", "event_number", "day_number", "date", "name", "description", "place_id",
 })
 
 
@@ -311,13 +311,108 @@ def _check_timing(day_events: List[Dict]) -> List[str]:
     return errors
 
 
-def _validate_day_events(day_events: List[Dict], current_day: int) -> List[str]:
+def _normalize_venue_name(name: str) -> str:
+    """Lowercase, strip punctuation, drop leading articles for fuzzy name comparison."""
+    if not name:
+        return ""
+    s = name.lower().strip()
+    s = re.sub(r"[^\w\s]", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    for prefix in ("the ", "a ", "an "):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    return s
+
+
+def _check_duplicate_venues(
+    day_events: List[Dict], prior_events: List[Dict], current_day: int
+) -> List[str]:
+    """
+    Flag ACTIVITY or DINING venues scheduled more than once:
+      - Cross-day: same venue already appeared in a prior day's events.
+      - Within-day: same venue appears twice in current day (e.g. lunch + dinner same spot).
+    HOTEL_CHECKIN/CHECKOUT and COMMUTE are intentionally excluded.
+    """
+    errors: List[str] = []
+    _dedup_types = {"ACTIVITY", "DINING"}
+
+    # Build prior-day seen sets
+    prior_pids: set = set()
+    prior_names: dict = {}  # norm_name → (day_number, original_name)
+    for ev in prior_events:
+        if ev.get("day_number") == current_day:
+            continue
+        if (ev.get("event_type") or "") not in _dedup_types:
+            continue
+        pid = (ev.get("place_id") or "").strip()
+        name = (ev.get("name") or "").strip()
+        if pid:
+            prior_pids.add(pid)
+        if name:
+            norm = _normalize_venue_name(name)
+            if norm and norm not in prior_names:
+                prior_names[norm] = (ev.get("day_number", "?"), name)
+
+    # Within-day seen sets (populated as we scan today's events in order)
+    day_pids: dict = {}   # pid → event_number
+    day_names: dict = {}  # norm_name → event_number
+
+    for ev in day_events:
+        etype = (ev or {}).get("event_type", "")
+        if etype not in _dedup_types:
+            continue
+        pid = (ev.get("place_id") or "").strip()
+        name = (ev.get("name") or "").strip()
+        ev_num = ev.get("event_number")
+        norm = _normalize_venue_name(name)
+
+        # Cross-day duplicate check (place_id wins; fall back to normalized name)
+        if pid and pid in prior_pids:
+            errors.append(
+                f"Duplicate venue: event #{ev_num} [{etype}] '{name}' (place_id={pid}) "
+                f"already scheduled on a prior day. Choose a different venue."
+            )
+            continue
+        if norm and norm in prior_names:
+            prior_day, prior_name = prior_names[norm]
+            errors.append(
+                f"Duplicate venue: event #{ev_num} [{etype}] '{name}' matches "
+                f"'{prior_name}' from Day {prior_day}. Choose a different venue."
+            )
+            continue
+
+        # Within-day duplicate check
+        if pid and pid in day_pids:
+            errors.append(
+                f"Duplicate venue within Day {current_day}: event #{ev_num} [{etype}] "
+                f"'{name}' same place as event #{day_pids[pid]}. "
+                f"Do not visit the same venue twice in one day."
+            )
+        elif norm and norm in day_names:
+            errors.append(
+                f"Duplicate venue within Day {current_day}: event #{ev_num} [{etype}] "
+                f"'{name}' matches event #{day_names[norm]} in same day. "
+                f"Do not visit the same venue twice in one day."
+            )
+        else:
+            if pid:
+                day_pids[pid] = ev_num
+            if norm:
+                day_names[norm] = ev_num
+
+    return errors
+
+
+def _validate_day_events(
+    day_events: List[Dict], current_day: int, prior_events: Optional[List[Dict]] = None
+) -> List[str]:
     """Run all validation checks and return accumulated error strings."""
     errors: List[str] = []
     errors.extend(_check_day_numbers(day_events, current_day))
     errors.extend(_check_sequential_numbers(day_events))
     errors.extend(_check_commute_gaps(day_events))
     errors.extend(_check_timing(day_events))
+    errors.extend(_check_duplicate_venues(day_events, prior_events or [], current_day))
     return errors
 
 
@@ -342,7 +437,7 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
         key=lambda e: e.get("event_number") or 0,
     )
 
-    errors = _validate_day_events(day_events, current_day)
+    errors = _validate_day_events(day_events, current_day, prior_events)
 
     # ── Retry path ────────────────────────────────────────────────────────────
     if errors and attempts < MAX_VALIDATION_ATTEMPTS:

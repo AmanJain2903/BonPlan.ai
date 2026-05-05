@@ -619,7 +619,10 @@ async def run_chat_loop(
                 _timeout = TIMEOUTS.get(fc.name, 60)
                 _started = time.monotonic()
                 try:
-                    mcp_result = await session.call_tool(fc.name, dict(fc.args or {}))
+                    mcp_result = await asyncio.wait_for(
+                        session.call_tool(fc.name, dict(fc.args or {})),
+                        timeout=_timeout,
+                    )
                     output = (
                         "".join(c.text for c in mcp_result.content if hasattr(c, "text"))
                         or "Task completed."
@@ -641,6 +644,21 @@ async def run_chat_loop(
                 except asyncio.CancelledError:
                     log.info("Tool cancelled", node=node_name, tool=fc.name)
                     raise
+                except asyncio.TimeoutError:
+                    _elapsed = time.monotonic() - _started
+                    log.error(
+                        "Tool timed out",
+                        node=node_name,
+                        tool=fc.name,
+                        timeout_s=_timeout,
+                        elapsed_s=round(_elapsed, 2),
+                    )
+                    return call_id, fc, {
+                        "error": (
+                            f"Tool '{fc.name}' timed out after {_timeout}s. "
+                            "Do not retry this tool call. Skip it and proceed."
+                        )
+                    }
                 except Exception as e:
                     _elapsed = time.monotonic() - _started
                     log.error(
@@ -719,14 +737,11 @@ async def run_chat_loop(
             except Exception as prune_err:
                 log.warning("History pruning failed", node=node_name, error=str(prune_err))
 
-            # Research node: stop as soon as START event is emitted.
-            if stop_after_start and start_emitted:
-                return ChatResult(emitted_events=list(session_events),
-                    success=True,
-                    next_event_number=next_event_number,
-                    is_complete=False,
-                    last_text=last_text_buffer,
-                )
+            # Research node (stop_after_start): do NOT return here — the model
+            # hasn't had a chance to emit the post-START JSON text yet.  Let the
+            # loop send back the tool responses and give the model one more turn
+            # to output the JSON and STOP.  The clean-STOP check below handles
+            # the actual return with last_text_buffer populated.
 
             continue  # next turn
 

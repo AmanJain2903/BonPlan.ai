@@ -64,16 +64,20 @@ async def pre_process_content(content):
             "status": f"Content returned without pre-processing through LLM API, rate limit exceeded for SKU '{exc.sku}', retry after {exc.retry_after_seconds}s"
         }
 
+    _CONTENT_PARSE_TIMEOUT = 25  # seconds; guards against Gemini API hang
     try:
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=serper_content_parser_model,
-            contents=f"INSTRUCTIONS: {SERPER_CONTENT_PARSER_PROMPT}\n\nCONTENT TO PROCESS:\n{content}",
-            config={
-                "response_mime_type": "application/json",
-                "response_json_schema": ContentResponse.model_json_schema(),
-                "max_output_tokens": 512,
-            },
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=serper_content_parser_model,
+                contents=f"INSTRUCTIONS: {SERPER_CONTENT_PARSER_PROMPT}\n\nCONTENT TO PROCESS:\n{content}",
+                config={
+                    "response_mime_type": "application/json",
+                    "response_json_schema": ContentResponse.model_json_schema(),
+                    "max_output_tokens": 512,
+                },
+            ),
+            timeout=_CONTENT_PARSE_TIMEOUT,
         )
         content_response = ContentResponse.model_validate_json(response.text)
         return {
@@ -81,6 +85,13 @@ async def pre_process_content(content):
             "content": content_response.content,
             "external_links": content_response.external_links,
             "status": "Success"
+        }
+    except asyncio.TimeoutError:
+        return {
+            "title": "Unknown Title",
+            "content": content,
+            "external_links": [],
+            "status": f"Content returned without pre-processing: Gemini parser timed out after {_CONTENT_PARSE_TIMEOUT}s."
         }
     except Exception as e:
         return {

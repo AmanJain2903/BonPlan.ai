@@ -13,6 +13,7 @@ whether to loop back for the next day or route to finalizer.
 """
 import json
 import os
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -49,6 +50,19 @@ with open(_COLLABORATIVE_PROMPT_PATH, "r", encoding="utf-8") as _f:
 # )
 # with open(_EDITING_PROMPT_PATH, "r", encoding="utf-8") as _f:
 #     EDITING_SYSTEM_PROMPT = _f.read()
+
+
+def _normalize_venue_name(name: str) -> str:
+    """Lowercase, strip punctuation, drop leading articles for fuzzy name comparison."""
+    if not name:
+        return ""
+    s = name.lower().strip()
+    s = re.sub(r"[^\w\s]", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    for prefix in ("the ", "a ", "an "):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    return s
 
 
 def _compute_cardinal_bearing(
@@ -92,9 +106,22 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
 
     trip_payload = state.get("trip_input", {})
     trip_data = TripInput(**trip_payload)
-    research_facts = state.get("research_facts", {})
+    research_facts = state.get("research_facts") or {}
     prior_events = state.get("prior_events", []) or []
+    day_zones: list = list(state.get("day_zones") or [])
     is_resuming = bool(state.get("is_resuming", False))
+
+    # On resume, research phase is skipped so research_facts and day_zones are
+    # absent from state. Recover them from the START event in prior_events,
+    # where research_node embedded them before the original run completed.
+    if not research_facts or not day_zones:
+        for ev in prior_events:
+            if (ev or {}).get("event_type") == "START":
+                if not research_facts:
+                    research_facts = (ev.get("_research_facts") or {})
+                if not day_zones:
+                    day_zones = list(ev.get("_day_zones") or [])
+                break
     close_pass = bool(state.get("close_pass", False))
     mode = state.get("mode", "autonomous")
     collab_seed_answer = state.get("collab_seed_answer")
@@ -186,6 +213,8 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
 
     # Build a compact list of already-scheduled venues so the LLM can avoid
     # accidental duplicates while still allowing intentional revisits.
+    # Keys are place_id (preferred) or normalized name — normalization prevents
+    # the LLM from missing a match due to article/punctuation differences.
     _venue_event_types = {"ACTIVITY", "DINING", "HOTEL_CHECKIN"}
     seen_venues: dict = {}
     for ev in prior_events:
@@ -194,7 +223,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
             continue
         name = (ev.get("name") or "").strip()
         pid = (ev.get("place_id") or "").strip()
-        key = pid if pid else name
+        key = pid if pid else _normalize_venue_name(name)
         if key and key not in seen_venues:
             seen_venues[key] = {
                 "name": name,
@@ -208,8 +237,10 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
             if v["name"]
         )
         scheduled_venues_block = (
-            "Already Scheduled Venues (check before booking any new venue — "
-            "re-use only for hotel checkout or an explicit user request to return):\n"
+            "Already Scheduled Venues — MANDATORY EXCLUSION LIST for ACTIVITY and DINING:\n"
+            "Any venue on this list is FORBIDDEN this day unless it is (a) the same hotel "
+            "being checked out, or (b) the user's textualContext explicitly requests returning. "
+            "The validator will reject the day if a duplicate is detected — pick a different venue.\n"
             f"{venue_lines}\n\n"
             if venue_lines else ""
         )
@@ -234,6 +265,31 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
             )
         )
     )
+
+    # Geographic zone block — injected only on normal day runs (not close-pass).
+    # Assigned by the research phase so each day covers a cohesive area.
+    zone_block = ""
+    if not close_pass:
+        zone_for_today = next(
+            (z for z in day_zones if z.get("day") == current_day), None
+        )
+        if zone_for_today:
+            zone_name = (zone_for_today.get("zone") or "").strip()
+            key_venues = [v for v in (zone_for_today.get("key_venues") or []) if v]
+            if zone_name:
+                zone_block = (
+                    f"GEOGRAPHIC FOCUS FOR DAY {current_day} (assigned by research phase — mandatory):\n"
+                    f"  Zone: {zone_name}\n"
+                )
+                if key_venues:
+                    zone_block += f"  Anchor landmarks in this zone: {', '.join(key_venues)}\n"
+                zone_block += (
+                    "  Rules:\n"
+                    "  - ALL activities and dining MUST be within or immediately adjacent to this zone.\n"
+                    "  - Do NOT schedule famous venues from other parts of the city simply because they are popular.\n"
+                    "  - Sequence venues by proximity — cover one sub-area before moving to another.\n"
+                    "  - Minimize back-and-forth transit; keep commute legs short and directional.\n\n"
+                )
 
     if close_pass:
         # Dedicated close-only re-run triggered by open_booking_guard.
@@ -327,6 +383,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         f"{seed_block}"
         f"{prior_qa_block}"
         f"{journey_block}"
+        f"{zone_block}"
         f"{scheduled_venues_block}"
         f"Already-Emitted Events (ground truth — do NOT re-emit, do NOT re-search what these establish):\n"
         f"{trip_state_json}\n\n"
