@@ -2,6 +2,7 @@ import { DollarSign, Plane } from 'lucide-react';
 import SubCardShell from './common/SubCardShell';
 import TipsSection from './common/TipsSection';
 import ViewOnMapButton from './common/ViewOnMapButton';
+import LockToggle from './common/LockToggle';
 import FlightRouteLine, { FlightStop } from './common/FlightRouteLine';
 import { Dot } from '../Atoms';
 import { EVENT_ACCENT, EVENT_ICON, EVENT_LABEL, formatClockTime, isValidUrl } from '../constants';
@@ -10,6 +11,7 @@ import { ExternalLink } from 'lucide-react';
 interface Props {
   event: any;
   onViewOnMap: () => void;
+  onToggleLock?: () => void;
   contentKey?: string | number;
 }
 
@@ -33,7 +35,7 @@ function LogoOrIcon({ url, name }: { url?: string; name: string }) {
   );
 }
 
-export default function FlightTakeoffCard({ event, onViewOnMap, contentKey }: Props) {
+export default function FlightTakeoffCard({ event, onViewOnMap, onToggleLock, contentKey }: Props) {
   const d = event?.flight_takeoff_details;
   if (!d) return null;
 
@@ -81,6 +83,7 @@ export default function FlightTakeoffCard({ event, onViewOnMap, contentKey }: Pr
       Icon={Icon}
       accent={accent}
       contentKey={contentKey}
+      lockButton={onToggleLock ? <LockToggle isLocked={event?.is_locked === true} onToggle={onToggleLock} /> : undefined}
       viewOnMapButton={<ViewOnMapButton onClick={onViewOnMap} />}
       collapsedContent={
         <>

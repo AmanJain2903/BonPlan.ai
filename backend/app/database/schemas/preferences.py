@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
+import uuid as _uuid
 
 # --- ENUMS ---
 class AccessibilityOption(str, Enum):
@@ -60,6 +61,20 @@ class OtherPreferences(BaseModel):
     ev_charging_available: bool = False
     additional_notes: Optional[str] = ""
 
+class LockedRoutineFrequency(str, Enum):
+    DAILY = "daily"
+    WEEKDAYS = "weekdays"
+    WEEKENDS = "weekends"
+    SPECIFIC_DAYS = "specific_days"
+
+class LockedRoutine(BaseModel):
+    id: str = Field(default_factory=lambda: str(_uuid.uuid4()))
+    name: str
+    frequency: LockedRoutineFrequency = LockedRoutineFrequency.DAILY
+    specific_days: Optional[List[int]] = None  # 0=Mon … 6=Sun
+    start_time: str  # HH:MM 24h
+    duration_minutes: int
+
 # --- MASTER SCHEMA ---
 class TripPreferencesSchema(BaseModel):
     dietary_restrictions: List[str] = Field(default_factory=list)
@@ -70,6 +85,7 @@ class TripPreferencesSchema(BaseModel):
     accommodation_style: AccommodationStyle = AccommodationStyle.ANY
     dining_style: DiningStyle = DiningStyle.ANY
     other_preferences: OtherPreferences = Field(default_factory=OtherPreferences)
+    locked_routines: List[LockedRoutine] = Field(default_factory=list)
 
     class Config:
         # Crucial for saving the actual string 'vegan' to the DB instead of the object

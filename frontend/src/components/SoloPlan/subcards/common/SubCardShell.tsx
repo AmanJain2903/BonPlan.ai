@@ -11,6 +11,7 @@ interface SubCardShellProps {
   collapsedContent: ReactNode;
   expandedContent?: ReactNode;
   viewOnMapButton?: ReactNode;
+  lockButton?: ReactNode;
   onExpandChange?: (expanded: boolean) => void;
   initiallyExpanded?: boolean;
   /** Change this key whenever the event data updates to trigger a content crossfade. */
@@ -41,6 +42,7 @@ export default function SubCardShell({
   collapsedContent,
   expandedContent,
   viewOnMapButton,
+  lockButton,
   onExpandChange,
   initiallyExpanded = false,
   contentKey,
@@ -118,6 +120,11 @@ export default function SubCardShell({
             </motion.div>
           </AnimatePresence>
           <div className="flex items-center gap-1.5">
+            {lockButton && (
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                {lockButton}
+              </div>
+            )}
             {viewOnMapButton && (
               <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                 {viewOnMapButton}
@@ -176,6 +183,12 @@ export default function SubCardShell({
               </motion.div>
             </AnimatePresence>
           </div>
+
+          {lockButton && (
+            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+              {lockButton}
+            </div>
+          )}
 
           {viewOnMapButton && (
             <div className="shrink-0" onClick={(e) => e.stopPropagation()}>

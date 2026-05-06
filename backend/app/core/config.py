@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # Gemini Model Settings for Conversation Agent
     CONVERSATION_AGENT_MODEL: str = "gemma-4-26b-a4b-it"
-    CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K``
+    CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
     # Gemini Model Settings for Planner Agent
     PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"

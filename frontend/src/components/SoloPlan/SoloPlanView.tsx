@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
-import { api, Plan, TripItinerary } from '../../apis/plan';
+import { api, Plan, TripItinerary, SmartAnchor } from '../../apis/plan';
 import { Bot, Minimize2, ArrowLeftRight, MessageSquare, X as XIcon } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
@@ -23,6 +23,7 @@ import HeroPanel from './HeroPanel';
 import MessageCanvas from './MessageCanvas';
 import ChatInputBar from './ChatInputBar';
 import TripShareMenu from './TripShareMenu';
+import SmartAnchorsModal from './SmartAnchorsModal';
 import {
   DeleteTripModal,
   OpenBookingsMenu,
@@ -85,6 +86,11 @@ export default function SoloPlanView() {
   const [deletingTrip, setDeletingTrip] = useState(false);
   const [deleteTripError, setDeleteTripError] = useState('');
 
+  const [smartAnchors, setSmartAnchors] = useState<SmartAnchor[]>([]);
+  const [anchorDrafts, setAnchorDrafts] = useState<SmartAnchor[]>([]);
+  const [anchorsModalOpen, setAnchorsModalOpen] = useState(false);
+  const [savingAnchors, setSavingAnchors] = useState(false);
+
   const messageEndRef = useRef<HTMLDivElement>(null);
   const thinkingEndRef = useRef<HTMLDivElement>(null);
   const summaryEndRef = useRef<HTMLDivElement>(null);
@@ -123,6 +129,41 @@ export default function SoloPlanView() {
       setDeletingTrip(false);
     }
   }, [navigate, tripId]);
+
+  const handleSaveAnchors = useCallback(async (anchors: SmartAnchor[]) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+    setSavingAnchors(true);
+    try {
+      await api.updateSmartAnchors(token, tripId, anchors);
+      setSmartAnchors(anchors);
+      setAnchorDrafts([]);
+      setAnchorsModalOpen(false);
+    } finally {
+      setSavingAnchors(false);
+    }
+  }, [tripId]);
+
+  const handleToggleLock = useCallback(async (event: any) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+    const newLocked = !(event?.is_locked === true);
+    try {
+      await api.toggleEventLock(token, tripId, event.day_number, event.event_number, newLocked);
+      setItineraryState((prev) => {
+        const days = prev.days.map((day) => {
+          if (day.dayNumber !== event.day_number) return day;
+          const events = day.events.map((ev: any) =>
+            ev.event_number === event.event_number ? { ...ev, is_locked: newLocked } : ev,
+          );
+          return { ...day, events };
+        });
+        return { ...prev, days };
+      });
+    } catch {
+      // silently ignore
+    }
+  }, [tripId]);
 
   // Sync from generationManager subscription
   const handleSessionUpdate = useCallback((session: GenerationSession) => {
@@ -213,6 +254,7 @@ export default function SoloPlanView() {
         setPlan(planRes.plan);
         const itin = planRes.tripItinerary || null;
         setTripItinerary(itin);
+        if (itin?.smart_anchors) setSmartAnchors(itin.smart_anchors);
 
         // Check if generationManager already has an active session (user navigated away and back)
         const existingSession = generationManager.getSession(tripId);
@@ -405,12 +447,41 @@ export default function SoloPlanView() {
     />
   ) : null;
 
+  // Convert JSONB {year,month,day,timezoneId} to ISO date strings for the modal
+  const anchorTripContext = (() => {
+    const toIso = (d: any): string => {
+      if (!d || !d.year || !d.month || !d.day) return '';
+      return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+    };
+    return {
+      start_date: toIso(plan?.start_date),
+      end_date: toIso(plan?.end_date),
+      destinations: tripItinerary?.destinations ?? (plan?.destinations?.map((d: any) => typeof d === 'string' ? d : d?.name ?? '') ?? []),
+      adults: plan?.adults ?? 1,
+      children: plan?.children ?? 0,
+      timezoneId: (plan?.start_date as any)?.timezoneId ?? '',
+    };
+  })();
+
+  const anchorsModal = anchorsModalOpen ? (
+    <SmartAnchorsModal
+      savedAnchors={smartAnchors}
+      drafts={anchorDrafts}
+      setDrafts={setAnchorDrafts}
+      saving={savingAnchors}
+      tripContext={anchorTripContext}
+      onSave={handleSaveAnchors}
+      onClose={() => setAnchorsModalOpen(false)}
+    />
+  ) : null;
+
   // ─── DRAFT View ──────────────────────────────────────────────
   if (pageState === 'DRAFT') {
     if (!canEdit) {
       return (
         <>
           {deleteModal}
+          {anchorsModal}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -442,6 +513,7 @@ export default function SoloPlanView() {
     return (
       <>
         {deleteModal}
+        {anchorsModal}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -481,6 +553,9 @@ export default function SoloPlanView() {
                   setContextInput={setContextMessage}
                   onStart={startPlanner}
                   hasEvents={itineraryState.hasStarted}
+                  anchorCount={smartAnchors.length + anchorDrafts.filter(d => d.prefill_status === 'done').length}
+                  onOpenAnchors={() => setAnchorsModalOpen(true)}
+                  anchorPrefilling={anchorDrafts.some(d => d.prefill_status === 'loading')}
                 />
               </motion.div>
             </motion.div>
@@ -500,6 +575,7 @@ export default function SoloPlanView() {
   return (
     <>
       {deleteModal}
+      {anchorsModal}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -535,6 +611,7 @@ export default function SoloPlanView() {
               itineraryState={itineraryState}
               errorType={errorType}
               onRetry={canEdit ? handleRetry : undefined}
+              onToggleLock={handleToggleLock}
             />
 
             {/* RIGHT: Chat Panel — desktop only inline, mobile as overlay */}

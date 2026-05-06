@@ -60,6 +60,76 @@ export interface GetPlansResponse {
     plans?: Plan[];
 }
 
+export type AnchorEventType = 'FLIGHT' | 'HOTEL' | 'CAR_RENTAL' | 'ACTIVITY' | 'DINING' | 'OTHER';
+
+export interface SmartAnchorUserInputs {
+    // FLIGHT
+    flight_number?: string;
+    airline?: string;
+    departure_date?: string;
+    departure_time?: string;           // HH:MM
+    arrival_time?: string;             // HH:MM
+    departure_airport?: string;        // display label (UI only)
+    departure_airport_place_id?: string;
+    departure_airport_lat?: number;
+    departure_airport_lng?: number;
+    arrival_airport?: string;          // display label (UI only)
+    arrival_airport_place_id?: string;
+    arrival_airport_lat?: number;
+    arrival_airport_lng?: number;
+    // HOTEL
+    hotel_name?: string;
+    checkin_date?: string;
+    checkout_date?: string;
+    checkin_time?: string;             // HH:MM
+    checkout_time?: string;            // HH:MM
+    // CAR_RENTAL
+    company?: string;
+    car_model?: string;
+    pickup_date?: string;
+    dropoff_date?: string;
+    pickup_location?: string;          // display label (UI only)
+    pickup_location_place_id?: string;
+    pickup_location_lat?: number;
+    pickup_location_lng?: number;
+    dropoff_location?: string;         // display label (UI only)
+    dropoff_location_place_id?: string;
+    dropoff_location_lat?: number;
+    dropoff_location_lng?: number;
+    pickup_time?: string;    // HH:MM
+    dropoff_time?: string;   // HH:MM
+    // ACTIVITY / DINING / OTHER
+    name?: string;
+    date?: string;
+    start_time?: string;     // HH:MM
+    end_time?: string;       // HH:MM
+    // Common
+    location?: string;               // display label (UI only)
+    location_place_id?: string;
+    location_lat?: number;
+    location_lng?: number;
+    notes?: string;
+    cost?: number;           // USD
+    booking_url?: string;
+}
+
+export interface SmartAnchor {
+    id: string;
+    type: AnchorEventType;
+    user_inputs: SmartAnchorUserInputs;
+    details: Record<string, any> | null;
+    prefill_status: 'none';
+    start_time?: string;       // HH:MM — when this anchor starts (ACTIVITY/DINING/OTHER)
+    end_time?: string;         // HH:MM — when this anchor ends (ACTIVITY/DINING/OTHER)
+    duration_minutes?: number; // for ACTIVITY / DINING / OTHER only
+}
+
+export interface SmartAnchorsResponse {
+    message?: string;
+    status_code?: number;
+    smart_anchors?: SmartAnchor[];
+}
+
 export interface TripItinerary {
     id: string;
     title: string | null;
@@ -72,6 +142,7 @@ export interface TripItinerary {
     events: any[];
     tips: string[];
     status: string;
+    smart_anchors: SmartAnchor[];
     created_at: string;
     updated_at: string;
 }
@@ -284,5 +355,27 @@ export const api = {
             },
             body: JSON.stringify(body),
         });
+    },
+    updateSmartAnchors: async (token: string, id: string, smart_anchors: SmartAnchor[]): Promise<SmartAnchorsResponse> => {
+        const { data } = await axios.put<SmartAnchorsResponse>(
+            `${API_BASE}/api/v1/plan/${id}/smart-anchors`,
+            { smart_anchors },
+            { params: { token } },
+        );
+        return data;
+    },
+    toggleEventLock: async (
+        token: string,
+        id: string,
+        day_number: number,
+        event_number: number,
+        is_locked: boolean,
+    ): Promise<{ message?: string; status_code?: number }> => {
+        const { data } = await axios.put(
+            `${API_BASE}/api/v1/plan/${id}/events/lock`,
+            { day_number, event_number, is_locked },
+            { params: { token } },
+        );
+        return data;
     },
 };

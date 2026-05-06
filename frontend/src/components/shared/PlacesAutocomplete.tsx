@@ -34,6 +34,7 @@ export type ParsedPlace = {
   country: string;
   lat: number;
   lng: number;
+  placeId?: string;
 };
 
 type PlacesAutocompleteProps = {
@@ -334,6 +335,7 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
             country,
             lat,
             lng,
+            placeId: s.placeId,
           });
         } catch (err) {
           console.warn('[PlacesAutocomplete] details failed:', err);

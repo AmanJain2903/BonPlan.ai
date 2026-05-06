@@ -24,6 +24,7 @@ interface ItineraryPanelProps {
   itineraryState: ItineraryState;
   errorType?: 'stopped' | 'error' | null;
   onRetry?: () => void;
+  onToggleLock?: (event: any) => void;
 }
 
 export default function ItineraryPanel({
@@ -32,6 +33,7 @@ export default function ItineraryPanel({
   itineraryState,
   errorType,
   onRetry,
+  onToggleLock,
 }: ItineraryPanelProps) {
   const [showTips, setShowTips] = useState(false);
   const tipsRef = useRef<HTMLDivElement>(null);
@@ -393,6 +395,7 @@ export default function ItineraryPanel({
                       <ExpandedDayCardBody
                         day={selectedDayData}
                         onViewOnMap={handleViewOnMap}
+                        onToggleLock={onToggleLock}
                         navDirection={navDirection}
                       />
                     ) : (

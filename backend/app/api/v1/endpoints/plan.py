@@ -1078,6 +1078,7 @@ async def get_plan(token: str, id: str):
             "events": tripItinerary.events,
             "tips": tripItinerary.tips,
             "status": tripItinerary.status,
+            "smart_anchors": tripItinerary.smart_anchors or [],
             "created_at": tripItinerary.created_at,
             "updated_at": tripItinerary.updated_at,
         }
@@ -1144,3 +1145,92 @@ async def delete_plan(token: str, id: str):
             logger.error("Failed to delete plan", trip_id=id, user_id=user_id, error=str(e))
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to delete plan: {e}")
+
+
+"""
+Save smart anchors for a trip itinerary.
+"""
+class UpdateSmartAnchorsRequest(BaseModel):
+    smart_anchors: list
+
+
+@router.put("/{id}/smart-anchors", response_model=dict)
+async def update_smart_anchors(id: str, token: str, req: UpdateSmartAnchorsRequest):
+    user_id = await _decode_user_id(token)
+
+    async with Session() as db:
+        try:
+            await _load_user_or_404(db, user_id)
+            caller = await _get_accepted_member(db, id, user_id)
+            if not caller:
+                return {"message": "You are not authorized to edit this plan.", "status_code": 403}
+            role = _role_value(caller.role)
+            if role not in {TripRole.OWNER.value, TripRole.SHARED_EDITOR.value}:
+                return {"message": "You are not authorized to edit this plan.", "status_code": 403}
+
+            itinerary = (await db.execute(
+                select(TripItinerary).where(TripItinerary.trip_id == id)
+            )).scalar_one_or_none()
+            if not itinerary:
+                return {"message": "Itinerary not found.", "status_code": 404}
+
+            itinerary.smart_anchors = req.smart_anchors
+            await db.commit()
+            return {"message": "Smart anchors saved.", "status_code": 200, "smart_anchors": itinerary.smart_anchors}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to save smart anchors", trip_id=id, user_id=user_id, error=str(e))
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to save smart anchors: {e}")
+
+
+"""
+Toggle the is_locked state of a specific itinerary event.
+"""
+class ToggleEventLockRequest(BaseModel):
+    day_number: int
+    event_number: int
+    is_locked: bool
+
+
+@router.put("/{id}/events/lock", response_model=dict)
+async def toggle_event_lock(id: str, token: str, req: ToggleEventLockRequest):
+    user_id = await _decode_user_id(token)
+
+    async with Session() as db:
+        try:
+            await _load_user_or_404(db, user_id)
+            caller = await _get_accepted_member(db, id, user_id)
+            if not caller:
+                return {"message": "You are not authorized to edit this plan.", "status_code": 403}
+            role = _role_value(caller.role)
+            if role not in {TripRole.OWNER.value, TripRole.SHARED_EDITOR.value}:
+                return {"message": "You are not authorized to edit this plan.", "status_code": 403}
+
+            itinerary = (await db.execute(
+                select(TripItinerary).where(TripItinerary.trip_id == id)
+            )).scalar_one_or_none()
+            if not itinerary:
+                return {"message": "Itinerary not found.", "status_code": 404}
+
+            events = list(itinerary.events or [])
+            updated = False
+            for i, ev in enumerate(events):
+                if ev.get("day_number") == req.day_number and ev.get("event_number") == req.event_number:
+                    events[i] = {**ev, "is_locked": req.is_locked}
+                    updated = True
+                    break
+
+            if not updated:
+                return {"message": "Event not found.", "status_code": 404}
+
+            itinerary.events = events
+            await db.commit()
+            return {"message": "Event lock updated.", "status_code": 200}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to toggle event lock", trip_id=id, user_id=user_id, error=str(e))
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to toggle event lock: {e}")

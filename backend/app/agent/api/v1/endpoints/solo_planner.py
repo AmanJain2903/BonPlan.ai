@@ -46,6 +46,30 @@ router = APIRouter()
 _pending_finalize_tasks: set[asyncio.Task] = set()
 
 
+async def _apply_lock_updates(trip_id: str, updates: list) -> None:
+    """Patch is_locked on already-saved events without touching other fields."""
+    if not updates:
+        return
+    async with Session() as db:
+        itinerary = (
+            await db.execute(select(TripItinerary).where(TripItinerary.trip_id == trip_id))
+        ).scalar_one_or_none()
+        if itinerary is None:
+            return
+        events = list(itinerary.events or [])
+        index = {(e.get("day_number"), e.get("event_number")): i for i, e in enumerate(events)}
+        changed = False
+        for upd in updates:
+            key = (upd.get("day_number"), upd.get("event_number"))
+            idx = index.get(key)
+            if idx is not None:
+                events[idx] = {**events[idx], "is_locked": upd.get("is_locked")}
+                changed = True
+        if changed:
+            itinerary.events = events
+            await db.commit()
+
+
 async def _apply_event_write(trip_id: str, event: dict) -> None:
     """Persist a single itinerary event chunk to the DB."""
     event_type = event.get("event_type")
@@ -178,9 +202,11 @@ async def generate_solo_plan(request: Request, id: str):
                     select(TripItinerary).where(TripItinerary.trip_id == id)
                 )
             ).scalar_one_or_none()
+            _smart_anchors: list = []
             if itinerary_row:
                 current_trip_itinerary = itinerary_row.events
                 itinerary_row.status = TripItineraryStatus.GENERATING
+                _smart_anchors = itinerary_row.smart_anchors or []
 
             await db.commit()
 
@@ -251,6 +277,7 @@ async def generate_solo_plan(request: Request, id: str):
                 "children": plan.children,
                 "preferences": rbac.trip_preferences or {},
                 "textualContext": chat_input,
+                "smart_anchors": _smart_anchors,
             }
     except HTTPException:
         raise
@@ -290,7 +317,11 @@ async def generate_solo_plan(request: Request, id: str):
                     if item is None:
                         return
                     try:
-                        await _apply_event_write(str(id), item)
+                        # Lock-update marker — patch is_locked only.
+                        if isinstance(item, dict) and item.get("__lock_update"):
+                            await _apply_lock_updates(str(id), item.get("updates", []))
+                        else:
+                            await _apply_event_write(str(id), item)
                     except Exception as e:
                         logger.exception("SSE DB write failed", error=str(e))
                 finally:
@@ -379,6 +410,10 @@ async def generate_solo_plan(request: Request, id: str):
                     event_data = chunk.get("data") or {}
                     if event_data:
                         await write_queue.put(event_data)
+                elif chunk_type == "lock_update":
+                    updates = chunk.get("updates") or []
+                    if updates:
+                        await write_queue.put({"__lock_update": True, "updates": updates})
                 elif chunk_type == "summary":
                     # Any summary text means the agent reached END and is
                     # finalizing. Mark success; more summary chunks may follow.

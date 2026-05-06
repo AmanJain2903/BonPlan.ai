@@ -20,6 +20,17 @@ export type OtherPreferences = {
     additional_notes: string;
 };
 
+export type LockedRoutineFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days';
+
+export type LockedRoutine = {
+    id: string;
+    name: string;
+    frequency: LockedRoutineFrequency;
+    specific_days?: number[];  // 0=Mon … 6=Sun
+    start_time: string;        // HH:MM 24h
+    duration_minutes: number;
+};
+
 export type TripPreferences = {
     dietary_restrictions: string[];
     accessibility_preferences: string;
@@ -29,6 +40,7 @@ export type TripPreferences = {
     accommodation_style: string;
     dining_style: string;
     other_preferences: OtherPreferences;
+    locked_routines?: LockedRoutine[];
 };
 
 /* ──────────────────────── Constants ──────────────────────── */
@@ -153,4 +165,5 @@ export const DEFAULT_PREFERENCES: TripPreferences = {
         ev_charging_available: false,
         additional_notes: '',
     },
+    locked_routines: [],
 };

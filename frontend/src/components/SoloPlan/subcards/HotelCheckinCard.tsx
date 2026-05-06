@@ -2,12 +2,14 @@ import { DollarSign, Star, MapPin, BedDouble, ExternalLink } from 'lucide-react'
 import SubCardShell from './common/SubCardShell';
 import TipsSection from './common/TipsSection';
 import ViewOnMapButton from './common/ViewOnMapButton';
+import LockToggle from './common/LockToggle';
 import { Dot } from '../Atoms';
 import { EVENT_ACCENT, EVENT_ICON, EVENT_LABEL, formatClockTime, isValidUrl } from '../constants';
 
 interface Props {
   event: any;
   onViewOnMap: () => void;
+  onToggleLock?: () => void;
   contentKey?: string | number;
 }
 
@@ -31,7 +33,7 @@ function LogoOrIcon({ url, name }: { url?: string; name: string }) {
   );
 }
 
-export default function HotelCheckinCard({ event, onViewOnMap, contentKey }: Props) {
+export default function HotelCheckinCard({ event, onViewOnMap, onToggleLock, contentKey }: Props) {
   const d = event?.hotel_checkin_details;
   if (!d) return null;
 
@@ -45,6 +47,7 @@ export default function HotelCheckinCard({ event, onViewOnMap, contentKey }: Pro
       Icon={Icon}
       accent={accent}
       contentKey={contentKey}
+      lockButton={onToggleLock ? <LockToggle isLocked={event?.is_locked === true} onToggle={onToggleLock} /> : undefined}
       viewOnMapButton={<ViewOnMapButton onClick={onViewOnMap} />}
       collapsedContent={
         <>

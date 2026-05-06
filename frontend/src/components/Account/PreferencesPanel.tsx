@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Save, Sparkles, Map, User, Clock, Check, X,
-  Sunrise, Sun, Moon, ChevronDown,
+  Sunrise, Sun, Moon, ChevronDown, Plus, Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../api';
@@ -22,6 +22,8 @@ import {
   TripPreferences,
   TravelPreferences,
   OtherPreferences,
+  LockedRoutine,
+  LockedRoutineFrequency,
 } from '../../data/preferences';
 
 const formatInterest = (s: string) => {
@@ -331,6 +333,130 @@ const CreatableMultiSelect = ({ selected, onChange, suggestions }: {
   );
 };
 
+/* ──────────────────────── Locked Routines Sub-Components ──────────────────────── */
+
+const FREQUENCY_OPTIONS: { value: LockedRoutineFrequency; label: string }[] = [
+  { value: 'daily', label: 'Every Day' },
+  { value: 'weekdays', label: 'Weekdays' },
+  { value: 'weekends', label: 'Weekends' },
+  { value: 'specific_days', label: 'Specific Days' },
+];
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function newRoutine(): LockedRoutine {
+  return {
+    id: crypto.randomUUID(),
+    name: '',
+    frequency: 'daily',
+    start_time: '07:00',
+    duration_minutes: 60,
+  };
+}
+
+const RoutineRow = ({
+  routine,
+  onChange,
+  onDelete,
+}: {
+  routine: LockedRoutine;
+  onChange: (r: LockedRoutine) => void;
+  onDelete: () => void;
+}) => {
+  const set = (patch: Partial<LockedRoutine>) => onChange({ ...routine, ...patch });
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          value={routine.name}
+          onChange={e => set({ name: e.target.value })}
+          placeholder="Routine name (e.g. Morning Gym)"
+          maxLength={60}
+          className="flex-1 bg-transparent border-none text-sm font-semibold text-white outline-none placeholder-white/30"
+        />
+        <button
+          type="button"
+          onClick={onDelete}
+          className="p-1.5 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-400/10 transition-all cursor-pointer shrink-0"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {FREQUENCY_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => set({ frequency: opt.value, specific_days: undefined })}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              routine.frequency === opt.value
+                ? 'border-cyan/40 bg-cyan/10 text-cyan'
+                : 'border-white/10 bg-white/[0.02] text-white/50 hover:text-white/80'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {routine.frequency === 'specific_days' && (
+        <div className="flex gap-1.5 flex-wrap">
+          {DAY_LABELS.map((day, idx) => {
+            const active = routine.specific_days?.includes(idx) ?? false;
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  const days = routine.specific_days ?? [];
+                  set({ specific_days: active ? days.filter(d => d !== idx) : [...days, idx].sort() });
+                }}
+                className={`w-10 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                  active
+                    ? 'border-cyan/40 bg-cyan/10 text-cyan'
+                    : 'border-white/10 bg-white/[0.02] text-white/40 hover:text-white/70'
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Start Time</label>
+          <input
+            type="time"
+            value={routine.start_time}
+            onChange={e => set({ start_time: e.target.value })}
+            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-white outline-none focus:border-cyan/40 transition-all [color-scheme:dark]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Duration</label>
+          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5">
+            <input
+              type="number"
+              value={routine.duration_minutes}
+              min={5}
+              max={480}
+              step={5}
+              onChange={e => set({ duration_minutes: Math.max(5, Math.min(480, parseInt(e.target.value) || 5)) })}
+              className="w-14 bg-transparent text-sm text-white outline-none"
+            />
+            <span className="text-xs text-white/40">min</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ──────────────────────── Main Component ──────────────────────── */
 export default function PreferencesPanel() {
   const { token, user, login } = useAuth();
@@ -368,15 +494,21 @@ export default function PreferencesPanel() {
     }
   }, [token, user]);
 
-  const isDirty = JSON.stringify(form) !== JSON.stringify(snapshot.current);
+  const normalizeForCompare = (f: TripPreferences): TripPreferences => ({
+    ...f,
+    locked_routines: (f.locked_routines ?? []).filter(r => r.name.trim() !== ''),
+  });
+
+  const isDirty = JSON.stringify(normalizeForCompare(form)) !== JSON.stringify(normalizeForCompare(snapshot.current));
 
   // Save
   const handleSave = async () => {
     if (!token) return;
     setStatus('saving');
+    const formToSave = normalizeForCompare(form);
     try {
-      const res = await api.auth.updateProfile(token, user?.firstName || '', user?.lastName || '', null, null, form);
-      snapshot.current = res.preferences || form;
+      const res = await api.auth.updateProfile(token, user?.firstName || '', user?.lastName || '', null, null, formToSave);
+      snapshot.current = res.preferences || formToSave;
       setForm({ ...snapshot.current });
       setStatus('idle');
       const store = !!localStorage.getItem('token');
@@ -411,6 +543,21 @@ export default function PreferencesPanel() {
       const arr = prev[key] as string[];
       return { ...prev, [key]: arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item] };
     });
+  }, []);
+
+  const addRoutine = useCallback(() => {
+    setForm(prev => ({ ...prev, locked_routines: [...(prev.locked_routines ?? []), newRoutine()] }));
+  }, []);
+
+  const updateRoutine = useCallback((routine: LockedRoutine) => {
+    setForm(prev => ({
+      ...prev,
+      locked_routines: (prev.locked_routines ?? []).map(r => r.id === routine.id ? routine : r),
+    }));
+  }, []);
+
+  const deleteRoutine = useCallback((id: string) => {
+    setForm(prev => ({ ...prev, locked_routines: (prev.locked_routines ?? []).filter(r => r.id !== id) }));
   }, []);
 
 
@@ -636,10 +783,28 @@ export default function PreferencesPanel() {
         </div>
       </Section>
 
-      {/* ═════════════ SECTION 4: Locked Routines (Coming Soon) ═════════════ */}
-      <Section icon={Clock} title="Locked Routines" subtitle="Hard-locked time blocks the AI must schedule around." className="bg-white/[0.03]">
-        <div className="text-center py-12">
-          <p className="text-cyan/80 text-lg font-medium tracking-wider uppercase">Coming Soon with Smart Anchors</p>
+      {/* ═════════════ SECTION 4: Locked Routines ═════════════ */}
+      <Section icon={Clock} title="Locked Routines" subtitle="Daily habits the AI must block off and schedule around.">
+        <div className="space-y-3">
+          {(form.locked_routines ?? []).map(routine => (
+            <RoutineRow
+              key={routine.id}
+              routine={routine}
+              onChange={updateRoutine}
+              onDelete={() => deleteRoutine(routine.id)}
+            />
+          ))}
+          {(form.locked_routines ?? []).length === 0 && (
+            <p className="text-sm text-white/30 text-center py-4">No locked routines yet. Add one below.</p>
+          )}
+          <button
+            type="button"
+            onClick={addRoutine}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 py-3 text-sm text-white/45 hover:border-cyan/30 hover:text-cyan/80 hover:bg-cyan/[0.03] transition-all cursor-pointer"
+          >
+            <Plus size={15} />
+            Add Routine
+          </button>
         </div>
       </Section>
 

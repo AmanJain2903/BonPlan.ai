@@ -26,8 +26,8 @@ Responsibilities:
 """
 import re
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.logging import get_agent_logger, set_agent_log_context
 from app.agent.langgraph_runtime.state import PlannerState
@@ -51,6 +51,7 @@ MAX_VALIDATION_ATTEMPTS = 2  # after this many failures, advance anyway
 
 _SLIM_KEYS = frozenset({
     "event_type", "event_number", "day_number", "date", "name", "description", "place_id",
+    "is_locked",
 })
 
 
@@ -58,19 +59,22 @@ def _slim_event(event: Dict) -> Dict:
     result = {k: v for k, v in event.items() if k in _SLIM_KEYS and v is not None}
     # Preserve the pairing field used by _compute_open_bookings/_booking_bucket_key
     # so that slimmed openers and closers always land in the same bucket.
-    # Without this, a full opener and a slimmed closer (or vice versa) end up in
-    # different buckets and the pair appears as a phantom open booking.
+    # Check both regular and anchor variants (anchor events use anchor_* fields).
     et = event.get("event_type", "")
     if et in ("HOTEL_CHECKIN", "HOTEL_CHECKOUT"):
-        field = "hotel_checkin_details" if et == "HOTEL_CHECKIN" else "hotel_checkout_details"
-        hotel_name = (event.get(field) or {}).get("hotel_name")
-        if hotel_name:
-            result[field] = {"hotel_name": hotel_name}
+        base = "hotel_checkin_details" if et == "HOTEL_CHECKIN" else "hotel_checkout_details"
+        for fn in (base, "anchor_" + base):
+            hotel_name = (event.get(fn) or {}).get("hotel_name")
+            if hotel_name:
+                result[fn] = {"hotel_name": hotel_name}
+                break
     elif et in ("CAR_PICKUP", "CAR_DROPOFF"):
-        field = "car_pickup_details" if et == "CAR_PICKUP" else "car_dropoff_details"
-        company = (event.get(field) or {}).get("rental_company_name")
-        if company:
-            result[field] = {"rental_company_name": company}
+        base = "car_pickup_details" if et == "CAR_PICKUP" else "car_dropoff_details"
+        for fn in (base, "anchor_" + base):
+            company = (event.get(fn) or {}).get("rental_company_name")
+            if company:
+                result[fn] = {"rental_company_name": company}
+                break
     # FLIGHT_TAKEOFF/LAND always bucket to ("FLIGHT", "") — no details needed.
     return result
 
@@ -403,8 +407,317 @@ def _check_duplicate_venues(
     return errors
 
 
+_DOW_WEEKDAYS = {0, 1, 2, 3, 4}
+_DOW_WEEKENDS = {5, 6}
+
+
+def _trip_day_date(start_date: dict, current_day: int) -> Optional[date]:
+    try:
+        return date(start_date["year"], start_date["month"], start_date["day"]) + timedelta(days=current_day - 1)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _hhmm_to_minutes(t: str) -> Optional[int]:
+    try:
+        h, m = map(int, t.split(":"))
+        return h * 60 + m
+    except Exception:
+        return None
+
+
+def _event_start_hhmm(event: Dict) -> Optional[int]:
+    """Extract start time as total minutes from event details (regular or anchor)."""
+    for field in (
+        "place_details", "anchor_place_details",
+        "other_details", "anchor_other_details",
+        "flight_takeoff_details", "anchor_flight_takeoff_details",
+        "car_pickup_details", "anchor_car_pickup_details",
+        "hotel_checkin_details", "anchor_hotel_checkin_details",
+    ):
+        det = event.get(field) or {}
+        st = det.get("start_time") or det.get("departure_time") or det.get("checkin_time") or det.get("pickup_time")
+        if st:
+            try:
+                parts = st.split("T")
+                time_part = parts[1] if len(parts) > 1 else parts[0]
+                hh, mm = int(time_part[:2]), int(time_part[3:5])
+                return hh * 60 + mm
+            except Exception:
+                pass
+    return None
+
+
+def _check_smart_anchors(
+    day_events: List[Dict],
+    smart_anchors: List[Dict],
+    current_day: int,
+    trip_start: dict,
+) -> List[str]:
+    """Verify all smart anchors expected on this day appear in day_events."""
+    errors: List[str] = []
+    current_date_obj = _trip_day_date(trip_start, current_day)
+    if current_date_obj is None:
+        return errors
+    current_date_str = current_date_obj.isoformat()
+
+    for anchor in smart_anchors:
+        atype = anchor.get("type", "")
+        inputs = anchor.get("user_inputs") or {}
+        start_t = anchor.get("start_time") or inputs.get("start_time")
+
+        if atype == "FLIGHT":
+            if inputs.get("departure_date") != current_date_str:
+                continue
+            has_takeoff = any(e.get("event_type") == "FLIGHT_TAKEOFF" for e in day_events)
+            if not has_takeoff:
+                airline = inputs.get("airline", "")
+                fnum = inputs.get("flight_number", "")
+                label = f"{airline} {fnum}".strip() or "flight"
+                errors.append(
+                    f"Smart anchor FLIGHT ({label}) was not emitted for Day {current_day}. "
+                    "FLIGHT_TAKEOFF event is required."
+                )
+
+        elif atype == "HOTEL":
+            checkin = inputs.get("checkin_date", "")
+            checkout = inputs.get("checkout_date", "")
+            hotel = inputs.get("hotel_name", "hotel")
+            if checkin == current_date_str:
+                if not any(e.get("event_type") == "HOTEL_CHECKIN" for e in day_events):
+                    errors.append(
+                        f"Smart anchor HOTEL CHECKIN ({hotel}) was not emitted for Day {current_day}. "
+                        "HOTEL_CHECKIN event is required."
+                    )
+            if checkout == current_date_str:
+                if not any(e.get("event_type") == "HOTEL_CHECKOUT" for e in day_events):
+                    errors.append(
+                        f"Smart anchor HOTEL CHECKOUT ({hotel}) was not emitted for Day {current_day}. "
+                        "HOTEL_CHECKOUT event is required."
+                    )
+
+        elif atype == "CAR_RENTAL":
+            pickup = inputs.get("pickup_date", "")
+            dropoff = inputs.get("dropoff_date", "")
+            company = inputs.get("company", "rental car")
+            if pickup == current_date_str:
+                if not any(e.get("event_type") == "CAR_PICKUP" for e in day_events):
+                    errors.append(
+                        f"Smart anchor CAR PICKUP ({company}) was not emitted for Day {current_day}. "
+                        "CAR_PICKUP event is required."
+                    )
+            if dropoff == current_date_str:
+                if not any(e.get("event_type") == "CAR_DROPOFF" for e in day_events):
+                    errors.append(
+                        f"Smart anchor CAR DROPOFF ({company}) was not emitted for Day {current_day}. "
+                        "CAR_DROPOFF event is required."
+                    )
+
+        elif atype in ("ACTIVITY", "DINING", "OTHER"):
+            if inputs.get("date") != current_date_str:
+                continue
+            name = inputs.get("name", "")
+            type_map = {"ACTIVITY": "ACTIVITY", "DINING": "DINING", "OTHER": "OTHER"}
+            etype = type_map[atype]
+            matching_events = [e for e in day_events if e.get("event_type") == etype]
+            if not matching_events:
+                errors.append(
+                    f"Smart anchor {etype} '{name}' was not emitted for Day {current_day}. "
+                    f"An {etype} event is required on this day."
+                )
+                continue
+            # If exact time required, verify timing
+            if start_t:
+                anchor_min = _hhmm_to_minutes(start_t)
+                if anchor_min is not None:
+                    found_timing = False
+                    for ev in matching_events:
+                        ev_min = _event_start_hhmm(ev)
+                        if ev_min is not None and abs(ev_min - anchor_min) <= 15:
+                            found_timing = True
+                            break
+                    if not found_timing:
+                        errors.append(
+                            f"Smart anchor {etype} '{name}' must start at {start_t} "
+                            f"(±15 min) but no matching {etype} event found at that time on Day {current_day}."
+                        )
+
+    return errors
+
+
+def _check_locked_routines(
+    day_events: List[Dict],
+    locked_routines: List[Dict],
+    current_day: int,
+    trip_start: dict,
+) -> List[str]:
+    """Verify all locked routines applicable to this day appear as OTHER events."""
+    errors: List[str] = []
+    current_date_obj = _trip_day_date(trip_start, current_day)
+    if current_date_obj is None:
+        return errors
+    dow = current_date_obj.weekday()
+
+    for routine in locked_routines:
+        freq = routine.get("frequency", "daily")
+        specific = routine.get("specific_days") or []
+        if freq == "daily":
+            applies = True
+        elif freq == "weekdays":
+            applies = dow in _DOW_WEEKDAYS
+        elif freq == "weekends":
+            applies = dow in _DOW_WEEKENDS
+        elif freq == "specific_days":
+            applies = dow in specific
+        else:
+            applies = False
+        if not applies:
+            continue
+
+        name = routine.get("name", "routine")
+        start_t = routine.get("start_time", "")
+        dur = routine.get("duration_minutes", 30)
+        anchor_min = _hhmm_to_minutes(start_t) if start_t else None
+
+        other_events = [e for e in day_events if e.get("event_type") == "OTHER"]
+        if not other_events:
+            errors.append(
+                f"Locked routine '{name}' ({start_t}, {dur} min) was not emitted for Day {current_day}. "
+                "Emit as OTHER event at the specified time."
+            )
+            continue
+
+        if anchor_min is not None:
+            found = any(
+                _event_start_hhmm(e) is not None and abs((_event_start_hhmm(e) or 0) - anchor_min) <= 15
+                for e in other_events
+            )
+            if not found:
+                errors.append(
+                    f"Locked routine '{name}' must appear as OTHER event at {start_t} "
+                    f"(±15 min) on Day {current_day}, but no matching OTHER event found at that time."
+                )
+
+    return errors
+
+
+def _annotate_is_locked(
+    prior_events: List[Dict],
+    smart_anchors: List[Dict],
+    locked_routines: List[Dict],
+    trip_start: dict,
+) -> List[Dict]:
+    """
+    Set is_locked=True on events that came from smart anchors or locked routines.
+    All other non-structural events get is_locked=False.
+    Structural events (START/END/COMMUTE) are skipped.
+    """
+    _structural = {"START", "END", "COMMUTE"}
+
+    # Pre-compute which (day, event_type) combos are anchor-sourced
+    anchor_day_types: Dict[int, Set[str]] = {}  # day_number → set of event_types
+
+    for anchor in smart_anchors:
+        atype = anchor.get("type", "")
+        inputs = anchor.get("user_inputs") or {}
+
+        def _date_to_day(date_str: str) -> Optional[int]:
+            if not date_str:
+                return None
+            try:
+                d = date.fromisoformat(date_str)
+                base = date(trip_start["year"], trip_start["month"], trip_start["day"])
+                diff = (d - base).days + 1
+                return diff if diff >= 1 else None
+            except Exception:
+                return None
+
+        if atype == "FLIGHT":
+            day = _date_to_day(inputs.get("departure_date", ""))
+            if day:
+                anchor_day_types.setdefault(day, set()).update({"FLIGHT_TAKEOFF", "FLIGHT_LAND"})
+        elif atype == "HOTEL":
+            cin_day = _date_to_day(inputs.get("checkin_date", ""))
+            cout_day = _date_to_day(inputs.get("checkout_date", ""))
+            if cin_day:
+                anchor_day_types.setdefault(cin_day, set()).add("HOTEL_CHECKIN")
+            if cout_day:
+                anchor_day_types.setdefault(cout_day, set()).add("HOTEL_CHECKOUT")
+        elif atype == "CAR_RENTAL":
+            pu_day = _date_to_day(inputs.get("pickup_date", ""))
+            do_day = _date_to_day(inputs.get("dropoff_date", ""))
+            if pu_day:
+                anchor_day_types.setdefault(pu_day, set()).add("CAR_PICKUP")
+            if do_day:
+                anchor_day_types.setdefault(do_day, set()).add("CAR_DROPOFF")
+        elif atype in ("ACTIVITY", "DINING", "OTHER"):
+            day = _date_to_day(inputs.get("date", ""))
+            if day:
+                etype = {"ACTIVITY": "ACTIVITY", "DINING": "DINING", "OTHER": "OTHER"}[atype]
+                anchor_day_types.setdefault(day, set()).add(etype)
+
+    # Pre-compute routine (day, start_min) pairs
+    routine_day_times: Dict[int, List[int]] = {}  # day_number → [start_minutes]
+    total_days_approx = max((e.get("day_number") or 0) for e in prior_events) if prior_events else 0
+
+    for routine in locked_routines:
+        freq = routine.get("frequency", "daily")
+        specific = routine.get("specific_days") or []
+        start_t = routine.get("start_time", "")
+        anchor_min = _hhmm_to_minutes(start_t)
+        if anchor_min is None:
+            continue
+        for day_n in range(1, total_days_approx + 1):
+            day_date = _trip_day_date(trip_start, day_n)
+            if day_date is None:
+                continue
+            dow = day_date.weekday()
+            if freq == "daily":
+                applies = True
+            elif freq == "weekdays":
+                applies = dow in _DOW_WEEKDAYS
+            elif freq == "weekends":
+                applies = dow in _DOW_WEEKENDS
+            elif freq == "specific_days":
+                applies = dow in specific
+            else:
+                applies = False
+            if applies:
+                routine_day_times.setdefault(day_n, []).append(anchor_min)
+
+    result: List[Dict] = []
+    for event in prior_events:
+        event = dict(event)
+        etype = event.get("event_type", "")
+        day_n = event.get("day_number")
+
+        if etype in _structural or not isinstance(day_n, int) or day_n <= 0:
+            result.append(event)
+            continue
+
+        # Check anchor match
+        is_anchor = etype in (anchor_day_types.get(day_n) or set())
+
+        # Check routine match (OTHER events with matching start time)
+        is_routine = False
+        if etype == "OTHER" and day_n in routine_day_times:
+            ev_min = _event_start_hhmm(event)
+            if ev_min is not None:
+                is_routine = any(abs(ev_min - rm) <= 15 for rm in routine_day_times[day_n])
+
+        event["is_locked"] = is_anchor or is_routine
+        result.append(event)
+
+    return result
+
+
 def _validate_day_events(
-    day_events: List[Dict], current_day: int, prior_events: Optional[List[Dict]] = None
+    day_events: List[Dict],
+    current_day: int,
+    prior_events: Optional[List[Dict]] = None,
+    smart_anchors: Optional[List[Dict]] = None,
+    locked_routines: Optional[List[Dict]] = None,
+    trip_start: Optional[dict] = None,
 ) -> List[str]:
     """Run all validation checks and return accumulated error strings."""
     errors: List[str] = []
@@ -413,6 +726,10 @@ def _validate_day_events(
     errors.extend(_check_commute_gaps(day_events))
     errors.extend(_check_timing(day_events))
     errors.extend(_check_duplicate_venues(day_events, prior_events or [], current_day))
+    if smart_anchors and trip_start:
+        errors.extend(_check_smart_anchors(day_events, smart_anchors, current_day, trip_start))
+    if locked_routines and trip_start:
+        errors.extend(_check_locked_routines(day_events, locked_routines, current_day, trip_start))
     return errors
 
 
@@ -431,13 +748,23 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
     )
     set_agent_log_context(run_id=run_id, node="day_validator", day=current_day)
 
+    trip_input = state.get("trip_input") or {}
+    smart_anchors: List[Dict] = trip_input.get("smart_anchors") or []
+    locked_routines: List[Dict] = (trip_input.get("preferences") or {}).get("locked_routines") or []
+    trip_start: dict = trip_input.get("start_date") or {}
+
     # Extract this day's events, sorted chronologically
     day_events = sorted(
         [e for e in prior_events if e.get("day_number") == current_day],
         key=lambda e: e.get("event_number") or 0,
     )
 
-    errors = _validate_day_events(day_events, current_day, prior_events)
+    errors = _validate_day_events(
+        day_events, current_day, prior_events,
+        smart_anchors=smart_anchors,
+        locked_routines=locked_routines,
+        trip_start=trip_start,
+    )
 
     # ── Retry path ────────────────────────────────────────────────────────────
     if errors and attempts < MAX_VALIDATION_ATTEMPTS:
@@ -478,10 +805,24 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
     # Emit lightweight day_end signal — no LLM call, instant
     emit({"type": "day_end", "day_number": current_day})
 
+    # Annotate is_locked on all events based on anchor/routine matches.
+    annotated_events = _annotate_is_locked(prior_events, smart_anchors, locked_routines, trip_start)
+
+    # Emit lock annotations for this day so the DB writer can persist them.
+    # _apply_event_write saved events with is_locked=None; this corrects the DB.
+    lock_updates = [
+        {"day_number": e["day_number"], "event_number": e["event_number"], "is_locked": e.get("is_locked")}
+        for e in annotated_events
+        if isinstance(e.get("day_number"), int) and e.get("day_number") == current_day
+        and e.get("is_locked") is not None
+    ]
+    if lock_updates:
+        emit({"type": "lock_update", "updates": lock_updates})
+
     # Slim older completed days to keep subsequent planners' context lean.
     # validated_day + 1 = first day that will run next; days < (validated_day)
     # are completed but yesterday (current_day - 1) stays full for midnight-carryover.
-    pruned_events = _prune_prior_events(prior_events, validated_day=current_day + 1)
+    pruned_events = _prune_prior_events(annotated_events, validated_day=current_day + 1)
     log.info(
         f"Day {current_day} prior_events after pruning",
         before=len(prior_events),

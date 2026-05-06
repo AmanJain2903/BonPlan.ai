@@ -15,7 +15,7 @@ from app.logging import get_agent_logger
 
 log = get_agent_logger("validator")
 
-# Event type → the single *_details field that MUST be populated.
+# Event type → primary *_details field (regular events).
 EVENT_TYPE_TO_DETAIL_FIELD: Dict[str, str] = {
     "START": "start_details",
     "FLIGHT_TAKEOFF": "flight_takeoff_details",
@@ -30,6 +30,25 @@ EVENT_TYPE_TO_DETAIL_FIELD: Dict[str, str] = {
     "OTHER": "other_details",
     "END": "end_details",
 }
+
+# Event type → anchor *_details field (smart anchor events — all fields Optional).
+EVENT_TYPE_TO_ANCHOR_DETAIL_FIELD: Dict[str, str] = {
+    "FLIGHT_TAKEOFF": "anchor_flight_takeoff_details",
+    "FLIGHT_LAND": "anchor_flight_land_details",
+    "HOTEL_CHECKIN": "anchor_hotel_checkin_details",
+    "HOTEL_CHECKOUT": "anchor_hotel_checkout_details",
+    "CAR_PICKUP": "anchor_car_pickup_details",
+    "CAR_DROPOFF": "anchor_car_dropoff_details",
+    "DINING": "anchor_place_details",
+    "ACTIVITY": "anchor_place_details",
+    "OTHER": "anchor_other_details",
+}
+
+# All possible detail field names across regular + anchor schemas.
+_ALL_POSSIBLE_DETAIL_FIELDS: frozenset = frozenset(
+    set(EVENT_TYPE_TO_DETAIL_FIELD.values()) |
+    set(EVENT_TYPE_TO_ANCHOR_DETAIL_FIELD.values())
+)
 
 # In these modes re-emitting START must be blocked to avoid breaking the frontend.
 START_GUARD_MODES = {"editing"}
@@ -89,11 +108,13 @@ def _booking_bucket_key(event: Dict[str, Any]) -> Optional[Tuple[str, str]]:
     et = event.get("event_type")
     if et in ("HOTEL_CHECKIN", "HOTEL_CHECKOUT"):
         field = "hotel_checkin_details" if et == "HOTEL_CHECKIN" else "hotel_checkout_details"
-        name = ((event.get(field) or {}).get("hotel_name") or "").strip().lower()
+        details = event.get(field) or event.get("anchor_" + field) or {}
+        name = (details.get("hotel_name") or "").strip().lower()
         return ("HOTEL", name)
     if et in ("CAR_PICKUP", "CAR_DROPOFF"):
         field = "car_pickup_details" if et == "CAR_PICKUP" else "car_dropoff_details"
-        name = ((event.get(field) or {}).get("rental_company_name") or "").strip().lower()
+        details = event.get(field) or event.get("anchor_" + field) or {}
+        name = (details.get("rental_company_name") or "").strip().lower()
         return ("CAR", name)
     if et in ("FLIGHT_TAKEOFF", "FLIGHT_LAND"):
         return ("FLIGHT", "")
@@ -125,7 +146,7 @@ def _compute_open_bookings(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 continue
             et = opener.get("event_type")
             close_type, open_field, label_key = _OPEN_CLOSE[et]
-            details = opener.get(open_field) or {}
+            details = opener.get(open_field) or opener.get("anchor_" + open_field) or {}
             open_items.append({
                 "open_event_type": et,
                 "must_be_closed_by": close_type,
@@ -171,7 +192,8 @@ def _event_start_dt(event: Dict[str, Any]) -> Optional[datetime]:
     if et not in _EVENT_TIMES:
         return None
     field, start_key, _ = _EVENT_TIMES[et]
-    return _parse_dt((event.get(field) or {}).get(start_key))
+    details = event.get(field) or event.get("anchor_" + field) or {}
+    return _parse_dt(details.get(start_key))
 
 
 def _event_end_dt(event: Dict[str, Any]) -> Optional[datetime]:
@@ -179,7 +201,8 @@ def _event_end_dt(event: Dict[str, Any]) -> Optional[datetime]:
     if et not in _EVENT_TIMES:
         return None
     field, _, end_key = _EVENT_TIMES[et]
-    return _parse_dt((event.get(field) or {}).get(end_key))
+    details = event.get(field) or event.get("anchor_" + field) or {}
+    return _parse_dt(details.get(end_key))
 
 
 def _latlng(c: Any) -> Optional[Tuple[float, float]]:
@@ -200,11 +223,11 @@ def _event_coords(event: Dict[str, Any]) -> Tuple[Optional[Tuple[float, float]],
     et = event.get("event_type")
     if et in _DUAL_LOC_FIELDS:
         field, o_key, d_key = _DUAL_LOC_FIELDS[et]
-        details = event.get(field) or {}
+        details = event.get(field) or event.get("anchor_" + field) or {}
         return _latlng(details.get(o_key)), _latlng(details.get(d_key))
     if et in _SINGLE_LOC_FIELDS:
         field, key = _SINGLE_LOC_FIELDS[et]
-        details = event.get(field) or {}
+        details = event.get(field) or event.get("anchor_" + field) or {}
         c = _latlng(details.get(key))
         return c, c
     return None, None
@@ -547,26 +570,29 @@ async def validate_itinerary_event(
         log.warning("Agent tried to emit an unknown event_type.", event_type=event_type)
         return f"Unknown event_type '{event_type}'.", None
 
+    anchor_field = EVENT_TYPE_TO_ANCHOR_DETAIL_FIELD.get(event_type)
+    allowed_fields = {f for f in (expected_field, anchor_field) if f}
+
     populated_detail_fields = [
-        field
-        for field in EVENT_TYPE_TO_DETAIL_FIELD.values()
-        if args.get(field) is not None
+        f for f in _ALL_POSSIBLE_DETAIL_FIELDS if args.get(f) is not None
     ]
 
-    if expected_field not in populated_detail_fields:
+    if not any(f in allowed_fields for f in populated_detail_fields):
         log.warning("Agent tried to emit an event_type with a missing detail field.", event_type=event_type)
+        anchor_hint = f" or '{anchor_field}' (for anchor events)" if anchor_field else ""
         return (
-            f"event_type='{event_type}' requires '{expected_field}' to be populated, "
+            f"event_type='{event_type}' requires '{expected_field}'{anchor_hint} to be populated, "
             f"but it is missing or null.",
             None,
         )
 
-    extra_fields = [f for f in populated_detail_fields if f != expected_field]
+    extra_fields = [f for f in populated_detail_fields if f not in allowed_fields]
     if extra_fields:
         log.warning("Agent tried to emit an event_type with extra detail fields.", event_type=event_type)
         return (
-            f"event_type='{event_type}' must have ONLY '{expected_field}' populated, "
-            f"but also received: {extra_fields}.",
+            f"event_type='{event_type}' must have ONLY "
+            + " or ".join(f"'{f}'" for f in sorted(allowed_fields))
+            + f" populated, but also received: {extra_fields}.",
             None,
         )
 

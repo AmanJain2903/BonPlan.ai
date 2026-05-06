@@ -2,11 +2,13 @@ import { DollarSign, MapPin, ExternalLink, Sparkles } from 'lucide-react';
 import SubCardShell from './common/SubCardShell';
 import TipsSection from './common/TipsSection';
 import ViewOnMapButton from './common/ViewOnMapButton';
+import LockToggle from './common/LockToggle';
 import { EVENT_ACCENT, EVENT_ICON, EVENT_LABEL, formatClockTime, formatDurationEnglish, isValidUrl } from '../constants';
 
 interface Props {
   event: any;
   onViewOnMap: () => void;
+  onToggleLock?: () => void;
   contentKey?: string | number;
 }
 
@@ -30,7 +32,7 @@ function LogoOrIcon({ url, name }: { url?: string; name: string }) {
   );
 }
 
-export default function OtherCard({ event, onViewOnMap, contentKey }: Props) {
+export default function OtherCard({ event, onViewOnMap, onToggleLock, contentKey }: Props) {
   const d = event?.other_details;
   if (!d) return null;
 
@@ -46,6 +48,7 @@ export default function OtherCard({ event, onViewOnMap, contentKey }: Props) {
       Icon={Icon}
       accent={accent}
       contentKey={contentKey}
+      lockButton={onToggleLock ? <LockToggle isLocked={event?.is_locked === true} onToggle={onToggleLock} /> : undefined}
       viewOnMapButton={<ViewOnMapButton onClick={onViewOnMap} />}
       startTime={d.start_time}
       endTime={d.end_time}

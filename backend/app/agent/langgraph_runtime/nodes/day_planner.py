@@ -15,6 +15,7 @@ import json
 import os
 import re
 import uuid
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from google.genai import types
@@ -96,6 +97,358 @@ def _get_midnight_carryover(prior_events: List[Dict], current_day: int) -> Optio
     return None
 
 
+_DOW_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_WEEKDAY_DOW = {0, 1, 2, 3, 4}
+_WEEKEND_DOW = {5, 6}
+
+
+def _day_calendar_date(trip_start: dict, current_day: int) -> date:
+    """Return the calendar date for trip day N (1-based)."""
+    return date(trip_start["year"], trip_start["month"], trip_start["day"]) + timedelta(days=current_day - 1)
+
+
+_ANCHOR_TYPE_TO_BLOCKED_TOOLS: Dict[str, set] = {
+    "FLIGHT": {
+        "search_flights",
+        "search_multi_city_flights",
+        "search_next_flight",
+        "get_flight_booking_details",
+        "get_flight_booking_url",
+    },
+    "HOTEL": {
+        "search_hotels",
+        "get_hotel_booking_url",
+    },
+    "CAR_RENTAL": {
+        "search_rental_cars",
+    },
+}
+
+
+def _get_blocked_tools_for_day(trip_payload: dict, current_day: int) -> set:
+    """Return set of tool names that must be blocked for this day due to smart anchors."""
+    smart_anchors: list = trip_payload.get("smart_anchors") or []
+    if not smart_anchors:
+        return set()
+
+    start_date = trip_payload.get("start_date") or {}
+    try:
+        current_date = _day_calendar_date(start_date, current_day)
+    except (KeyError, TypeError, ValueError):
+        return set()
+    current_date_str = current_date.isoformat()
+
+    blocked: set = set()
+    for anchor in smart_anchors:
+        atype = anchor.get("type", "")
+        inputs = anchor.get("user_inputs") or {}
+
+        if atype == "FLIGHT":
+            if inputs.get("departure_date") == current_date_str:
+                blocked.update(_ANCHOR_TYPE_TO_BLOCKED_TOOLS["FLIGHT"])
+        elif atype == "HOTEL":
+            if inputs.get("checkin_date") == current_date_str or inputs.get("checkout_date") == current_date_str:
+                blocked.update(_ANCHOR_TYPE_TO_BLOCKED_TOOLS["HOTEL"])
+        elif atype == "CAR_RENTAL":
+            if inputs.get("pickup_date") == current_date_str or inputs.get("dropoff_date") == current_date_str:
+                blocked.update(_ANCHOR_TYPE_TO_BLOCKED_TOOLS["CAR_RENTAL"])
+        # ACTIVITY/DINING/OTHER: search_places is still allowed (LLM may enrich)
+
+    return blocked
+
+
+def _build_anchor_block(trip_payload: dict, current_day: int) -> str:
+    """
+    Build a MANDATORY SMART ANCHORS block for the given trip day.
+    Uses only user_inputs — no details field. Returns empty string when no anchors apply.
+    """
+    smart_anchors: list = trip_payload.get("smart_anchors") or []
+    if not smart_anchors:
+        return ""
+
+    start_date = trip_payload.get("start_date") or {}
+    try:
+        current_date = _day_calendar_date(start_date, current_day)
+    except (KeyError, TypeError, ValueError):
+        return ""
+    current_date_str = current_date.isoformat()
+
+    lines: list[str] = []
+
+    for anchor in smart_anchors:
+        atype = anchor.get("type", "")
+        inputs = anchor.get("user_inputs") or {}
+
+        if atype == "FLIGHT":
+            dep_date = inputs.get("departure_date", "")
+            if dep_date != current_date_str:
+                continue
+            airline = inputs.get("airline", "")
+            fnum = inputs.get("flight_number", "")
+            dep = inputs.get("departure_airport", "")
+            arr = inputs.get("arrival_airport", "")
+            dep_time = inputs.get("departure_time", "")
+            arr_time = inputs.get("arrival_time", "")
+            dep_lat = inputs.get("departure_airport_lat")
+            dep_lng = inputs.get("departure_airport_lng")
+            dep_pid = inputs.get("departure_airport_place_id", "")
+            arr_lat = inputs.get("arrival_airport_lat")
+            arr_lng = inputs.get("arrival_airport_lng")
+            arr_pid = inputs.get("arrival_airport_place_id", "")
+            cost = inputs.get("cost") or 0
+            booking_url = inputs.get("booking_url", "")
+            notes = inputs.get("notes", "")
+            label = f"{airline} {fnum}".strip() or f"{dep} → {arr}"
+
+            if dep_lat and dep_lng:
+                dep_coord = f"({dep_lat}, {dep_lng})"
+            elif dep_pid:
+                dep_coord = f"call get_coordinates(place_id='{dep_pid}')"
+            else:
+                dep_coord = f"call get_coordinates for '{dep}'"
+
+            if arr_lat and arr_lng:
+                arr_coord = f"({arr_lat}, {arr_lng})"
+            elif arr_pid:
+                arr_coord = f"call get_coordinates(place_id='{arr_pid}')"
+            else:
+                arr_coord = f"call get_coordinates for '{arr}'"
+
+            lines.append(
+                f"ANCHOR [FLIGHT] (MANDATORY — search_flights and booking tools are BLOCKED)\n"
+                f"  Flight: {label} | Date: {dep_date}\n"
+                f"  From: {dep} → To: {arr}\n"
+                f"  Depart: {dep_time or 'see user notes'} | Arrive: {arr_time or 'see user notes'}\n"
+                f"  Cost: ${cost} | Booking URL: {booking_url or 'none'}\n"
+                + (f"  Notes: {notes}\n" if notes else "")
+                + f"  Departure coords: {dep_coord}\n"
+                f"  Arrival coords: {arr_coord}\n"
+                f"  → Emit FLIGHT_TAKEOFF using anchor_flight_takeoff_details (NOT flight_takeoff_details).\n"
+                f"  → Emit FLIGHT_LAND using anchor_flight_land_details (NOT flight_land_details).\n"
+                f"  → Populate what you have; leave unknown fields null."
+            )
+
+        elif atype == "HOTEL":
+            checkin_date = inputs.get("checkin_date", "")
+            checkout_date = inputs.get("checkout_date", "")
+            if checkin_date != current_date_str and checkout_date != current_date_str:
+                continue
+            hotel_name = inputs.get("hotel_name", "")
+            checkin_time = inputs.get("checkin_time", "")
+            checkout_time = inputs.get("checkout_time", "")
+            cost = inputs.get("cost") or 0
+            booking_url = inputs.get("booking_url", "")
+            loc = inputs.get("location", "")
+            loc_lat = inputs.get("location_lat")
+            loc_lng = inputs.get("location_lng")
+            loc_pid = inputs.get("location_place_id", "")
+            notes = inputs.get("notes", "")
+
+            if loc_lat and loc_lng:
+                coord = f"({loc_lat}, {loc_lng})"
+            elif loc_pid:
+                coord = f"call get_coordinates(place_id='{loc_pid}')"
+            elif hotel_name:
+                coord = f"call get_coordinates for '{hotel_name}'"
+            else:
+                coord = "unknown"
+
+            if checkin_date == current_date_str:
+                lines.append(
+                    f"ANCHOR [HOTEL CHECKIN] (MANDATORY — search_hotels is BLOCKED)\n"
+                    f"  Hotel: {hotel_name} | Location: {loc}\n"
+                    f"  Check-in: {checkin_time or 'standard'} | Cost: ${cost}\n"
+                    f"  Booking URL: {booking_url or 'none'}\n"
+                    + (f"  Notes: {notes}\n" if notes else "")
+                    + f"  Coords: {coord}\n"
+                    f"  → Emit HOTEL_CHECKIN using anchor_hotel_checkin_details (NOT hotel_checkin_details).\n"
+                    f"  → Populate what you have; leave unknown fields null."
+                )
+            if checkout_date == current_date_str:
+                lines.append(
+                    f"ANCHOR [HOTEL CHECKOUT] (MANDATORY — search_hotels is BLOCKED)\n"
+                    f"  Hotel: {hotel_name} | Check-out: {checkout_time or 'standard'}\n"
+                    + (f"  Notes: {notes}\n" if notes else "")
+                    + f"  Coords: {coord}\n"
+                    f"  → Emit HOTEL_CHECKOUT using anchor_hotel_checkout_details (NOT hotel_checkout_details).\n"
+                    f"  → Populate what you have; leave unknown fields null."
+                )
+
+        elif atype == "CAR_RENTAL":
+            pickup_date = inputs.get("pickup_date", "")
+            dropoff_date = inputs.get("dropoff_date", "")
+            if pickup_date != current_date_str and dropoff_date != current_date_str:
+                continue
+            company = inputs.get("company", "")
+            car_model = inputs.get("car_model", "")
+            pickup_time = inputs.get("pickup_time", "")
+            dropoff_time = inputs.get("dropoff_time", "")
+            cost = inputs.get("cost") or 0
+            booking_url = inputs.get("booking_url", "")
+            pickup_loc = inputs.get("pickup_location", "")
+            pickup_lat = inputs.get("pickup_location_lat")
+            pickup_lng = inputs.get("pickup_location_lng")
+            pickup_pid = inputs.get("pickup_location_place_id", "")
+            dropoff_loc = inputs.get("dropoff_location", "")
+            dropoff_lat = inputs.get("dropoff_location_lat")
+            dropoff_lng = inputs.get("dropoff_location_lng")
+            dropoff_pid = inputs.get("dropoff_location_place_id", "")
+            notes = inputs.get("notes", "")
+
+            if pickup_lat and pickup_lng:
+                pu_coord = f"({pickup_lat}, {pickup_lng})"
+            elif pickup_pid:
+                pu_coord = f"call get_coordinates(place_id='{pickup_pid}')"
+            else:
+                pu_coord = f"call get_coordinates for '{pickup_loc}'" if pickup_loc else "unknown"
+
+            if dropoff_lat and dropoff_lng:
+                do_coord = f"({dropoff_lat}, {dropoff_lng})"
+            elif dropoff_pid:
+                do_coord = f"call get_coordinates(place_id='{dropoff_pid}')"
+            else:
+                do_coord = f"call get_coordinates for '{dropoff_loc}'" if dropoff_loc else "unknown"
+
+            if pickup_date == current_date_str:
+                lines.append(
+                    f"ANCHOR [CAR PICKUP] (MANDATORY — search_rental_cars is BLOCKED)\n"
+                    f"  Company: {company} | Car: {car_model or 'unspecified'}\n"
+                    f"  Pickup: {pickup_loc} at {pickup_time or 'unspecified'} | Cost: ${cost}\n"
+                    f"  Booking URL: {booking_url or 'none'}\n"
+                    + (f"  Notes: {notes}\n" if notes else "")
+                    + f"  Pickup coords: {pu_coord}\n"
+                    f"  → Emit CAR_PICKUP using anchor_car_pickup_details (NOT car_pickup_details).\n"
+                    f"  → Populate what you have; leave unknown fields null."
+                )
+            if dropoff_date == current_date_str:
+                lines.append(
+                    f"ANCHOR [CAR DROPOFF] (MANDATORY — search_rental_cars is BLOCKED)\n"
+                    f"  Company: {company} | Car: {car_model or 'unspecified'}\n"
+                    f"  Dropoff: {dropoff_loc} at {dropoff_time or 'unspecified'}\n"
+                    + (f"  Notes: {notes}\n" if notes else "")
+                    + f"  Dropoff coords: {do_coord}\n"
+                    f"  → Emit CAR_DROPOFF using anchor_car_dropoff_details (NOT car_dropoff_details).\n"
+                    f"  → Populate what you have; leave unknown fields null."
+                )
+
+        elif atype in ("ACTIVITY", "DINING", "OTHER"):
+            anchor_date = inputs.get("date", "")
+            if anchor_date != current_date_str:
+                continue
+            name = inputs.get("name", "")
+            location = inputs.get("location", "")
+            loc_lat = inputs.get("location_lat")
+            loc_lng = inputs.get("location_lng")
+            loc_pid = inputs.get("location_place_id", "")
+            cost = inputs.get("cost") or 0
+            notes = inputs.get("notes", "")
+            start_t = anchor.get("start_time") or inputs.get("start_time")
+            end_t = anchor.get("end_time") or inputs.get("end_time")
+            etype = atype  # ACTIVITY/DINING/OTHER map 1:1
+
+            time_constraint = ""
+            if start_t and end_t:
+                time_constraint = f"\n  Time: {start_t}–{end_t} (EXACT — nothing may overlap this window)"
+            elif start_t:
+                time_constraint = f"\n  Start time: {start_t} (REQUIRED)"
+
+            if loc_lat and loc_lng:
+                coord = f"({loc_lat}, {loc_lng})"
+            elif loc_pid:
+                coord = f"use place_id='{loc_pid}'"
+            else:
+                coord = f"call search_places for '{name}' near '{location}'"
+
+            anchor_field = "anchor_place_details" if atype in ("ACTIVITY", "DINING") else "anchor_other_details"
+            lines.append(
+                f"ANCHOR [{etype}] (MANDATORY)\n"
+                f"  Name: {name} | Location: {location}\n"
+                f"  Cost: ${cost}"
+                + (f" | Notes: {notes}" if notes else "")
+                + f"{time_constraint}\n"
+                f"  Coords: {coord}\n"
+                f"  → Use search_places/search_places_nearby to enrich place data.\n"
+                f"  → Emit as {etype} using {anchor_field} (NOT place_details/other_details).\n"
+                f"  → Populate what you have; leave unknown fields null."
+            )
+
+    if not lines:
+        return ""
+    joined = "\n\n".join(lines)
+    return (
+        "SMART ANCHORS — MANDATORY CONSTRAINTS (user pre-booked these; do NOT skip any):\n"
+        "Rules:\n"
+        "  - Every anchor below MUST appear in the itinerary for this day.\n"
+        "  - For FLIGHT/HOTEL/CAR anchors: booking tools are BLOCKED — use only the data provided. You MAY call get_coordinates for coords.\n"
+        "  - For ACTIVITY/DINING/OTHER anchors: use search_places to enrich the place data.\n"
+        "  - Use the specified anchor_*_details fields (NOT the regular *_details fields) for each anchor event.\n"
+        "  - For anchors with exact times: the event MUST start and end at those times; plan nothing else in that window.\n\n"
+        f"{joined}\n\n"
+    )
+
+
+def _build_routine_block(trip_payload: dict, current_day: int) -> str:
+    """
+    Build a MANDATORY LOCKED ROUTINES block for the given trip day.
+    Returns empty string when no routines apply.
+    """
+    preferences = trip_payload.get("preferences") or {}
+    locked_routines: list = preferences.get("locked_routines") or []
+    if not locked_routines:
+        return ""
+
+    start_date = trip_payload.get("start_date") or {}
+    try:
+        current_date = _day_calendar_date(start_date, current_day)
+    except (KeyError, TypeError, ValueError):
+        return ""
+    dow = current_date.weekday()  # 0=Mon...6=Sun
+
+    lines: list[str] = []
+    for routine in locked_routines:
+        freq = routine.get("frequency", "daily")
+        specific_days = routine.get("specific_days") or []
+        applies = False
+        if freq == "daily":
+            applies = True
+        elif freq == "weekdays":
+            applies = dow in _WEEKDAY_DOW
+        elif freq == "weekends":
+            applies = dow in _WEEKEND_DOW
+        elif freq == "specific_days":
+            applies = dow in specific_days
+
+        if not applies:
+            continue
+
+        name = routine.get("name", "Routine")
+        start_t = routine.get("start_time", "")
+        dur = routine.get("duration_minutes", 30)
+        # Compute end time
+        try:
+            sh, sm = map(int, start_t.split(":"))
+            total_min = sh * 60 + sm + dur
+            et = f"{total_min // 60:02d}:{total_min % 60:02d}"
+        except Exception:
+            et = "?"
+        lines.append(
+            f"LOCKED ROUTINE: {name}\n"
+            f"  Time: {start_t}–{et} ({dur} min) | Day of week: {_DOW_NAMES[dow]}\n"
+            f"  → Emit as OTHER event at {start_t}. Do NOT miss this. Nothing else may overlap {start_t}–{et}."
+        )
+
+    if not lines:
+        return ""
+    joined = "\n\n".join(lines)
+    return (
+        "LOCKED ROUTINES — MANDATORY CONSTRAINTS (user's non-negotiable daily schedule):\n"
+        "Rules:\n"
+        "  - Every routine below MUST appear as an OTHER event on this day.\n"
+        "  - Use the exact start time. Plan nothing else in the routine's time window.\n\n"
+        f"{joined}\n\n"
+    )
+
+
 async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     current_day = state.get("current_day", 1)
     total_days = state.get("total_days", 1)
@@ -144,6 +497,17 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     else:
         system_prompt = AUTONOMOUS_SYSTEM_PROMPT
         tool_block = runtime.day_tool_block or runtime.planner_tool_block
+
+    # Block booking tools for days that have smart anchors so the LLM cannot
+    # call e.g. search_rental_cars when a CAR_RENTAL anchor covers this day.
+    if not close_pass:
+        blocked_tools = _get_blocked_tools_for_day(trip_payload, current_day)
+        if blocked_tools and tool_block and getattr(tool_block, "function_declarations", None):
+            filtered_decls = [
+                d for d in tool_block.function_declarations
+                if getattr(d, "name", None) not in blocked_tools
+            ]
+            tool_block = types.Tool(function_declarations=filtered_decls)
 
     config = types.GenerateContentConfig(
         tools=[tool_block],
@@ -376,6 +740,9 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
                 + "\n\n"
             )
 
+    anchor_block = _build_anchor_block(trip_payload, current_day) if not close_pass else ""
+    routine_block = _build_routine_block(trip_payload, current_day) if not close_pass else ""
+
     initial_message = (
         f"Phase: DAY {current_day} of {total_days}\n\n"
         f"User Request:\n{trip_data.model_dump_json()}\n\n"
@@ -384,6 +751,8 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         f"{prior_qa_block}"
         f"{journey_block}"
         f"{zone_block}"
+        f"{anchor_block}"
+        f"{routine_block}"
         f"{scheduled_venues_block}"
         f"Already-Emitted Events (ground truth — do NOT re-emit, do NOT re-search what these establish):\n"
         f"{trip_state_json}\n\n"

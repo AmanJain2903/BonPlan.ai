@@ -41,6 +41,7 @@ export type TripPreferences = {
   accommodation_style: string;
   dining_style: string;
   other_preferences: OtherPreferences;
+  locked_routines?: import('../data/preferences').LockedRoutine[];
 };
 
 export type TripData = {
