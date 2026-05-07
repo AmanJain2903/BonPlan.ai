@@ -164,7 +164,7 @@ export default function SubCardShell({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.25 }}
-              className={`flex items-center gap-2 shrink-0 px-2.5 py-1 rounded-full min-w-[6.5rem] justify-center ${accent.bg} ${accent.border} border ${accent.text}`}
+              className={`flex items-center gap-2 shrink-0 px-2.5 py-1 rounded-full min-w-[7rem] justify-center ${accent.bg} ${accent.border} border ${accent.text}`}
             >
               <Icon className="w-3.5 h-3.5" />
               <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>

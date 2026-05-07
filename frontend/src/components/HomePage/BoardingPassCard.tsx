@@ -97,6 +97,7 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
   const startStr = formatShortDate(plan.start_date);
   const endStr = formatShortDate(plan.end_date);
   const costStr = formatCost(plan.cost);
+  const tripTitle = plan.itinerary_title?.trim() || '';
 
   const ownerName = plan.owner
     ? `${plan.owner.first_name || ''} ${plan.owner.last_name || ''}`.trim() || plan.owner.email
@@ -180,7 +181,7 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
     <>
       {/* ── Boarding Pass Card ─────────────────────────────────────── */}
       <div
-        className="flex-shrink-0 w-[min(360px,calc(100vw-32px))] sm:w-[700px] min-h-[270px] sm:min-h-[300px] snap-center group/card relative rounded-2xl border border-white/[0.07] bg-carbon/30 hover:bg-carbon/60 transition-[background-color,border-color,box-shadow] duration-[400ms] cursor-pointer overflow-hidden hover:border-cyan/35 hover:shadow-[0_0_50px_rgba(102,252,241,0.15)] ml-3 mr-3"
+        className="flex-shrink-0 w-[min(360px,calc(100vw-32px))] sm:w-[700px] min-h-[320px] sm:min-h-[340px] snap-center group/card relative rounded-2xl border border-white/[0.07] bg-carbon/30 hover:bg-carbon/60 transition-[background-color,border-color,box-shadow] duration-[400ms] cursor-pointer overflow-hidden hover:border-cyan/35 hover:shadow-[0_0_50px_rgba(102,252,241,0.15)] ml-3 mr-3"
         onClick={() => navigate(`/plan/${plan.planning_type}/${plan.id}`)}
       >
         {/* Background rotating image — lighter overlay so image shows through */}
@@ -206,17 +207,17 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
         <div className="absolute inset-0 bg-gradient-to-br from-cyan/[0.04] to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-500 z-[1] pointer-events-none" />
 
         {/* ── Content layout ─────────────────────────────────── */}
-        <div className="relative z-10 flex h-full min-h-[190px] sm:min-h-[210px]">
+        <div className="relative z-10 flex h-full min-h-[320px] sm:min-h-[340px]">
 
           {/* ── Left main section ───────────────────────────── */}
-          <div className="flex-1 flex flex-col justify-between p-5 sm:p-6 min-w-0">
+          <div className="flex-1 flex flex-col p-5 sm:p-6 min-w-0">
 
             {/* Header row: brand + status/role badges */}
-            <div className="flex items-center justify-between mb-10">
-              <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/20 select-none">
+            <div className="flex items-start justify-between gap-3 mb-4 sm:mb-5 min-w-0">
+              <span className="min-w-0 truncate pt-1 text-[9px] font-bold uppercase tracking-[0.22em] text-white/20 select-none">
                 {`BonPlan · ${isShared ? 'Shared' : 'Personal'} Pass`}
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex max-w-[54%] flex-shrink-0 flex-wrap items-center justify-end gap-1.5 sm:max-w-none">
                 {plan.status === 'current' && (
                   <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-400">
                     <Radio className="w-2.5 h-2.5" />
@@ -242,8 +243,23 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
               </div>
             </div>
 
+            {tripTitle && (
+              <div className="mb-6 sm:mb-7 min-w-0 max-w-full">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="h-px w-5 flex-shrink-0 bg-cyan/35" />
+                  <span className="text-[8px] font-bold uppercase tracking-[0.24em] text-cyan/45">Trip</span>
+                </div>
+                <h3
+                  className="line-clamp-2 max-w-full break-words text-lg font-black leading-[1.08] tracking-tight text-white/95 [overflow-wrap:anywhere] sm:text-2xl"
+                  title={tripTitle}
+                >
+                  {tripTitle}
+                </h3>
+              </div>
+            )}
+
             {/* Route: FROM ──✈── TO */}
-            <div className="flex items-center gap-3 sm:gap-4 mb-10">
+            <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-7">
               {/* Origin */}
               <div className="flex flex-col min-w-0">
                 <span className="text-3xl sm:text-4xl font-black text-white tracking-widest leading-none font-mono">
@@ -290,7 +306,7 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
             </div>
 
             {/* Info strip: dates + duration + cost */}
-            <div className="flex items-center gap-3 sm:gap-4 mb-10 flex-wrap">
+            <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-7 flex-wrap">
               <div className="flex items-center gap-2 text-xs sm:text-sm text-white/55 font-medium">
                 <span>{startStr}</span>
                 <span className="text-white/20 text-[10px]">→</span>
@@ -309,15 +325,15 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
             </div>
 
             {/* Footer: pace/budget pills + action buttons */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="mt-auto flex items-center justify-between gap-3 min-w-0">
+              <div className="flex min-w-0 items-center gap-1.5 flex-wrap">
                 {plan.budget && (
-                  <span className="text-[9px] uppercase tracking-wider text-white/25 border border-white/[0.07] px-2 py-0.5 rounded-full">
+                  <span className="max-w-[130px] truncate text-[9px] uppercase tracking-wider text-white/25 border border-white/[0.07] px-2 py-0.5 rounded-full sm:max-w-[180px]">
                     {plan.budget}
                   </span>
                 )}
                 {plan.pace && (
-                  <span className="text-[9px] uppercase tracking-wider text-white/25 border border-white/[0.07] px-2 py-0.5 rounded-full">
+                  <span className="max-w-[130px] truncate text-[9px] uppercase tracking-wider text-white/25 border border-white/[0.07] px-2 py-0.5 rounded-full sm:max-w-[180px]">
                     {plan.pace}
                   </span>
                 )}

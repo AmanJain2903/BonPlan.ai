@@ -785,6 +785,12 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
             kept_events=len(good_events),
             stripped_events=len(prior_events) - len(good_events),
         )
+        emit({
+            "type": "events_removed",
+            "day_number": current_day,
+            "from_event_number": first_broken,
+            "reason": "validation_retry",
+        })
         return {
             "day_validation_errors": error_msg,
             "day_validator_attempts": attempts + 1,

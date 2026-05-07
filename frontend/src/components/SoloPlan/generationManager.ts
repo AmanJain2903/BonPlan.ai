@@ -38,6 +38,43 @@ function isCountableEvent(eventType: string): boolean {
   return ['HOTEL_CHECKIN', 'ACTIVITY', 'DINING', 'OTHER'].includes(eventType);
 }
 
+function rebuildDayAfterRemoval(day: ItineraryDay, fromEventNumber: number): ItineraryDay {
+  const timestamp = Date.now();
+  const events = day.events.filter((event: any) => {
+    const eventNumber = event?.event_number;
+    return typeof eventNumber !== 'number' || eventNumber < fromEventNumber;
+  });
+
+  const latestEventWithDayMeta = [...events]
+    .reverse()
+    .find((event: any) => event?.day_title || event?.date);
+
+  return {
+    ...day,
+    title: latestEventWithDayMeta?.day_title || (events.length ? day.title : ''),
+    date: latestEventWithDayMeta?.date || (events.length ? day.date : ''),
+    events,
+    eventsCount: events.reduce(
+      (count, event: any) => count + (isCountableEvent(event.event_type) ? 1 : 0),
+      0,
+    ),
+    cost: events.reduce((sum, event: any) => sum + getEventCost(event), 0),
+    isLoading: true,
+    hasError: false,
+    lastUpdatedAt: timestamp,
+  };
+}
+
+function removeEventsFromItinerary(prev: ItineraryState, dayNumber: number, fromEventNumber: number): ItineraryState {
+  if (typeof dayNumber !== 'number' || typeof fromEventNumber !== 'number') return prev;
+  return {
+    ...prev,
+    days: prev.days.map((day) =>
+      day.dayNumber === dayNumber ? rebuildDayAfterRemoval(day, fromEventNumber) : day,
+    ),
+  };
+}
+
 function processEventIntoItinerary(prev: ItineraryState, data: any): ItineraryState {
   if (!data) return prev;
 
@@ -232,6 +269,14 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       };
       break;
     }
+
+    case 'events_removed':
+      session.itineraryState = removeEventsFromItinerary(
+        session.itineraryState,
+        chunk.day_number,
+        chunk.from_event_number,
+      );
+      break;
 
     case 'event':
       session.turns = updateLastBotTurn(session.turns, (turn) => ({

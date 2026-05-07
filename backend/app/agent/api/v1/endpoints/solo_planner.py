@@ -70,6 +70,40 @@ async def _apply_lock_updates(trip_id: str, updates: list) -> None:
             await db.commit()
 
 
+def _remove_events_from_list(events: list, day_number: int, from_event_number: int) -> list:
+    """Drop regular events on one day from a retry point onward."""
+    return [
+        event
+        for event in events
+        if not (
+            event.get("event_type") not in ("START", "END")
+            and event.get("day_number") == day_number
+            and isinstance(event.get("event_number"), int)
+            and event["event_number"] >= from_event_number
+        )
+    ]
+
+
+async def _apply_event_removal(
+    trip_id: str,
+    day_number: int,
+    from_event_number: int,
+) -> None:
+    """Remove stale events that the validator stripped before a retry."""
+    async with Session() as db:
+        itinerary = (
+            await db.execute(select(TripItinerary).where(TripItinerary.trip_id == trip_id))
+        ).scalar_one_or_none()
+        if itinerary is None:
+            return
+        events = list(itinerary.events or [])
+        next_events = _remove_events_from_list(events, day_number, from_event_number)
+        if len(next_events) == len(events):
+            return
+        itinerary.events = next_events
+        await db.commit()
+
+
 async def _apply_event_write(trip_id: str, event: dict) -> None:
     """Persist a single itinerary event chunk to the DB."""
     event_type = event.get("event_type")
@@ -320,6 +354,12 @@ async def generate_solo_plan(request: Request, id: str):
                         # Lock-update marker — patch is_locked only.
                         if isinstance(item, dict) and item.get("__lock_update"):
                             await _apply_lock_updates(str(id), item.get("updates", []))
+                        elif isinstance(item, dict) and item.get("__events_removed"):
+                            await _apply_event_removal(
+                                str(id),
+                                int(item.get("day_number")),
+                                int(item.get("from_event_number")),
+                            )
                         else:
                             await _apply_event_write(str(id), item)
                     except Exception as e:
@@ -403,9 +443,9 @@ async def generate_solo_plan(request: Request, id: str):
 
                 chunk_type = chunk.get("type")
 
-                # Forward first — never block the stream on DB work.
-                yield f"data: {json.dumps(chunk)}\n\n"
-
+                # Queue DB work before forwarding. This does not wait for the
+                # commit, but it does ensure a client disconnect after receiving
+                # a chunk cannot skip the corresponding persistence action.
                 if chunk_type == "event":
                     event_data = chunk.get("data") or {}
                     if event_data:
@@ -414,12 +454,26 @@ async def generate_solo_plan(request: Request, id: str):
                     updates = chunk.get("updates") or []
                     if updates:
                         await write_queue.put({"__lock_update": True, "updates": updates})
-                elif chunk_type == "summary":
+                elif chunk_type == "events_removed":
+                    day_number = chunk.get("day_number")
+                    from_event_number = chunk.get("from_event_number")
+                    if isinstance(day_number, int) and isinstance(from_event_number, int):
+                        await write_queue.put({
+                            "__events_removed": True,
+                            "day_number": day_number,
+                            "from_event_number": from_event_number,
+                        })
+
+                if chunk_type == "summary":
                     # Any summary text means the agent reached END and is
                     # finalizing. Mark success; more summary chunks may follow.
                     success = True
                 elif chunk_type == "error":
                     success = False
+
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+                if chunk_type == "error":
                     break
 
         except asyncio.CancelledError:
