@@ -262,7 +262,9 @@ function ActiveThinkingBubble({
               ref={scrollRef}
               className="relative max-h-20 max-w-full overflow-y-auto overflow-x-hidden scrollbar-hide pointer-events-none"
             >
-              <MarkdownContent className="text-xs text-white/50">{activeThinking.trim()}</MarkdownContent>
+              <p className="text-xs text-white/50 leading-relaxed whitespace-normal">
+                <ReactMarkdown>{activeThinking.trim()}</ReactMarkdown>
+              </p>
               <div ref={thinkingEndRef} />
             </div>
             {/* Dots live OUTSIDE the scroll-clipped box so they remain

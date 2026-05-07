@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
     # Gemini Model Settings for Planner Agent
-    PLANNER_AGENT_MODEL: str = "openrouter/openai/gpt-oss-120b:free"
+    PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
     PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
 
     @field_validator(
