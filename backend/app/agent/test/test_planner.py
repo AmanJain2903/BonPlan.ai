@@ -2,7 +2,7 @@
 End-to-end planner smoke test.
 
 Picks a random Trip from the DB, streams `generate_trip_itinerary` under a
-real `agent_runtime_context` (MCP + GenAI), and records structured timing
+real `agent_runtime_context` (MCP + LiteLLM), and records structured timing
 metrics per run / per day / per event.
 
 Output layout:
@@ -221,7 +221,7 @@ async def run_test():
     run_times: list[float] = []
 
     # One shared runtime context across all runs — avoids repeatedly
-    # spinning up the MCP subprocess and GenAI client.
+    # spinning up the MCP subprocess and LiteLLM client.
     async with agent_runtime_context():
         for i in range(RUNS):
             run_number = i + 1

@@ -4,6 +4,7 @@
 Configuration settings for the backend application.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from pathlib import Path
@@ -12,6 +13,26 @@ import os
 
 # Load environment variables
 load_dotenv()
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_litellm_model_name(value: str) -> str:
+    value = value.strip()
+    if "/" in value:
+        return value
+    if value.startswith(("gemini-", "gemma-")):
+        return f"gemini/{value}"
+    return value
+
+
+def _litellm_model(env_name: str, default: str) -> str:
+    return _normalize_litellm_model_name(os.getenv(env_name, default))
+
 
 class Settings(BaseSettings):
 
@@ -54,24 +75,63 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY")
 
-    # Gemini API Key
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
+    # LiteLLM provider API keys. LiteLLM reads these provider-native env names,
+    # so keep them explicit and set only the keys needed for the configured
+    # models. Existing GEMINI_API_KEY remains supported for Google AI Studio.
+    GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
+    GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
+    OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
+    OPENAI_API_BASE: str | None = os.getenv("OPENAI_API_BASE")
+    ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
+    ANTHROPIC_API_BASE: str | None = os.getenv("ANTHROPIC_API_BASE")
+    OPENROUTER_API_KEY: str | None = os.getenv("OPENROUTER_API_KEY")
+    OPENROUTER_API_BASE: str | None = os.getenv("OPENROUTER_API_BASE")
+    OR_SITE_URL: str | None = os.getenv("OR_SITE_URL")
+    OR_APP_NAME: str | None = os.getenv("OR_APP_NAME")
+    XAI_API_KEY: str | None = os.getenv("XAI_API_KEY")
+    GROQ_API_KEY: str | None = os.getenv("GROQ_API_KEY")
+    TOGETHERAI_API_KEY: str | None = os.getenv("TOGETHERAI_API_KEY")
+    MISTRAL_API_KEY: str | None = os.getenv("MISTRAL_API_KEY")
+    COHERE_API_KEY: str | None = os.getenv("COHERE_API_KEY")
+    AZURE_API_KEY: str | None = os.getenv("AZURE_API_KEY")
+    AZURE_API_BASE: str | None = os.getenv("AZURE_API_BASE")
+    AZURE_API_VERSION: str | None = os.getenv("AZURE_API_VERSION")
+    VERTEXAI_PROJECT: str | None = os.getenv("VERTEXAI_PROJECT")
+    VERTEXAI_LOCATION: str | None = os.getenv("VERTEXAI_LOCATION")
+    LITELLM_API_KEY: str | None = os.getenv("LITELLM_API_KEY")
+    LITELLM_API_BASE: str | None = os.getenv("LITELLM_API_BASE")
+    LITELLM_DROP_UNSUPPORTED_PARAMS: bool = _env_bool("LITELLM_DROP_UNSUPPORTED_PARAMS", True)
+    LITELLM_LOCAL_MODEL_COST_MAP: bool = _env_bool("LITELLM_LOCAL_MODEL_COST_MAP", True)
+    LITELLM_VERBOSE: bool = _env_bool("LITELLM_VERBOSE", False)
 
-    # Gemini Model Settings for Serper Content Parser
-    SERPER_CONTENT_PARSER_MODEL: str = "gemma-4-26b-a4b-it"
+    # LiteLLM model settings. Values must include provider prefixes, e.g.
+    # "gemini/gemini-2.0-flash", "openai/gpt-5.1", "anthropic/claude-sonnet-4-5",
+    # or "openrouter/openai/gpt-4o".
+    SERPER_CONTENT_PARSER_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
     SERPER_CONTENT_PARSER_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
     # Gemini Model Settings for Conversation Agent
-    CONVERSATION_AGENT_MODEL: str = "gemma-4-26b-a4b-it"
+    CONVERSATION_AGENT_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
     CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
-    # Gemini Model Settings for Planner Agent
-    PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"
-    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
-
     # Gemini Model Settings for Context Pruning
-    CONTEXT_PRUNING_MODEL: str = "gemini-3.1-flash-lite-preview"
-    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 1024000 # 1M
+    CONTEXT_PRUNING_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
+    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+
+    # Gemini Model Settings for Planner Agent
+    PLANNER_AGENT_MODEL: str = "openrouter/openai/gpt-oss-120b:free"
+    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
+
+    @field_validator(
+        "SERPER_CONTENT_PARSER_MODEL",
+        "CONVERSATION_AGENT_MODEL",
+        "PLANNER_AGENT_MODEL",
+        "CONTEXT_PRUNING_MODEL",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_model_env(cls, value: str) -> str:
+        return _normalize_litellm_model_name(str(value or ""))
 
     # Serper Web Search API key
     SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")

@@ -71,7 +71,7 @@ export default function PrivacyPolicy() {
         <Ul items={[
           'Google OAuth — used for "Sign in with Google". We receive your name, email, and profile picture from Google. We do not receive or store your Google password.',
           'Google Places API — used to search and display destination and venue information in your itineraries.',
-          'Google Gemini AI — our AI planning engine sends your trip preferences and destination information to Gemini to generate itinerary content. No personally identifying information beyond trip context is sent.',
+          'LLM providers — our AI planning engine sends your trip preferences and destination information to the configured model provider to generate itinerary content. No personally identifying information beyond trip context is sent.',
           'Google Maps — used for route and distance calculations within itineraries.',
           'PostgreSQL (self-hosted) — all structured data is stored in our own database, not in any third-party cloud database service.',
         ]} />

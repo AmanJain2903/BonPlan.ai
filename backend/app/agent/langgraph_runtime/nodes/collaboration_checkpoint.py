@@ -23,8 +23,7 @@ import os
 import uuid
 from typing import Any, Dict, Optional
 
-from google.genai import types
-
+from app.agent.llm import litellm_types as types
 from app.core.config import settings
 from app.logging import get_agent_logger, set_agent_log_context
 from app.agent.core.runtime import runtime
@@ -36,10 +35,10 @@ from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
 from app.agent.helpers.qa_persistence import persist_qa_entry
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
+from app.services.rate_limiter.sku_resolver import resolve_llm_model_sku
 
 log = get_agent_logger("nodes.collaboration_checkpoint")
-PLANNER_MODEL_SKU = resolve_gemini_model_sku(settings.PLANNER_AGENT_MODEL)
+PLANNER_MODEL_SKU = resolve_llm_model_sku(settings.PLANNER_AGENT_MODEL)
 
 
 # Fallback seed question if the LLM fails or its output is malformed.
@@ -140,8 +139,8 @@ async def _generate_seed_question(state: PlannerState) -> dict:
         "skippable": True,
     }
 
-    if runtime.genai_client is None:
-        log.warning("GenAI client unavailable; using fallback seed question.")
+    if runtime.model_client is None:
+        log.warning("LLM client unavailable; using fallback seed question.")
         return fallback
 
     try:
@@ -166,7 +165,7 @@ async def _generate_seed_question(state: PlannerState) -> dict:
     user_msg = _build_seed_question_user_message(trip_data, research_facts, journey)
 
     try:
-        resp = await runtime.genai_client.aio.models.generate_content(
+        resp = await runtime.model_client.aio.models.generate_content(
             model=settings.PLANNER_AGENT_MODEL,
             contents=[user_msg],
             config=types.GenerateContentConfig(

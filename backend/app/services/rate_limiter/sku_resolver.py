@@ -21,6 +21,7 @@ Every SKU name returned here MUST match a row in the rate_limit_configs table.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Optional
 
 from app.core.config import settings
@@ -64,27 +65,30 @@ SKU = {
     "google_flights": "google_flights",                      # all flights.py RapidAPI tools
     "booking_com": "booking_com",                            # all accommodations.py RapidAPI tools
     "exchange_rates": "exchange_rates",                      # currency.py RapidAPI tools
-    # Gemini Models
+    # LLM models
     "gemma_4_26b": "gemma_4_26b",
     "gemma_4_31b": "gemma_4_31b",
     "gemini_3.1_flash_lite": "gemini_3.1_flash_lite",
 }
 
-GEMINI_MODEL_TO_SKU = {
+LLM_MODEL_TO_SKU = {
     "gemma-4-26b-a4b-it": SKU["gemma_4_26b"],
+    "gemini/gemma-4-26b-a4b-it": SKU["gemma_4_26b"],
     "gemma-4-31b-it": SKU["gemma_4_31b"],
+    "gemini/gemma-4-31b-it": SKU["gemma_4_31b"],
     "gemini-3.1-flash-lite-preview": SKU["gemini_3.1_flash_lite"],
+    "gemini/gemini-3.1-flash-lite-preview": SKU["gemini_3.1_flash_lite"],
 }
 
 
-def resolve_gemini_model_sku(model: str) -> str:
+def resolve_llm_model_sku(model: str) -> str:
     model_key = (model or "").strip().lower()
-    sku = GEMINI_MODEL_TO_SKU.get(model_key)
+    sku = LLM_MODEL_TO_SKU.get(model_key)
     if sku:
         return sku
 
-    fallback = model_key.replace("-", "_")
-    logger.error("No Gemini model SKU mapping found", model=model, fallback_sku=fallback)
+    fallback = "llm_" + re.sub(r"[^a-z0-9]+", "_", model_key).strip("_")
+    logger.warning("No LLM model SKU mapping found", model=model, fallback_sku=fallback)
     return fallback
 
 
@@ -155,7 +159,7 @@ TOOL_TO_SKU: dict[str, SkuResolver] = {
     "get_place_info": lambda **_: SKU["places_place_details_enterprise_atmosphere"],
     # Third-party / model SKUs (no arg branching).
     "search_web": lambda **_: SKU["serper_web_search"],
-    "get_content_from_url": lambda **_: resolve_gemini_model_sku(settings.SERPER_CONTENT_PARSER_MODEL),
+    "get_content_from_url": lambda **_: resolve_llm_model_sku(settings.SERPER_CONTENT_PARSER_MODEL),
     "get_country_code": lambda **_: SKU["google_flights"],
     "get_airports_and_codes": lambda **_: SKU["google_flights"],
     "search_flights": lambda **_: SKU["google_flights"],

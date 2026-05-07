@@ -118,7 +118,7 @@ export interface SmartAnchor {
     type: AnchorEventType;
     user_inputs: SmartAnchorUserInputs;
     details: Record<string, any> | null;
-    prefill_status: 'none';
+    prefill_status: 'none' | 'loading' | 'done' | 'error';
     start_time?: string;       // HH:MM — when this anchor starts (ACTIVITY/DINING/OTHER)
     end_time?: string;         // HH:MM — when this anchor ends (ACTIVITY/DINING/OTHER)
     duration_minutes?: number; // for ACTIVITY / DINING / OTHER only

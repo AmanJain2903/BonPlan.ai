@@ -349,7 +349,20 @@ class RateLimiter:
         if config is None:
             # No config row => no enforcement. Log once per SKU so missing
             # seed data is visible without spamming on every request.
-            logger.warning("Rate-limit config missing for SKU — allowing.", sku=sku_normalized)
+            logger.warning(
+                "Rate-limit config missing for SKU.",
+                sku=sku_normalized,
+                mode=settings.RATE_LIMITER_MODE,
+            )
+            if settings.RATE_LIMITER_MODE == "strict":
+                logger.error("Rate-limit config missing in strict mode, rejecting.", sku=sku_normalized)
+                raise RateLimitExceeded(
+                    sku=sku_normalized,
+                    limit=0,
+                    current=0,
+                    retry_after_seconds=60,
+                    scope=Scope.GLOBAL.value,
+                )
             return ConsumeResult(
                 allowed=True,
                 sku=sku_normalized,

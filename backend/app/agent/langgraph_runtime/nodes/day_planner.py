@@ -18,11 +18,10 @@ import uuid
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
-from google.genai import types
-
 from app.logging import get_agent_logger, set_agent_log_context
+from app.agent.llm import litellm_types as types
 from app.agent.core.runtime import runtime
-from app.agent.langgraph_runtime.gemini_adapter import run_chat_loop
+from app.agent.langgraph_runtime.litellm_adapter import run_chat_loop
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
 from app.agent.langgraph_runtime.validator import (

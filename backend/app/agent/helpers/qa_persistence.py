@@ -1,7 +1,7 @@
 """
 Helpers for persisting and loading collaborative Q&A pairs.
 
-Persistence is fire-and-forget from the hot path (gemini_adapter / nodes).
+Persistence is fire-and-forget from the hot path (litellm_adapter / nodes).
 Loading is awaited in the SSE endpoint before the generator starts.
 """
 import asyncio

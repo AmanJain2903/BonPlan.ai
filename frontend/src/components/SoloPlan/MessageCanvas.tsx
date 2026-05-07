@@ -2,12 +2,53 @@ import { RefObject, useState, useEffect, useRef, useCallback, useLayoutEffect, M
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Brain, ChevronDown, Loader2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown, CalendarCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { EASE_OUT_EXPO } from './constants';
 import { SystemLog, ChatTurn, BotTurn, UserTurn, QAPairTurn } from './types';
 import { BotAvatar, BouncingDots } from './Atoms';
 import QuestionCard from './QuestionCard';
 
 // ─── Sub-sections ─────────────────────────────────────────────
+
+const markdownComponents: Components = {
+  table({ node: _node, ...props }) {
+    return (
+      <div className="my-3 block w-full max-w-full overflow-x-auto rounded-md border border-white/10">
+        <table {...props} className="w-max min-w-full max-w-none border-collapse text-left text-xs" />
+      </div>
+    );
+  },
+  th({ node: _node, ...props }) {
+    return (
+      <th
+        {...props}
+        className="border-b border-white/10 bg-white/[0.06] px-3 py-2 font-semibold text-white"
+      />
+    );
+  },
+  td({ node: _node, ...props }) {
+    return <td {...props} className="border-b border-white/10 px-3 py-2 align-top text-white/75" />;
+  },
+};
+
+function MarkdownContent({
+  children,
+  className = '',
+}: {
+  children: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`min-w-0 max-w-full overflow-x-hidden text-sm text-white/80 leading-relaxed prose prose-invert prose-sm prose-strong:text-white prose-em:text-white/70 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-1 prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1 prose-pre:max-w-full prose-pre:overflow-x-auto prose-code:break-words ${className}`}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 function UserMessage({ text, attachedEventsCount = 0 }: { text: string; attachedEventsCount?: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -213,17 +254,15 @@ function ActiveThinkingBubble({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -5 }}
           transition={{ duration: 0.3 }}
-          className="flex items-start gap-3"
+          className="flex w-full min-w-0 max-w-full items-start gap-3 overflow-x-hidden"
         >
           <BotAvatar icon={Brain} className="mt-0.5" />
-          <div className="flex-1 px-0 py-0">
+          <div className="min-w-0 max-w-full flex-1 px-0 py-0">
             <div
               ref={scrollRef}
-              className="max-w-70 max-h-20 overflow-y-auto scrollbar-hide pointer-events-none relative"
+              className="relative max-h-20 max-w-full overflow-y-auto overflow-x-hidden scrollbar-hide pointer-events-none"
             >
-              <p className="text-xs text-white/50 leading-relaxed whitespace-normal">
-                <ReactMarkdown>{activeThinking.trim()}</ReactMarkdown>
-              </p>
+              <MarkdownContent className="text-xs text-white/50">{activeThinking.trim()}</MarkdownContent>
               <div ref={thinkingEndRef} />
             </div>
             {/* Dots live OUTSIDE the scroll-clipped box so they remain
@@ -330,13 +369,11 @@ function FinalSummaryMessage({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -5 }}
           transition={{ duration: 0.3 }}
-          className="flex items-start gap-3"
+          className="flex w-full min-w-0 max-w-full items-start gap-3 overflow-x-hidden"
         >
           <BotAvatar className="mt-0.5" />
-          <div className="flex-1 px-0 py-0">
-            <div className="text-sm text-white/80 leading-relaxed prose prose-invert prose-sm max-w-none prose-strong:text-white prose-em:text-white/70 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-1 prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1">
-              <ReactMarkdown>{finalSummary.trim()}</ReactMarkdown>
-            </div>
+          <div className="min-w-0 max-w-full flex-1 px-0 py-0">
+            <MarkdownContent>{finalSummary.trim()}</MarkdownContent>
             {summaryEndRef && <div ref={summaryEndRef} />}
           </div>
         </motion.div>
@@ -450,7 +487,7 @@ function FrozenBotTurn({ turn }: { turn: BotTurn }) {
   // no in-progress indicators (no active tool, no active thinking bubble,
   // no pruning, no pending question, no waiting dots).
   return (
-    <div className="flex flex-col gap-1.5 mb-3">
+    <div className="mb-3 flex min-w-0 max-w-full flex-col gap-1.5 overflow-x-hidden">
       <ThoughtsAccordion thoughtHistory={turn.thoughtHistory} expanded={thoughtsExpanded} onToggle={() => setThoughtsExpanded(p => !p)} />
       <FinalSummaryMessage finalSummary={turn.finalSummary} />
       <SystemMessageAccordion
@@ -578,7 +615,7 @@ export default function MessageCanvas({
   // }, [turns]);
 
   return (
-    <div className="relative flex-1 flex flex-col min-h-0 pb-3">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-x-hidden pb-3">
 
       {/* Scroll to Top - Top Right */}
       <div className="absolute right-0 top-0 z-20 pointer-events-none">
@@ -620,8 +657,8 @@ export default function MessageCanvas({
         A horizontal rule sits ABOVE the latest live turn to separate it from
         the frozen past (frozen previous bot turns + qa_pair past blocks).
       */}
-      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 chat-scrollbar">
-        <div className="max-w-3xl mx-auto flex flex-col gap-1.5 relative">
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-5 chat-scrollbar">
+        <div className="relative mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-1.5 overflow-x-hidden">
 
           {/* History (older turns) — chronological top-to-bottom (oldest
               first, newest just before the separator). */}
@@ -650,7 +687,7 @@ export default function MessageCanvas({
           {/* Latest (live) bot turn — at the BOTTOM of DOM. Auto-scroll
               parks the viewport here. */}
           {latestBot && (
-            <div key={latestBot.id} className="flex flex-col gap-1.5">
+            <div key={latestBot.id} className="flex min-w-0 max-w-full flex-col gap-1.5 overflow-x-hidden">
               <ThoughtsAccordion thoughtHistory={latestBot.thoughtHistory} expanded={thoughtsExpanded} onToggle={onToggleThoughts} />
               <WaitingDots visible={latestBot.isStreaming && !latestBot.activeThinkingBubble && !latestBot.finalSummary && !latestBot.pendingQuestion} />
               <ActiveToolIndicator activeTool={latestBot.activeToolIndicator} />

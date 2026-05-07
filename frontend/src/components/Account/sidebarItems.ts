@@ -1,4 +1,4 @@
-import { UserCircle, SlidersHorizontal, Plug, Bell, Settings, Headset } from 'lucide-react';
+import { UserCircle, SlidersHorizontal, Settings, Headset } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type SidebarItem = {

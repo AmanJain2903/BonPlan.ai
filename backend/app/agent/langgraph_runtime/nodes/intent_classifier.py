@@ -5,18 +5,17 @@ import os
 import re
 from typing import Any, Dict, Optional
 
-from google import genai
-from google.genai import types
-
+from app.agent.llm import litellm_types as types
+from app.agent.core.runtime import runtime
 from app.agent.langgraph_runtime.editor_state import EditorState
 from app.agent.langgraph_runtime.streaming import emit
 from app.core.config import settings
 from app.logging import get_agent_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
+from app.services.rate_limiter.sku_resolver import resolve_llm_model_sku
 
 log = get_agent_logger("intent_classifier")
-CONVERSATION_MODEL_SKU = resolve_gemini_model_sku(settings.CONVERSATION_AGENT_MODEL)
+CONVERSATION_MODEL_SKU = resolve_llm_model_sku(settings.CONVERSATION_AGENT_MODEL)
 
 _PROMPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "prompts", "editor", "intentClassifierPrompt.md"
@@ -131,8 +130,9 @@ async def intent_classifier_node(state: EditorState) -> Dict[str, Any]:
         }
 
     try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        resp = await client.aio.models.generate_content(
+        if runtime.model_client is None:
+            raise RuntimeError("LLM client not ready")
+        resp = await runtime.model_client.aio.models.generate_content(
             model=settings.CONVERSATION_AGENT_MODEL,
             contents=[json.dumps(prompt_body, default=str)],
             config=types.GenerateContentConfig(

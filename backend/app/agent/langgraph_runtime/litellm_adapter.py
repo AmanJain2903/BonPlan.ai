@@ -1,8 +1,8 @@
 """
-Google GenAI chat loop for LangGraph nodes.
+LiteLLM chat loop for LangGraph nodes.
 
 `run_chat_loop` encapsulates:
-  - Streaming from the GenAI API
+  - Streaming through LiteLLM's provider-neutral chat API
   - MALFORMED_FUNCTION_CALL / transient-error retry (ported from solo_planner.py)
   - Sliding-window history pruning (keep last WINDOW_TURNS turns)
   - Tool dispatch: add_*_event → validator → emit;  everything else → MCP
@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, Optional
 
-from google.genai import types
+from app.agent.llm import litellm_types as types
 
 from app.agent.core.runtime import runtime
 from app.core.config import settings
@@ -35,17 +35,17 @@ from app.agent.langgraph_runtime.collaboration import (
 )
 from app.agent.helpers.qa_persistence import fire_persist_qa
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import resolve_gemini_model_sku
+from app.services.rate_limiter.sku_resolver import resolve_llm_model_sku
 
 from app.agent.langgraph_runtime.context_pruning import (
     _needs_pruning,
     _prune_history,
 )
 
-log = get_agent_logger("gemini_adapter")
+log = get_agent_logger("litellm_adapter")
 
 _MODEL = settings.PLANNER_AGENT_MODEL
-_MODEL_SKU = resolve_gemini_model_sku(_MODEL)
+_MODEL_SKU = resolve_llm_model_sku(_MODEL)
 
 
 # Per-tool cap on how many characters of a tool response get forwarded to the
@@ -134,7 +134,7 @@ async def run_chat_loop(
     stop_after_start : bool
         If True, return after a START event is successfully emitted (research phase).
     """
-    client = runtime.genai_client
+    client = runtime.model_client
     session = runtime.mcp_session
 
     async def _is_cancelled() -> bool:
@@ -229,7 +229,7 @@ async def run_chat_loop(
             try:
                 await get_rate_limiter().consume(_MODEL_SKU)
             except RateLimitExceeded as exc:
-                log.error("Gemini model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
+                log.error("Planner model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
                 emit({"type": "error", "content": f"Planner quota exhausted. Retry after {exc.retry_after_seconds}s."})
                 return ChatResult(
                     emitted_events=list(session_events), last_text=last_text_buffer,
@@ -240,7 +240,7 @@ async def run_chat_loop(
             try:
                 _turn_started = time.monotonic()
                 _first_chunk_at: Optional[float] = None
-                response_stream = await chat.send_message_stream(current_message)
+                response_stream = chat.send_message_stream(current_message)
 
                 async for chunk in response_stream:
                     if _first_chunk_at is None:
@@ -275,7 +275,7 @@ async def run_chat_loop(
 
                         if part.function_call:
                             fc = part.function_call
-                            call_id = str(uuid.uuid4())
+                            call_id = fc.id or str(uuid.uuid4())
 
                             if _is_event_tool(fc.name):
                                 args = _coerce_event_args(fc.name, fc.args or {})
@@ -704,7 +704,11 @@ async def run_chat_loop(
                         "call_id": call_id,
                     })
                 tool_responses.append(
-                    types.Part.from_function_response(name=fc.name, response=result)
+                    types.Part.from_function_response(
+                        name=fc.name,
+                        response=result,
+                        tool_call_id=call_id,
+                    )
                 )
 
             current_message = tool_responses

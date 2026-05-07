@@ -8,7 +8,7 @@ import {
 import { DateTime } from 'luxon';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
-import { api, SmartAnchor, AnchorEventType, SmartAnchorUserInputs } from '../../apis/plan';
+import { SmartAnchor, AnchorEventType, SmartAnchorUserInputs } from '../../apis/plan';
 import PlacesAutocomplete from '../shared/PlacesAutocomplete';
 
 /* ── Type config ────────────────────────────────────────────────────────── */

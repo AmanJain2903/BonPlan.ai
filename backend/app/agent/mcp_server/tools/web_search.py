@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Dict, Annotated, List, Optional
 from pydantic import Field, BaseModel
 import pathlib
@@ -7,26 +8,43 @@ from app.core.config import settings
 from app.utils.http import get_http_client
 from app.agent.api.caching import generate_cache_key, retrieve_api_cache, insert_api_cache
 from app.agent.mcp_server.tools._errors import tool_error
-from google import genai
+from app.agent.llm import litellm_types as types
+from app.agent.llm.litellm_client import LiteLLMClient
 import httpx
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU, resolve_gemini_model_sku
+from app.services.rate_limiter.sku_resolver import SKU, resolve_llm_model_sku
 
 
 from app.logging import get_mcp_logger
 logger = get_mcp_logger("tools.web_search")
 serper_api_key = settings.SERPER_API_KEY
-gemini_api_key_serper_content_parser = settings.GEMINI_API_KEY
 serper_content_parser_model = settings.SERPER_CONTENT_PARSER_MODEL
-serper_content_parser_sku = resolve_gemini_model_sku(serper_content_parser_model)
+serper_content_parser_sku = resolve_llm_model_sku(serper_content_parser_model)
 
 class ContentResponse(BaseModel):
     title: str = Field(description="The title of the content")
     content: str = Field(description="The content of the content")
     external_links: List[str] = Field(description="A list of links found in the content")
 
-client = genai.Client(api_key=gemini_api_key_serper_content_parser)
+client = LiteLLMClient()
+
+
+def _provider_key_configured(model: str) -> bool:
+    provider = (model or "").split("/", 1)[0].strip().lower()
+    required_env = {
+        "gemini": "GEMINI_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "xai": "XAI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "together_ai": "TOGETHERAI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "cohere": "COHERE_API_KEY",
+        "azure": "AZURE_API_KEY",
+    }.get(provider)
+    return not required_env or bool(os.getenv(required_env))
 
 async def pre_process_content(content):
     """
@@ -46,12 +64,19 @@ async def pre_process_content(content):
             "external_links": [],
             "status": "No content provided. Check if the URL is valid and the content is accessible."
         }
-    if not gemini_api_key_serper_content_parser or not serper_content_parser_model or not SERPER_CONTENT_PARSER_PROMPT:
+    if not serper_content_parser_model or not SERPER_CONTENT_PARSER_PROMPT:
         return {
             "title": "Unknown Title",
             "content": content,
             "external_links": [],
-            "status": "Content returned without pre-processing through LLM API. Check if the API key, model or prompt is configured."
+            "status": "Content returned without pre-processing through LLM API. Check if the model or prompt is configured."
+        }
+    if not _provider_key_configured(serper_content_parser_model):
+        return {
+            "title": "Unknown Title",
+            "content": content,
+            "external_links": [],
+            "status": "Content returned without pre-processing through LLM API. Check if the provider API key is configured."
         }
         # Rate-limit gate.
     try:
@@ -64,18 +89,19 @@ async def pre_process_content(content):
             "status": f"Content returned without pre-processing through LLM API, rate limit exceeded for SKU '{exc.sku}', retry after {exc.retry_after_seconds}s"
         }
 
-    _CONTENT_PARSE_TIMEOUT = 25  # seconds; guards against Gemini API hang
+    _CONTENT_PARSE_TIMEOUT = 25  # seconds; guards against LLM API hangs
     try:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.models.generate_content,
                 model=serper_content_parser_model,
-                contents=f"INSTRUCTIONS: {SERPER_CONTENT_PARSER_PROMPT}\n\nCONTENT TO PROCESS:\n{content}",
-                config={
-                    "response_mime_type": "application/json",
-                    "response_json_schema": ContentResponse.model_json_schema(),
-                    "max_output_tokens": 512,
-                },
+                contents=f"CONTENT TO PROCESS:\n{content}",
+                config=types.GenerateContentConfig(
+                    system_instruction=SERPER_CONTENT_PARSER_PROMPT,
+                    temperature=0.1,
+                    max_output_tokens=512,
+                    response_format=ContentResponse,
+                ),
             ),
             timeout=_CONTENT_PARSE_TIMEOUT,
         )
@@ -91,7 +117,7 @@ async def pre_process_content(content):
             "title": "Unknown Title",
             "content": content,
             "external_links": [],
-            "status": f"Content returned without pre-processing: Gemini parser timed out after {_CONTENT_PARSE_TIMEOUT}s."
+            "status": f"Content returned without pre-processing: LLM parser timed out after {_CONTENT_PARSE_TIMEOUT}s."
         }
     except Exception as e:
         return {
@@ -101,7 +127,7 @@ async def pre_process_content(content):
             "status": f"Content returned without pre-processing through LLM API, exception in LLM API, {str(e)}"
         }
 
-# Get content from URL using Jina and pre-process the content using Gemini API
+# Get content from URL using Jina and pre-process the content using an LLM API
 async def get_content_from_url(url: Annotated[str, Field(description="The URL to get the content from.")],
                                timeout_seconds: Annotated[Optional[int], Field(description="(Optional) Timeout in seconds for the tool execution. Only increase if a previous call failed due to timeout.", default=TIMEOUTS['get_content_from_url'])]) -> Dict:
     cache_key = await generate_cache_key("get_content", {"url": url})

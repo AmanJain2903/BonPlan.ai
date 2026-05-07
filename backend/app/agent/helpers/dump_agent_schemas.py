@@ -3,7 +3,7 @@ import os
 from app.agent.schemas.structuredOutput import AddItineraryEvent
 from app.agent.schemas.structuredInput import TripInput
 
-from app.agent.helpers.utils import fix_schema_for_gemini, convert_mcp_to_gemini
+from app.agent.helpers.utils import normalize_llm_schema
 from app.agent.core.runtime import agent_runtime_context
 from app.agent.core.runtime import runtime
 import asyncio
@@ -11,8 +11,8 @@ import asyncio
 inputSchema = TripInput.model_json_schema()
 outputSchema = AddItineraryEvent.model_json_schema()
 
-fixedInputSchema = fix_schema_for_gemini(inputSchema)
-fixedOutputSchema = fix_schema_for_gemini(outputSchema)
+fixedInputSchema = normalize_llm_schema(inputSchema)
+fixedOutputSchema = normalize_llm_schema(outputSchema)
 
 relativePath = "app/agent/dumps/"
 absolutePath = os.path.abspath(relativePath)
@@ -29,7 +29,7 @@ print("Imput & Output Schemas Dumped properly!")
 
 async def dump_mcp_tools():
     async with agent_runtime_context():
-        mcpTools = runtime.gemini_tools
+        mcpTools = runtime.llm_tools
         mcpTools = [tool.model_dump() for tool in mcpTools]
         with open(absolutePath + "/mcp_tools_dump.json", "w") as f:
             json.dump(mcpTools, f, indent=2)
@@ -37,6 +37,4 @@ async def dump_mcp_tools():
 asyncio.run(dump_mcp_tools())
 
 print("MCP Tools Dumped properly!")
-
-
 

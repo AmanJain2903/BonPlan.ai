@@ -9,7 +9,7 @@ Why a side channel instead of LangGraph's `interrupt()`:
 LangGraph re-runs the entire node from scratch on resume. The chat loop holds
 a live `chat` object plus retry counters, accumulated `session_events`, etc.
 that aren't in PlannerState. Persisting all of that for re-replay would be a
-large refactor of gemini_adapter.py. The side channel keeps the graph running
+large refactor of litellm_adapter.py. The side channel keeps the graph running
 inside one task and only the chat loop awaits — much smaller surface.
 
 Lifetime: one pending question per `trip_id` at a time. Lost on server

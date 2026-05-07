@@ -86,7 +86,7 @@ export default function TermsOfService() {
 
       <Section title="5. AI-Generated Content Disclaimer">
         <P>
-          BonPlan.ai uses large language models (including Google Gemini) to generate travel itineraries. You acknowledge that:
+          BonPlan.ai uses configured large language model providers to generate travel itineraries. You acknowledge that:
         </P>
         <Ul items={[
           'AI-generated itineraries are suggestions only and may contain errors, outdated information, or inaccuracies.',

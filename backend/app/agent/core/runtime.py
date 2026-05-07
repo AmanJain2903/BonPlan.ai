@@ -3,8 +3,8 @@
 """
 Shared long-lived runtime state for the agent.
 
-Objects here are expensive to build (GenAI client, MCP subprocess + session,
-JSON-schema conversion for Gemini tool declarations) and should exist for the
+Objects here are expensive to build (LLM client config, MCP subprocess + session,
+JSON-schema conversion for tool declarations) and should exist for the
 entire process lifetime. They are populated by the FastAPI lifespan in
 `app/ai.py` on startup and torn down on shutdown. For standalone scripts
 (e.g. `test_planner.py`) use `agent_runtime_context()` below.
@@ -13,10 +13,10 @@ Per-request code should import `runtime` and use its attributes directly
 instead of re-initializing these resources.
 
 Concurrency notes:
-- `genai.Client` is safe to share across async tasks.
+- LiteLLM calls are stateless and safe to issue across async tasks.
 - `ClientSession` multiplexes requests via JSON-RPC IDs, so concurrent
   `session.call_tool(...)` calls from different request handlers are safe.
-- `gemini_tools` / `planner_tool_block` are immutable after startup.
+- `llm_tools` / `planner_tool_block` are immutable after startup.
 """
 
 import asyncio
@@ -24,17 +24,17 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, List, Optional
 
-from google import genai
-from google.genai import types
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from app.core.config import settings
 from app.logging import get_agent_logger
+from app.agent.llm import litellm_types as types
+from app.agent.llm.litellm_client import LiteLLMClient
 
 from app.agent.schemas.structuredOutput import AddItineraryEvent
 from app.agent.helpers.utils import (
-    convert_mcp_to_gemini,
+    convert_mcp_to_llm_tool,
     ADD_EVENT_TOOL,
     ASK_USER_QUESTION_TOOL,
     PER_TYPE_EVENT_TOOLS,
@@ -135,10 +135,10 @@ def _filter_mcp_decls(
 
 
 class AgentRuntime:
-    genai_client: Optional[genai.Client] = None
-    pruning_client: Optional[genai.Client] = None  # small/fast model for history summarization and handoff-note extraction
+    model_client: Optional[LiteLLMClient] = None
+    pruning_client: Optional[LiteLLMClient] = None  # small/fast model for history summarization and handoff-note extraction
     mcp_session: Optional[ClientSession] = None
-    gemini_tools: Optional[List[types.FunctionDeclaration]] = None
+    llm_tools: Optional[List[types.FunctionDeclaration]] = None
     planner_tool_block: Optional[types.Tool] = None
     research_tool_block: Optional[types.Tool] = None
     day_tool_block: Optional[types.Tool] = None
@@ -152,7 +152,7 @@ class AgentRuntime:
     @property
     def is_ready(self) -> bool:
         return (
-            self.genai_client is not None
+            self.model_client is not None
             and self.mcp_session is not None
             and self.planner_tool_block is not None
         )
@@ -181,7 +181,7 @@ async def _mcp_health_ping(session: ClientSession) -> None:
 @asynccontextmanager
 async def agent_runtime_context():
     """
-    Async context manager that starts the MCP subprocess + GenAI client,
+    Async context manager that starts the MCP subprocess + LiteLLM client,
     populates the shared `runtime` singleton, and tears everything down on
     exit. `stdio_client` and `ClientSession` use anyio task groups internally
     that must enter and exit in the same task — this helper is that single
@@ -190,14 +190,14 @@ async def agent_runtime_context():
     """
 
     try:
-        runtime.genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        log.info("GenAI client initialized")
+        runtime.model_client = LiteLLMClient()
+        log.info("LiteLLM client initialized")
     except Exception as e:
-        log.error("Failed to initialize GenAI client", error=str(e))
+        log.error("Failed to initialize LiteLLM client", error=str(e))
         raise
 
     try:
-        runtime.pruning_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        runtime.pruning_client = runtime.model_client
         log.info("Pruning client initialized")
     except Exception as e:
         # Non-fatal: summarization pruning falls back to drop-oldest behavior.
@@ -215,15 +215,15 @@ async def agent_runtime_context():
             await session.initialize()
             mcp_response = await session.list_tools()
 
-            mcp_decls = [convert_mcp_to_gemini(t) for t in mcp_response.tools]
+            mcp_decls = [convert_mcp_to_llm_tool(t) for t in mcp_response.tools]
 
             # Legacy full block (keeps monolithic add_itinerary_event for any
             # caller that hasn't migrated yet — e.g. tests).
-            gemini_tools = list(mcp_decls) + [ADD_EVENT_TOOL]
+            llm_tools = list(mcp_decls) + [ADD_EVENT_TOOL]
 
             runtime.mcp_session = session
-            runtime.gemini_tools = gemini_tools
-            runtime.planner_tool_block = types.Tool(function_declarations=gemini_tools)
+            runtime.llm_tools = llm_tools
+            runtime.planner_tool_block = types.Tool(function_declarations=llm_tools)
             runtime.mcp_healthy = True
 
             research_mcp_decls = _filter_mcp_decls(mcp_decls, _RESEARCH_MCP_TOOLS)
@@ -269,14 +269,14 @@ async def agent_runtime_context():
             try:
                 yield runtime
             finally:
-                log.info("Tearing down MCP session and GenAI client.")
+                log.info("Tearing down MCP session and LiteLLM client.")
                 health_task.cancel()
                 try:
                     await health_task
                 except BaseException:
                     pass
                 runtime.mcp_session = None
-                runtime.gemini_tools = None
+                runtime.llm_tools = None
                 runtime.planner_tool_block = None
                 runtime.research_tool_block = None
                 runtime.day_tool_block = None
@@ -285,5 +285,5 @@ async def agent_runtime_context():
                 runtime.planner_graph = None
                 runtime.editor_graph = None
                 runtime.checkpointer = None
-                runtime.genai_client = None
+                runtime.model_client = None
                 runtime.pruning_client = None
