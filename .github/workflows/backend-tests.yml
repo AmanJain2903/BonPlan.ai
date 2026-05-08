@@ -1,0 +1,65 @@
+name: Backend Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Pytest and coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SECRET_KEY: test-secret
+      GOOGLE_CLIENT_ID: test-google-client
+      GOOGLE_CLIENT_SECRET: test-google-secret
+      GOOGLE_MAPS_API_KEY: test-google-maps
+      SERPER_API_KEY: test-serper
+      RAPID_API_KEY: test-rapid
+      SENDER_EMAIL: support@example.test
+      GMAIL_APP_PASSWORD: test-password
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_SERVER: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: bonplan_test
+      REDIS_URL: redis://127.0.0.1:6379/15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.3"
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-test.txt
+
+      - name: Run unit and integration tests
+        run: |
+          python -m pytest tests \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: backend/coverage.xml
+          flags: backend
+          name: backend-pytest
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true

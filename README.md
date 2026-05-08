@@ -1,4 +1,5 @@
 # BonPlan.ai ✈️
+[![codecov](https://codecov.io/gh/AmanJain2903/BonPlan.ai/branch/main/graph/badge.svg)](https://codecov.io/gh/AmanJain2903/BonPlan.ai)
 **Tell us When. We Tell the How.**
 
 BonPlan.ai is an autonomous, constraint-based AI travel scheduling engine. Unlike standard generative AI planners that build rigid, unverified lists from scratch, BonPlan uses an agentic architecture to mathematically build itineraries *around* a user's non-negotiable logistical constraints (Smart Anchors).
