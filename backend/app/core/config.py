@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     # LiteLLM provider API keys. LiteLLM reads these provider-native env names,
     # so keep them explicit and set only the keys needed for the configured models.
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY")
+    OPENROUTER_API_KEY: str | None = os.getenv("OPENROUTER_API_KEY")
 
     # LiteLLM model settings. Values must include provider prefixes, e.g.
     # "gemini/gemini-2.0-flash", "openai/gpt-5.1", "anthropic/claude-sonnet-4-5",
