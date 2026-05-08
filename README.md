@@ -1,6 +1,5 @@
 # BonPlan.ai
 
-[![codecov](https://codecov.io/gh/AmanJain2903/BonPlan.ai/branch/main/graph/badge.svg)](https://codecov.io/gh/AmanJain2903/BonPlan.ai)
 ![Version](https://img.shields.io/badge/version-v1.0.0-0B0C10?style=for-the-badge)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20Vite-61DAFB?style=for-the-badge&logo=react&logoColor=0B0C10)
 ![Backend](https://img.shields.io/badge/backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
