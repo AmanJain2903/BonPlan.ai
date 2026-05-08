@@ -67,38 +67,6 @@ _LOG_ROOT = (
 _log_handles: dict[str, tuple[TextIO, str]] = {}
 _log_handles_lock = threading.Lock()
 
-async def _log_files_cleanup() -> None:
-    """Remove daily `YYYY-MM-DD.log` files under LOG_ROOT older than 7 days (UTC calendar date)."""
-    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=7)).date()
-    if not os.path.isdir(_LOG_ROOT):
-        return
-    for dirpath, _dirnames, filenames in os.walk(_LOG_ROOT):
-        for name in filenames:
-            if not name.endswith(".log"):
-                continue
-            stem = name[: -len(".log")]
-            try:
-                file_date = datetime.strptime(stem, "%Y-%m-%d").replace(tzinfo=timezone.utc).date()
-            except ValueError:
-                continue
-            if file_date >= cutoff_date:
-                continue
-            path = os.path.join(dirpath, name)
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-
-async def _log_files_cleanup_task() -> None:
-    """Periodic cleanup so log volume does not grow without bound."""
-    while True:
-        try:
-            await _log_files_cleanup()
-        except Exception:
-            print("[logging] log file cleanup failed", file=sys.stderr, flush=True)
-        await asyncio.sleep(60 * 60)
-
 def _get_log_file(logs_subdir: str) -> Optional[TextIO]:
     """Return today's append-mode file handle for `logs_subdir`, rotating on UTC date."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -191,14 +159,15 @@ class BonPlanLogger:
             print(line, file=sys.stderr, flush=True)
         except Exception:
             pass
-        f = _get_log_file(self.logs_subdir)
-        if f is not None:
-            try:
-                f.write(line + "\n")
-                f.flush()
-            except Exception:
-                # Never let a logging failure take down the request.
-                pass
+        if settings.LOCAL_DEVELOPMENT:
+            f = _get_log_file(self.logs_subdir)
+            if f is not None:
+                try:
+                    f.write(line + "\n")
+                    f.flush()
+                except Exception:
+                    # Never let a logging failure take down the request.
+                    pass
 
     def info(self, message: str, **extra: Any) -> None:
         self._emit("INFO", message, **extra)

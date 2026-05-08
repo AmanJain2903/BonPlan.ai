@@ -14,8 +14,7 @@ os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-google-secret")
 os.environ.setdefault("GOOGLE_MAPS_API_KEY", "test-google-maps")
 os.environ.setdefault("SERPER_API_KEY", "test-serper")
 os.environ.setdefault("RAPID_API_KEY", "test-rapid")
-os.environ.setdefault("SENDER_EMAIL", "support@example.test")
-os.environ.setdefault("GMAIL_APP_PASSWORD", "test-password")
+os.environ.setdefault("RESEND_API_KEY", "test-resend")
 os.environ.setdefault("POSTGRES_USER", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_SERVER", "127.0.0.1")
@@ -106,6 +105,9 @@ class FakeAsyncSession:
         if getattr(obj, "id", None) is None:
             obj.id = uuid4()
         self.factory.refreshed.append(obj)
+
+    async def flush(self):
+        return None
 
 
 class FakeSessionFactory:

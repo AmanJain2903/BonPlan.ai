@@ -142,12 +142,12 @@ export default function ProfilePanel() {
         className="rounded-2xl border border-white/[0.06] bg-carbon/40 backdrop-blur-sm overflow-hidden"
       >
         {/* Card header */}
-        <div className="flex items-center justify-between gap-4 px-6 sm:px-8 py-5 border-b border-white/[0.05]">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col items-stretch gap-4 px-6 sm:flex-row sm:items-center sm:justify-between sm:px-8 py-5 border-b border-white/[0.05]">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-cyan/10 border border-cyan/15 flex items-center justify-center shrink-0">
               <User size={18} className="text-cyan" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-base font-bold text-white tracking-wide">Personal Information</h3>
               <p className="text-xs text-white/40 mt-0.5">Your name, email address, and contact details</p>
             </div>
@@ -156,7 +156,7 @@ export default function ProfilePanel() {
             <button
               type="button"
               onClick={handleEdit}
-              className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-white/45 hover:text-white hover:border-white/20 hover:bg-white/[0.04] transition-all duration-200 cursor-pointer"
+              className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-white/45 hover:text-white hover:border-white/20 hover:bg-white/[0.04] transition-all duration-200 cursor-pointer sm:w-auto"
             >
               <Pencil size={12} />
               Edit Profile

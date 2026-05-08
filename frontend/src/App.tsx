@@ -25,6 +25,7 @@ import BlurBackground from './components/shared/blurBackground';
 import { TripProvider } from './context/TripContext';
 import TripFlushOnHome from './components/shared/TripFlushOnHome';
 import AdminLayout from './components/Admin/AdminLayout';
+import AnalyticsDashboard from './components/Admin/Pages/AnalyticsDashboard';
 import SkuManager from './components/Admin/Pages/SkuManager';
 import UsageViewer from './components/Admin/Pages/UsageViewer';
 import FaqManager from './components/Admin/Pages/FaqManager';
@@ -70,7 +71,7 @@ function HomePage() {
             setPlans(response.plans);
           }
         }
-      } catch (error) {
+      } catch {
         // Do nothing
       } finally {
         setIsFetchingPlans(false);
@@ -122,7 +123,8 @@ function AnimatedRoutes() {
             </ProtectedRoute>
           )}
         >
-          <Route index element={<Navigate to="skus" replace />} />
+          <Route index element={<Navigate to="analytics" replace />} />
+          <Route path="analytics" element={<AnalyticsDashboard />} />
           <Route path="skus" element={<SkuManager />} />
           <Route path="usage" element={<UsageViewer />} />
           <Route path="faq" element={<FaqManager />} />

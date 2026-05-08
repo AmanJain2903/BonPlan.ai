@@ -8,6 +8,8 @@ from app.agent.helpers import qa_persistence
 from app.api import caching
 from app.core import redis_client
 from app.services import trip_lifecycle
+from app.services import trip_status_emailer
+from app.services.rate_limiter import limit_alerts
 from app.services.rate_limiter import usage_cleanup
 from app.database.models.rateLimitConfigs import Period
 from app.utils import emailVerification, http
@@ -132,34 +134,50 @@ def test_redis_ping_failure(monkeypatch):
     assert run(redis_client.ping_redis()) is False
 
 
-def test_send_email_uses_smtp_without_real_network(monkeypatch, tmp_path):
+def test_send_email_uses_resend_without_real_network(monkeypatch, tmp_path):
     calls = []
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"fake-image")
 
-    class FakeSMTP:
-        def __init__(self, host, port):
-            calls.append(("connect", host, port))
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def login(self, email, password):
-            calls.append(("login", email, password))
-
-        def sendmail(self, from_email, to_email, body):
-            calls.append(("sendmail", from_email, to_email, "Subject: Subject" in body))
+    def fake_send(params):
+        calls.append(params)
+        return {"id": "email_123"}
 
     async def immediate(func):
         return func()
 
-    monkeypatch.setattr(emailVerification.smtplib, "SMTP_SSL", FakeSMTP)
+    monkeypatch.setattr(emailVerification.resend.Emails, "send", fake_send)
     monkeypatch.setattr(emailVerification.asyncio, "to_thread", immediate)
-    run(emailVerification.send_email("to@example.test", "Subject", "<p>Body</p>"))
+    result = run(
+        emailVerification.send_email(
+            "to@example.test",
+            "Subject",
+            "<p><img src=\"cid:logo\" /></p>",
+            inline_images={"logo": logo},
+        )
+    )
 
-    assert calls[0] == ("connect", "smtp.gmail.com", 465)
-    assert calls[-1][0] == "sendmail"
+    assert result == {"id": "email_123"}
+    assert emailVerification.resend.api_key == "test-resend"
+    assert calls[0]["from"] == emailVerification.AUTH_EMAIL_FROM
+    assert calls[0]["to"] == "to@example.test"
+    assert calls[0]["subject"] == "Subject"
+    assert calls[0]["html"] == "<p><img src=\"cid:logo\" /></p>"
+    assert calls[0]["attachments"][0]["filename"] == "logo.png"
+    assert calls[0]["attachments"][0]["inline_content_id"] == "logo"
+
+
+def test_trip_status_draft_delay_increases_by_twelve_hours():
+    assert trip_status_emailer._draft_next_delay(0).total_seconds() == 24 * 60 * 60
+    assert trip_status_emailer._draft_next_delay(1).total_seconds() == 36 * 60 * 60
+    assert trip_status_emailer._draft_next_delay(2).total_seconds() == 48 * 60 * 60
+
+
+def test_rate_limit_alert_threshold_helpers():
+    assert limit_alerts.normalize_thresholds([100, 80, 80, 90]) == [80, 90, 100]
+    assert limit_alerts.format_sku_name("places_search_enterprise") == "Places Search Enterprise"
+    assert limit_alerts.admin_alert_email("Aman!") == "admin-aman@bonplanai.com"
+    assert limit_alerts.admin_alert_email("") == "admin-admin@bonplanai.com"
 
 
 def test_usage_cleanup_thresholds_and_db_delete(monkeypatch):

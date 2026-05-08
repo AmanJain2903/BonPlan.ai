@@ -62,6 +62,36 @@ def test_local_login_rejects_unverified_user_and_sends_email(monkeypatch, user_f
     assert sent == ["aman@example.test"]
 
 
+def test_local_register_allows_empty_phone(monkeypatch):
+    factory = FakeSessionFactory(None)
+    sent = []
+    monkeypatch.setattr(auth, "Session", factory)
+    monkeypatch.setattr(auth, "_hash_password", lambda password: asyncio.sleep(0, result="hash"))
+    monkeypatch.setattr(auth, "_send_verification_email_for_user", lambda email, db: asyncio.sleep(0, result=sent.append(email)))
+
+    result = run(auth.local_register("Ada", "Lovelace", "ada@example.test", "Strong1!", code="", phone=""))
+
+    assert result["status_code"] == 201
+    assert factory.added[0].phone == {"country_code": None, "number": None}
+    assert factory.commit_count == 1
+    assert sent == ["ada@example.test"]
+    assert len(factory.executed) == 1
+
+
+def test_local_register_rejects_duplicate_complete_phone(monkeypatch, user_factory):
+    duplicate = user_factory(email="other@example.test")
+    factory = FakeSessionFactory(None, duplicate)
+    monkeypatch.setattr(auth, "Session", factory)
+
+    with pytest.raises(HTTPException) as exc:
+        run(auth.local_register("Ada", "Lovelace", "ada@example.test", "Strong1!", code="+1", phone="5551234567"))
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Phone number already in use. Please use a different phone number."
+    assert factory.added == []
+    assert factory.commit_count == 0
+
+
 def test_verify_email_sets_verified(monkeypatch, user_factory):
     user = user_factory(is_verified=False)
     factory = FakeSessionFactory(user)

@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../../api/index';
-import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import { Search, Server, Menu } from 'lucide-react';
+import { Search, Server } from 'lucide-react';
 import { cn } from '../../../utils/tailwind';
 import { format, subDays, subWeeks, subMonths, subYears, getISOWeek, getISOWeekYear } from 'date-fns';
 
@@ -249,7 +248,6 @@ const UserUsageTable = ({ configs, usageData, search }: { configs: any[], usageD
 };
 
 export default function UsageViewer() {
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>();
   const { token } = useAuth();
   const [configs, setConfigs] = useState<any[]>([]);
   const [usage, setUsage] = useState<any[]>([]);
@@ -302,13 +300,8 @@ export default function UsageViewer() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden text-white/70 hover:text-white transition-colors">
-              <Menu className="h-6 w-6" />
-            </button>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Usage Viewer</h1>
-          </div>
-          <p className="text-sm text-white/40 mt-1 sm:ml-9">Monitor real-time rate limit consumption by period.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Usage Viewer</h1>
+          <p className="text-sm text-white/40 mt-1">Monitor real-time rate limit consumption by period.</p>
         </div>
       </div>
 
