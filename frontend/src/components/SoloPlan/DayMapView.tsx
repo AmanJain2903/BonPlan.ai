@@ -353,7 +353,7 @@ async function fetchRoutePolyline(
           onResolve(encoded);
         }
       } else {
-        console.warn('[DayMapView] Directions request failed:', status);
+        // Do nothing
       }
     },
   );
@@ -727,8 +727,7 @@ export default function DayMapViewBody({
         geometryLibRef.current = geometry;
         setLibsReady(true);
       } catch (err) {
-        console.warn('[DayMapView] Google Maps library load failed', err);
-        setMapError('Failed to load Google Maps libraries. Please check your browser console.');
+        setMapError('Failed to load Google Maps libraries.');
       }
     };
     load();
@@ -775,7 +774,6 @@ export default function DayMapViewBody({
         });
         setMapReady(true);
       } catch (err) {
-        console.error('[DayMapView] Map constructor threw:', err);
         setMapError('Failed to initialize the map.');
         return;
       }

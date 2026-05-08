@@ -71,7 +71,7 @@ function HomePage() {
           }
         }
       } catch (error) {
-        console.error("Failed to fetch draft plans:", error);
+        // Do nothing
       } finally {
         setIsFetchingPlans(false);
       }

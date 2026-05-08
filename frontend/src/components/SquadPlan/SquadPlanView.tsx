@@ -37,7 +37,6 @@ export default function SquadPlanView() {
           navigate('/');
         }
       } catch (err) {
-        console.error("SquadPlanView access error:", err);
         navigate('/');
       } finally {
         setLoading(false);

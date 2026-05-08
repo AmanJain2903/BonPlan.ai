@@ -34,9 +34,12 @@ dist-ssr
 
 # Claude Code
 .claude
+CLAUDE.md
+.mcp.json
 
 # Codex
 .codex
+AGENTS.md
 
 # Graphify
 graphify-out

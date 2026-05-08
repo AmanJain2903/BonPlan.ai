@@ -23,6 +23,16 @@ from app.core.config import settings
 from app.data.labels import paceLabels, budgetLabels
 from app.database.database import Session
 from app.database.models.tripsTable import Trip, PlanningType, RoutingStyle, PlanStatus
+from app.agent.langgraph_runtime.editing.event_utils import (
+    canonicalize_events,
+    ensure_event_identities,
+    events_hash,
+)
+from app.agent.langgraph_runtime.editing.snapshot_service import (
+    EditConflictError,
+    list_snapshots,
+    revert_to_snapshot,
+)
 from app.database.models.tripItinerariesTable import TripItinerary
 from app.database.models.usersTable import User
 from app.database.models.tripMembersTable import TripMember, TripRole, TripInvitationStatus
@@ -1066,6 +1076,8 @@ async def get_plan(token: str, id: str):
         except Exception:
             return {"message": "Trip itinerary not found.", "status_code": 404, "plan": planResponse, "tripItinerary": None}
 
+        prepared_events, _ = ensure_event_identities(tripItinerary.events or [])
+        response_events = canonicalize_events(prepared_events, include_display_numbers=True)
         tripItineraryResponse = {
             "id": tripItinerary.id,
             "title": tripItinerary.title,
@@ -1075,14 +1087,92 @@ async def get_plan(token: str, id: str):
             "end_date": tripItinerary.end_date,
             "cost": tripItinerary.cost,
             "days": tripItinerary.days,
-            "events": tripItinerary.events,
+            "events": response_events,
             "tips": tripItinerary.tips,
             "status": tripItinerary.status,
             "smart_anchors": tripItinerary.smart_anchors or [],
+            "snapshot_cursor": int(tripItinerary.snapshot_cursor or 0),
+            "events_hash": events_hash(prepared_events),
             "created_at": tripItinerary.created_at,
             "updated_at": tripItinerary.updated_at,
         }
         return {"message": "Plan fetched successfully.", "status_code": 200, "plan": planResponse, "tripItinerary": tripItineraryResponse}
+
+
+class RevertItineraryRequest(BaseModel):
+    version_index: int
+
+
+@router.get("/{id}/snapshots", response_model=dict)
+async def get_itinerary_snapshots(id: str, token: str):
+    user_id = await _decode_user_id(token)
+
+    async with Session() as db:
+        try:
+            await _load_user_or_404(db, user_id)
+            caller = await _get_accepted_member(db, id, user_id)
+            if not caller:
+                return {"message": "You are not authorized to view this plan.", "status_code": 403, "snapshots": []}
+
+            itinerary = (await db.execute(
+                select(TripItinerary).where(TripItinerary.trip_id == id)
+            )).scalar_one_or_none()
+            if not itinerary:
+                return {"message": "Itinerary not found.", "status_code": 404, "snapshots": []}
+
+            snapshots = await list_snapshots(db, trip_id=id)
+            return {
+                "message": "Snapshots fetched successfully.",
+                "status_code": 200,
+                "snapshot_cursor": int(itinerary.snapshot_cursor or 0),
+                "snapshots": snapshots,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to fetch itinerary snapshots", trip_id=id, user_id=user_id, error=str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to fetch itinerary snapshots: {e}")
+
+
+@router.post("/{id}/revert", response_model=dict)
+async def revert_itinerary(id: str, token: str, req: RevertItineraryRequest):
+    user_id = await _decode_user_id(token)
+
+    async with Session() as db:
+        try:
+            await _load_user_or_404(db, user_id)
+            caller = await _get_accepted_member(db, id, user_id)
+            if not caller:
+                return {"message": "You are not authorized to edit this plan.", "status_code": 403}
+            role = _role_value(caller.role)
+            if role not in {TripRole.OWNER.value, TripRole.SHARED_EDITOR.value}:
+                return {"message": "You are not authorized to edit this plan.", "status_code": 403}
+
+            result = await revert_to_snapshot(
+                db,
+                trip_id=id,
+                version_index=int(req.version_index),
+            )
+            return {
+                "message": "Itinerary reverted successfully.",
+                "status_code": 200,
+                "snapshot_cursor": result.snapshot_cursor,
+                "events_hash": result.events_hash,
+                "events": result.events,
+                "cost": result.cost,
+                "title": result.title,
+                "tips": result.tips,
+            }
+        except EditConflictError as e:
+            await db.rollback()
+            return {"message": str(e), "status_code": 409}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            logger.exception("Failed to revert itinerary", trip_id=id, user_id=user_id, error=str(e))
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to revert itinerary: {e}")
 
 """
 Delete a plan by id endpoint
@@ -1189,8 +1279,9 @@ async def update_smart_anchors(id: str, token: str, req: UpdateSmartAnchorsReque
 Toggle the is_locked state of a specific itinerary event.
 """
 class ToggleEventLockRequest(BaseModel):
-    day_number: int
-    event_number: int
+    event_id: str | None = None
+    day_number: int | None = None
+    event_number: int | None = None
     is_locked: bool
 
 
@@ -1217,7 +1308,14 @@ async def toggle_event_lock(id: str, token: str, req: ToggleEventLockRequest):
             events = list(itinerary.events or [])
             updated = False
             for i, ev in enumerate(events):
-                if ev.get("day_number") == req.day_number and ev.get("event_number") == req.event_number:
+                matches_id = bool(req.event_id and ev.get("event_id") == req.event_id)
+                matches_legacy = (
+                    req.day_number is not None
+                    and req.event_number is not None
+                    and ev.get("day_number") == req.day_number
+                    and ev.get("event_number") == req.event_number
+                )
+                if matches_id or matches_legacy:
                     events[i] = {**ev, "is_locked": req.is_locked}
                     updated = True
                     break

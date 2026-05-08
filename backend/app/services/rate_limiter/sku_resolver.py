@@ -66,18 +66,13 @@ SKU = {
     "booking_com": "booking_com",                            # all accommodations.py RapidAPI tools
     "exchange_rates": "exchange_rates",                      # currency.py RapidAPI tools
     # LLM models
-    "gemma_4_26b": "gemma_4_26b",
-    "gemma_4_31b": "gemma_4_31b",
-    "gemini_3.1_flash_lite": "gemini_3.1_flash_lite",
+    "nemotron_3_nano_30b": "nemotron_3_nano_30b",
+    "laguna_xs_2": "laguna_xs_2",
 }
 
 LLM_MODEL_TO_SKU = {
-    "gemma-4-26b-a4b-it": SKU["gemma_4_26b"],
-    "gemini/gemma-4-26b-a4b-it": SKU["gemma_4_26b"],
-    "gemma-4-31b-it": SKU["gemma_4_31b"],
-    "gemini/gemma-4-31b-it": SKU["gemma_4_31b"],
-    "gemini-3.1-flash-lite-preview": SKU["gemini_3.1_flash_lite"],
-    "gemini/gemini-3.1-flash-lite-preview": SKU["gemini_3.1_flash_lite"],
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": SKU["nemotron_3_nano_30b"],
+    "openrouter/poolside/laguna-xs.2:free": SKU["laguna_xs_2"],
 }
 
 

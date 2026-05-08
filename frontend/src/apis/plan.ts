@@ -143,6 +143,8 @@ export interface TripItinerary {
     tips: string[];
     status: string;
     smart_anchors: SmartAnchor[];
+    snapshot_cursor?: number;
+    events_hash?: string;
     created_at: string;
     updated_at: string;
 }
@@ -163,6 +165,35 @@ export interface UpdatePlanResponse {
 export interface DeletePlanResponse {
     message?: string;
     status_code?: number;
+}
+
+export interface ItinerarySnapshot {
+    id: string;
+    trip_id: string;
+    version_index: number;
+    events_count: number;
+    cost?: number | null;
+    title?: string | null;
+    description?: string | null;
+    created_at?: string;
+}
+
+export interface ItinerarySnapshotsResponse {
+    message?: string;
+    status_code?: number;
+    snapshot_cursor?: number;
+    snapshots?: ItinerarySnapshot[];
+}
+
+export interface RevertItineraryResponse {
+    message?: string;
+    status_code?: number;
+    snapshot_cursor?: number;
+    events_hash?: string;
+    events?: any[];
+    cost?: number | null;
+    title?: string | null;
+    tips?: string[];
 }
 
 export interface TripMembersResponse {
@@ -370,10 +401,30 @@ export const api = {
         day_number: number,
         event_number: number,
         is_locked: boolean,
+        event_id?: string,
     ): Promise<{ message?: string; status_code?: number }> => {
         const { data } = await axios.put(
             `${API_BASE}/api/v1/plan/${id}/events/lock`,
-            { day_number, event_number, is_locked },
+            { day_number, event_number, event_id, is_locked },
+            { params: { token } },
+        );
+        return data;
+    },
+    getItinerarySnapshots: async (token: string, id: string): Promise<ItinerarySnapshotsResponse> => {
+        const { data } = await axios.get<ItinerarySnapshotsResponse>(
+            `${API_BASE}/api/v1/plan/${id}/snapshots`,
+            { params: { token } },
+        );
+        return data;
+    },
+    revertItinerary: async (
+        token: string,
+        id: string,
+        version_index: number,
+    ): Promise<RevertItineraryResponse> => {
+        const { data } = await axios.post<RevertItineraryResponse>(
+            `${API_BASE}/api/v1/plan/${id}/revert`,
+            { version_index },
             { params: { token } },
         );
         return data;

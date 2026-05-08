@@ -281,7 +281,7 @@ export default function UsageViewer() {
       setConfigs(scopeConfigs);
       setUsage(usageData);
     } catch (err) {
-      console.error(err);
+      // Do nothing
     } finally {
       setLoading(false);
     }

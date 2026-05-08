@@ -31,6 +31,7 @@ from app.agent.langgraph_runtime.collaboration import (
     ask_user_directly,
     validate_question_args,
 )
+from app.agent.langgraph_runtime.output_style import with_user_facing_output_policy
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
 from app.agent.helpers.qa_persistence import persist_qa_entry
@@ -168,10 +169,12 @@ async def _generate_seed_question(state: PlannerState) -> dict:
         resp = await runtime.model_client.aio.models.generate_content(
             model=settings.PLANNER_AGENT_MODEL,
             contents=[user_msg],
-            config=types.GenerateContentConfig(
-                system_instruction=COLLABORATION_SYSTEM_PROMPT,
-                temperature=0.7,
-                max_output_tokens=512,
+            config=with_user_facing_output_policy(
+                types.GenerateContentConfig(
+                    system_instruction=COLLABORATION_SYSTEM_PROMPT,
+                    temperature=0.7,
+                    max_output_tokens=512,
+                )
             ),
         )
     except Exception as exc:

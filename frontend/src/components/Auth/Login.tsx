@@ -63,7 +63,6 @@ export default function Login() {
             resetTrip();
             navigate(`/plan/${trip.planningStyle}/${draftRes.trip_id}`, { replace: true });
           } catch (err) {
-            console.error('Failed to submit draft post-login', err);
             navigate(next, { replace: true });
           }
         } else if (res.is_new_user && !isInviteRedirect) {

@@ -14,7 +14,7 @@ from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_l
 from app.services.rate_limiter.sku_resolver import resolve_llm_model_sku
 
 log = get_agent_logger("structural_classifier")
-CONVERSATION_MODEL_SKU = resolve_llm_model_sku(settings.CONVERSATION_AGENT_MODEL)
+EDITOR_MODEL_SKU = resolve_llm_model_sku(settings.EDITOR_AGENT_MODEL)
 
 _PROMPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "prompts", "editor", "structuralClassifierPrompt.md"
@@ -51,7 +51,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
     }
 
     try:
-        await get_rate_limiter().consume(CONVERSATION_MODEL_SKU)
+        await get_rate_limiter().consume(EDITOR_MODEL_SKU)
     except RateLimitExceeded:
         return {"is_structural_change": False, "structural_reason": ""}
 
@@ -59,7 +59,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
         if runtime.model_client is None:
             raise RuntimeError("LLM client not ready")
         resp = await runtime.model_client.aio.models.generate_content(
-            model=settings.CONVERSATION_AGENT_MODEL,
+            model=settings.EDITOR_AGENT_MODEL,
             contents=[json.dumps(prompt_body, default=str)],
             config=types.GenerateContentConfig(
                 system_instruction=STRUCTURAL_SYSTEM_PROMPT,
@@ -79,7 +79,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
     if is_structural:
         conversation_notes = (
             "That change cannot be applied inside this itinerary chat."
-            "I can only answer questions about this current itinerary or make event-level edits to it."
+            " I can only answer questions about this current itinerary or make event-level edits to it."
         )
         emit({"type": "structural_change", "reason": reason or "trip structure"})
 

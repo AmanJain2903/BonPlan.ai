@@ -144,6 +144,7 @@ class AgentRuntime:
     day_tool_block: Optional[types.Tool] = None
     day_tool_block_collaborative: Optional[types.Tool] = None
     finalizer_tool_block: Optional[types.Tool] = None
+    editor_tool_block: Optional[types.Tool] = None
     planner_graph: Optional[Any] = None
     editor_graph: Optional[Any] = None
     checkpointer: Optional[Any] = None
@@ -229,6 +230,7 @@ async def agent_runtime_context():
             research_mcp_decls = _filter_mcp_decls(mcp_decls, _RESEARCH_MCP_TOOLS)
             day_mcp_decls = _filter_mcp_decls(mcp_decls, _DAY_MCP_TOOLS)
             finalizer_mcp_decls = _filter_mcp_decls(mcp_decls, _FINALIZER_MCP_TOOLS)
+            editor_mcp_decls = list(mcp_decls)
 
             runtime.research_tool_block = build_phase_tool_block(
                 research_mcp_decls, RESEARCH_EVENT_TOOL_NAMES
@@ -242,6 +244,7 @@ async def agent_runtime_context():
             runtime.finalizer_tool_block = build_phase_tool_block(
                 finalizer_mcp_decls, FINALIZER_EVENT_TOOL_NAMES
             )
+            runtime.editor_tool_block = types.Tool(function_declarations=editor_mcp_decls)
 
             health_task = asyncio.create_task(_mcp_health_ping(session))
 
@@ -282,6 +285,7 @@ async def agent_runtime_context():
                 runtime.day_tool_block = None
                 runtime.day_tool_block_collaborative = None
                 runtime.finalizer_tool_block = None
+                runtime.editor_tool_block = None
                 runtime.planner_graph = None
                 runtime.editor_graph = None
                 runtime.checkpointer = None

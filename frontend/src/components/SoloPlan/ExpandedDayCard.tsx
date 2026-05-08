@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import { ItineraryDay } from './types';
 import { renderSubCardForEvent } from './subcards';
 import PlaceholderSubCard from './subcards/PlaceholderSubCard';
-import { EASE_OUT_EXPO } from './constants';
+import { EASE_OUT_EXPO, eventIdentityKey } from './constants';
 
 interface ExpandedDayCardBodyProps {
   day: ItineraryDay;
@@ -77,7 +77,7 @@ export default function ExpandedDayCardBody({ day, onViewOnMap, onToggleLock, na
           <div className="flex flex-col gap-3 w-full">
             <AnimatePresence initial={false}>
               {day.events.map((event: any) => {
-                const stableKey = `${event.event_type}-d${event.day_number}-e${event.event_number}`;
+                const stableKey = `${event.event_type}-${eventIdentityKey(event)}`;
                 const updatedAt: number | undefined = event._updatedAt;
 
                 // Only pulse if this _updatedAt value is genuinely new

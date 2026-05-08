@@ -7,6 +7,12 @@ from typing import Any, Dict, List
 from sqlalchemy import select
 
 from app.agent.langgraph_runtime.editor_state import EditorState
+from app.agent.langgraph_runtime.editing.event_utils import (
+    ensure_event_identities,
+    event_by_id,
+    event_by_legacy_ref,
+    events_hash,
+)
 from app.agent.langgraph_runtime.streaming import emit
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary
@@ -17,28 +23,27 @@ from app.logging import get_agent_logger, set_agent_log_context
 log = get_agent_logger("editor_bootstrap")
 
 
-def _resolve_event(events: List[Dict[str, Any]], day_number: int, event_number: int) -> Dict[str, Any] | None:
-    for event in events:
-        if event.get("day_number") == day_number and event.get("event_number") == event_number:
-            return event
-    return None
-
-
 def _resolve_attached_events(
     attached_events: List[Dict[str, Any]],
     current_events: List[Dict[str, Any]],
 ) -> list[dict]:
     resolved: list[dict] = []
     for item in attached_events:
+        event_id = item.get("event_id") if isinstance(item, dict) else None
         day_number = item.get("day_number") if isinstance(item, dict) else None
         event_number = item.get("event_number") if isinstance(item, dict) else None
-        if not isinstance(day_number, int) or not isinstance(event_number, int):
-            continue
-        event_data = _resolve_event(current_events, day_number, event_number)
+        event_data = None
+        if isinstance(event_id, str) and event_id:
+            event_data = event_by_id(current_events, event_id)
+        if event_data is None and isinstance(day_number, int) and isinstance(event_number, int):
+            event_data = event_by_legacy_ref(current_events, day_number, event_number)
         if event_data is None:
             continue
+        day_number = event_data.get("day_number")
+        event_number = event_data.get("event_number")
         resolved.append(
             {
+                "event_id": event_data.get("event_id"),
                 "day_number": day_number,
                 "event_number": event_number,
                 "event_data": event_data,
@@ -67,13 +72,15 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
 
     if (
         not force_reload
+        and state.get("intent") != "edit"
         and isinstance(cached_events, list)
         and isinstance(cached_trip_input, dict)
         and cached_trip_input
     ):
+        prepared_events, _ = ensure_event_identities(cached_events)
         resolved_attached = _resolve_attached_events(
             list(state.get("attached_events") or []),
-            cached_events,
+            prepared_events,
         )
         log.info(
             "Editor bootstrap using cached itinerary context",
@@ -82,9 +89,12 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
             attached_resolved=len(resolved_attached),
         )
         return {
-            "current_itinerary_events": list(cached_events),
+            "current_itinerary_events": list(prepared_events),
             "trip_input": dict(cached_trip_input),
             "research_facts": dict(state.get("cached_research_facts") or {}),
+            "smart_anchors": list(cached_trip_input.get("smart_anchors") or []),
+            "snapshot_cursor": state.get("client_base_snapshot_cursor") or 0,
+            "base_events_hash": state.get("client_base_events_hash") or events_hash(prepared_events),
             "attached_events": resolved_attached,
             "itinerary_context_loaded_from_cache": True,
         }
@@ -119,7 +129,21 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
         emit({"type": "error", "content": "Trip or itinerary not found."})
         return {"cancelled": True}
 
-    current_events = list(itinerary.events or [])
+    current_events, _identity_changed = ensure_event_identities(itinerary.events or [])
+    current_hash = events_hash(current_events)
+
+    client_cursor = state.get("client_base_snapshot_cursor")
+    if state.get("intent") == "edit" and isinstance(client_cursor, int):
+        db_cursor = int(itinerary.snapshot_cursor or 0)
+        if client_cursor != db_cursor:
+            msg = (
+                "This itinerary changed since your view loaded. "
+                "Reload the itinerary and try the edit again."
+            )
+            emit({"type": "edit_rejected", "reason": msg, "conflict": True})
+            emit({"type": "summary", "content": msg})
+            emit({"type": "edit_end", "status": "conflict"})
+            return {"cancelled": True}
 
     destinations_list = trip.destinations
     if isinstance(destinations_list, str):
@@ -145,6 +169,7 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
         "children": trip.children,
         "preferences": (member.trip_preferences or {}) if member else {},
         "textualContext": state.get("user_message", ""),
+        "smart_anchors": itinerary.smart_anchors or [],
     }
 
     resolved_attached = _resolve_attached_events(
@@ -160,6 +185,7 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
                 "status": "success",
                 "events_count": len(current_events),
                 "attached_resolved": len(resolved_attached),
+                "snapshot_cursor": int(itinerary.snapshot_cursor or 0),
             },
             "call_id": call_id,
         }
@@ -176,6 +202,9 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
         "current_itinerary_events": current_events,
         "trip_input": trip_payload,
         "research_facts": {},
+        "smart_anchors": list(itinerary.smart_anchors or []),
+        "snapshot_cursor": int(itinerary.snapshot_cursor or 0),
+        "base_events_hash": current_hash,
         "attached_events": resolved_attached,
         "itinerary_context_loaded_from_cache": False,
     }

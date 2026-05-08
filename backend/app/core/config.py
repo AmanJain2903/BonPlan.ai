@@ -76,33 +76,8 @@ class Settings(BaseSettings):
     GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY")
 
     # LiteLLM provider API keys. LiteLLM reads these provider-native env names,
-    # so keep them explicit and set only the keys needed for the configured
-    # models. Existing GEMINI_API_KEY remains supported for Google AI Studio.
-    GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
-    GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
-    OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
-    OPENAI_API_BASE: str | None = os.getenv("OPENAI_API_BASE")
-    ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
-    ANTHROPIC_API_BASE: str | None = os.getenv("ANTHROPIC_API_BASE")
-    OPENROUTER_API_KEY: str | None = os.getenv("OPENROUTER_API_KEY")
-    OPENROUTER_API_BASE: str | None = os.getenv("OPENROUTER_API_BASE")
-    OR_SITE_URL: str | None = os.getenv("OR_SITE_URL")
-    OR_APP_NAME: str | None = os.getenv("OR_APP_NAME")
-    XAI_API_KEY: str | None = os.getenv("XAI_API_KEY")
-    GROQ_API_KEY: str | None = os.getenv("GROQ_API_KEY")
-    TOGETHERAI_API_KEY: str | None = os.getenv("TOGETHERAI_API_KEY")
-    MISTRAL_API_KEY: str | None = os.getenv("MISTRAL_API_KEY")
-    COHERE_API_KEY: str | None = os.getenv("COHERE_API_KEY")
-    AZURE_API_KEY: str | None = os.getenv("AZURE_API_KEY")
-    AZURE_API_BASE: str | None = os.getenv("AZURE_API_BASE")
-    AZURE_API_VERSION: str | None = os.getenv("AZURE_API_VERSION")
-    VERTEXAI_PROJECT: str | None = os.getenv("VERTEXAI_PROJECT")
-    VERTEXAI_LOCATION: str | None = os.getenv("VERTEXAI_LOCATION")
-    LITELLM_API_KEY: str | None = os.getenv("LITELLM_API_KEY")
-    LITELLM_API_BASE: str | None = os.getenv("LITELLM_API_BASE")
-    LITELLM_DROP_UNSUPPORTED_PARAMS: bool = _env_bool("LITELLM_DROP_UNSUPPORTED_PARAMS", True)
-    LITELLM_LOCAL_MODEL_COST_MAP: bool = _env_bool("LITELLM_LOCAL_MODEL_COST_MAP", True)
-    LITELLM_VERBOSE: bool = _env_bool("LITELLM_VERBOSE", False)
+    # so keep them explicit and set only the keys needed for the configured models.
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY")
 
     # LiteLLM model settings. Values must include provider prefixes, e.g.
     # "gemini/gemini-2.0-flash", "openai/gpt-5.1", "anthropic/claude-sonnet-4-5",
@@ -121,6 +96,10 @@ class Settings(BaseSettings):
     # Gemini Model Settings for Planner Agent
     PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
     PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
+
+    # Gemini Model Settings for Editor Agent
+    EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
+    EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
 
     @field_validator(
         "SERPER_CONTENT_PARSER_MODEL",

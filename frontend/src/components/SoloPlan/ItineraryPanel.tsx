@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
@@ -9,9 +9,11 @@ import {
   Play,
   Map as MapIcon,
   Activity,
+  History,
 } from 'lucide-react';
 import { EASE_OUT_EXPO, SHIMMER_WIDTHS, eventKey } from './constants';
 import { ItineraryState } from './types';
+import type { ItinerarySnapshot } from '../../apis/plan';
 import DayCard from './DayCard';
 import ExpandedDayCardBody from './ExpandedDayCard';
 import DayMapViewBody from './DayMapView';
@@ -25,6 +27,13 @@ interface ItineraryPanelProps {
   errorType?: 'stopped' | 'error' | null;
   onRetry?: () => void;
   onToggleLock?: (event: any) => void;
+  snapshots?: ItinerarySnapshot[];
+  snapshotCursor?: number;
+  snapshotsLoading?: boolean;
+  snapshotsError?: string;
+  revertingSnapshot?: number | null;
+  onOpenSnapshots?: () => void;
+  onRevertSnapshot?: (versionIndex: number) => void;
 }
 
 export default function ItineraryPanel({
@@ -34,9 +43,18 @@ export default function ItineraryPanel({
   errorType,
   onRetry,
   onToggleLock,
+  snapshots = [],
+  snapshotCursor,
+  snapshotsLoading = false,
+  snapshotsError = '',
+  revertingSnapshot = null,
+  onOpenSnapshots,
+  onRevertSnapshot,
 }: ItineraryPanelProps) {
   const [showTips, setShowTips] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
   const tipsRef = useRef<HTMLDivElement>(null);
+  const snapshotsRef = useRef<HTMLDivElement>(null);
 
   // Expanded day + map overlay state
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -71,19 +89,28 @@ export default function ItineraryPanel({
   }, []);
 
   useEffect(() => {
-    if (!showTips) return;
-    const handler = (e: MouseEvent) => {
-      if (tipsRef.current && !tipsRef.current.contains(e.target as Node)) {
+    if (!showTips && !showSnapshots) return;
+    const handler = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (showTips && tipsRef.current && !tipsRef.current.contains(target)) {
         setShowTips(false);
       }
+      if (showSnapshots && snapshotsRef.current && !snapshotsRef.current.contains(target)) {
+        setShowSnapshots(false);
+      }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showTips]);
+    document.addEventListener('pointerdown', handler, true);
+    return () => document.removeEventListener('pointerdown', handler, true);
+  }, [showTips, showSnapshots]);
 
   const isGenerating = planStatus === 'GENERATING';
   const hasStarted = itineraryState.hasStarted && itineraryState.days.length > 0;
   const hasDayCards = hasStarted && itineraryState.days.some((d) => d.events.length > 0);
+  const displayedSnapshots = useMemo(
+    () => [...snapshots].sort((a, b) => b.version_index - a.version_index),
+    [snapshots],
+  );
 
   const selectedDayData =
     selectedDay != null ? itineraryState.days.find((d) => d.dayNumber === selectedDay) || null : null;
@@ -169,52 +196,121 @@ export default function ItineraryPanel({
       }}
       exit={{ opacity: 0, transition: { duration: 0.3 } }}
       transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
-      className="flex-shrink-0 flex flex-col bg-carbon/40 border border-white/[0.06] rounded-3xl overflow-hidden"
+      className="relative flex-shrink-0 flex flex-col bg-carbon/40 border border-white/[0.06] rounded-3xl overflow-hidden"
     >
       {/* Google Maps API preload (hidden, script-only). Keeps the Map toggle feeling instant. */}
       <GoogleMapsApiLoader solutionChannel="GMP_BonPlan_soloPlan" />
+
+      {/* Fixed itinerary panel controls. The card grid scrolls underneath these on larger screens. */}
+      {hasStarted && itineraryState.tripTips && itineraryState.tripTips.length > 0 && (
+        <div ref={tipsRef} className="absolute top-1 right-1 z-50 flex flex-col items-end sm:top-1 sm:right-1">
+          <button
+            onClick={() => setShowTips(!showTips)}
+            className={`p-2 rounded-full transition-colors group ${showTips ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'
+              }`}
+            title="Trip Tips"
+          >
+            <Info className="w-5 h-5" />
+          </button>
+          <AnimatePresence>
+            {showTips && (
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95, transition: { duration: 0.3 } }}
+                transition={{ duration: 0.2 }}
+                className="mt-2 w-72 p-5 bg-carbon/90 border border-cyan/20 rounded-2xl shadow-2xl backdrop-blur-xl max-h-[60vh] overflow-hidden bg-gradient-to-t from-cyan/10 to-transparent"
+              >
+                <h4 className="text-sm font-bold text-cyan mb-3 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Trip Tips
+                </h4>
+                <ul className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 scrollbar-hide">
+                  {itineraryState.tripTips.map((tip, i) => (
+                    <li key={i} className="text-xs text-white/80 leading-relaxed border-l-2 border-cyan/30 pl-3">
+                      {tip}
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {hasStarted && onOpenSnapshots && (
+        <div ref={snapshotsRef} className="absolute top-1 left-1 z-50 flex flex-col items-start sm:top-1 sm:left-1">
+          <button
+            onClick={() => {
+              const next = !showSnapshots;
+              setShowSnapshots(next);
+              if (next) onOpenSnapshots();
+            }}
+            className={`p-2 rounded-full transition-colors group ${showSnapshots ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'
+              }`}
+            title="Version history"
+          >
+            <History className="w-5 h-5" />
+          </button>
+          <AnimatePresence>
+            {showSnapshots && (
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95, transition: { duration: 0.3 } }}
+                transition={{ duration: 0.2 }}
+                className="mt-2 w-72 p-5 bg-carbon/90 border border-cyan/20 rounded-2xl shadow-2xl backdrop-blur-xl max-h-[60vh] overflow-hidden bg-gradient-to-t from-cyan/10 to-transparent"
+              >
+                <h4 className="text-sm font-bold text-cyan mb-3 flex items-center gap-2">
+                  <History className="w-4 h-4" />
+                  Versions
+                </h4>
+
+                {snapshotsLoading ? (
+                  <div className="text-xs text-white/55 py-3">Loading versions...</div>
+                ) : snapshotsError ? (
+                  <div className="text-xs text-red-300/90 py-3">{snapshotsError}</div>
+                ) : (
+                  <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 scrollbar-hide">
+                    {displayedSnapshots.length === 0 ? (
+                      <div className="text-xs text-white/55 py-3">No versions yet.</div>
+                    ) : displayedSnapshots.map((snapshot) => {
+                      const isCurrent = snapshot.version_index === snapshotCursor;
+                      const isReverting = revertingSnapshot === snapshot.version_index;
+                      return (
+                        <button
+                          key={snapshot.id || snapshot.version_index}
+                          onClick={() => {
+                            if (isCurrent || isReverting) return;
+                            onRevertSnapshot?.(snapshot.version_index);
+                          }}
+                          disabled={isCurrent || isReverting || snapshotsLoading}
+                          className={`w-full text-left px-3 py-3 rounded-xl border transition-all ${isCurrent
+                            ? 'border-cyan/55 bg-cyan/15'
+                            : 'border-white/10 bg-white/[0.03] hover:border-cyan/35 hover:bg-cyan/10'
+                            } ${isReverting ? 'opacity-70' : ''}`}
+                        >
+                          <p className="text-xs text-white/80 leading-relaxed line-clamp-2">
+                            {snapshot.description || 'Saved itinerary'}
+                          </p>
+                          <div className="mt-2 text-[10px] uppercase tracking-wider text-white/35">
+                            {formatSnapshotDate(snapshot.created_at)}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       <div
         className={`flex-1 flex flex-col items-center px-3 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 relative w-full scrollbar-hide ${selectedDay == null ? 'overflow-y-auto' : 'overflow-hidden'
           } ${(!hasStarted || (errorType && !hasDayCards)) ? 'justify-center' : 'justify-start'}`}
       >
-        {/* Trip tips button (always visible, overlay or not). */}
-        {hasStarted && itineraryState.tripTips && itineraryState.tripTips.length > 0 && (
-          <div ref={tipsRef} className="absolute top-1 right-1 z-50 flex flex-col items-end sm:top-1 sm:right-1">
-            <button
-              onClick={() => setShowTips(!showTips)}
-              className={`p-2 rounded-full transition-colors group ${showTips ? 'bg-cyan text-black' : 'text-cyan hover:bg-cyan/20'
-                }`}
-              title="Trip Tips"
-            >
-              <Info className="w-5 h-5" />
-            </button>
-            <AnimatePresence>
-              {showTips && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.95, transition: { duration: 0.3 } }}
-                  transition={{ duration: 0.2 }}
-                  className="mt-2 w-72 p-5 bg-carbon/90 border border-cyan/20 rounded-2xl shadow-2xl backdrop-blur-xl max-h-[60vh] overflow-hidden bg-gradient-to-t from-cyan/10 to-transparent"
-                >
-                  <h4 className="text-sm font-bold text-cyan mb-3 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    Trip Tips
-                  </h4>
-                  <ul className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 scrollbar-hide">
-                    {itineraryState.tripTips.map((tip, i) => (
-                      <li key={i} className="text-xs text-white/80 leading-relaxed border-l-2 border-cyan/30 pl-3">
-                        {tip}
-                      </li>
-                    ))}
-                  </ul>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
         {/* Error/stopped state WITHOUT day cards rendered */}
         {errorType && !hasDayCards ? (
           <motion.div
@@ -416,4 +512,17 @@ export default function ItineraryPanel({
       </div>
     </motion.div>
   );
+}
+
+function formatSnapshotDate(value?: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }

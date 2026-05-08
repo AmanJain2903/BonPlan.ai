@@ -8,10 +8,8 @@ export const api = {
                 `${API_BASE}/api/v1/places/destination-images-by-name`,
                 { params: { destination, count, min_ratio } }
             );
-            console.log('Destination images by name:', data);
             return data.image_urls;
         } catch (error) {
-            console.error('Failed to fetch destination image:', error);
             // Fallback image in case of error (a nice default placeholder)
             return [FALLBACK_IMAGE];
         }
@@ -23,7 +21,6 @@ export const api = {
             });
             return data.image_urls;
         } catch (error) {
-            console.error('Failed to fetch destination image:', error);
             return [FALLBACK_IMAGE];
         }
     },

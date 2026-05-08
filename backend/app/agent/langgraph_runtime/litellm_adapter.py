@@ -41,6 +41,7 @@ from app.agent.langgraph_runtime.context_pruning import (
     _needs_pruning,
     _prune_history,
 )
+from app.agent.langgraph_runtime.output_style import with_user_facing_output_policy
 
 log = get_agent_logger("litellm_adapter")
 
@@ -136,6 +137,7 @@ async def run_chat_loop(
     """
     client = runtime.model_client
     session = runtime.mcp_session
+    config = with_user_facing_output_policy(config)
 
     async def _is_cancelled() -> bool:
         if cancellation_callback is None:
@@ -720,10 +722,7 @@ async def run_chat_loop(
                     log.info("Pruning history", node=node_name)
                     emit({
                         "type": "pruning",
-                        "content": (
-                            "Context window filling up — summarizing and "
-                            "dropping older messages to free room."
-                        ),
+                        "content": "Refreshing context so planning can continue smoothly.",
                     })
                     pruned, dropped, summary = await _prune_history(
                         client, current_history, config=config

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
-import { api, Plan, TripItinerary, SmartAnchor } from '../../apis/plan';
+import { api, Plan, TripItinerary, SmartAnchor, ItinerarySnapshot } from '../../apis/plan';
 import { Bot, Minimize2, ArrowLeftRight, MessageSquare, X as XIcon } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
@@ -90,10 +90,15 @@ export default function SoloPlanView() {
   const [anchorDrafts, setAnchorDrafts] = useState<SmartAnchor[]>([]);
   const [anchorsModalOpen, setAnchorsModalOpen] = useState(false);
   const [savingAnchors, setSavingAnchors] = useState(false);
+  const [snapshots, setSnapshots] = useState<ItinerarySnapshot[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  const [snapshotsError, setSnapshotsError] = useState('');
+  const [revertingSnapshot, setRevertingSnapshot] = useState<number | null>(null);
 
   const messageEndRef = useRef<HTMLDivElement>(null);
   const thinkingEndRef = useRef<HTMLDivElement>(null);
   const summaryEndRef = useRef<HTMLDivElement>(null);
+  const lastSnapshotRefreshCursorRef = useRef<number | null>(null);
 
   // Message Canvas Scroll Position and State
   const scrollPositionRef = useRef(0);
@@ -149,12 +154,14 @@ export default function SoloPlanView() {
     if (!token || !tripId) return;
     const newLocked = !(event?.is_locked === true);
     try {
-      await api.toggleEventLock(token, tripId, event.day_number, event.event_number, newLocked);
+      await api.toggleEventLock(token, tripId, event.day_number, event.event_number, newLocked, event.event_id);
       setItineraryState((prev) => {
         const days = prev.days.map((day) => {
           if (day.dayNumber !== event.day_number) return day;
           const events = day.events.map((ev: any) =>
-            ev.event_number === event.event_number ? { ...ev, is_locked: newLocked } : ev,
+            (event.event_id ? ev.event_id === event.event_id : ev.event_number === event.event_number)
+              ? { ...ev, is_locked: newLocked }
+              : ev,
           );
           return { ...day, events };
         });
@@ -162,6 +169,30 @@ export default function SoloPlanView() {
       });
     } catch {
       // silently ignore
+    }
+  }, [tripId]);
+
+  const refreshSnapshots = useCallback(async (showLoading = false) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+    if (showLoading) setSnapshotsLoading(true);
+    setSnapshotsError('');
+    try {
+      const res = await api.getItinerarySnapshots(token, tripId);
+      if (res.status_code && res.status_code >= 400) {
+        setSnapshotsError(res.message || 'Could not load versions.');
+        return;
+      }
+      setSnapshots(res.snapshots || []);
+      if (typeof res.snapshot_cursor === 'number') {
+        lastSnapshotRefreshCursorRef.current = res.snapshot_cursor;
+        setItineraryState((prev) => ({ ...prev, snapshotCursor: res.snapshot_cursor }));
+        setTripItinerary((prev) => prev ? { ...prev, snapshot_cursor: res.snapshot_cursor } : prev);
+      }
+    } catch {
+      setSnapshotsError('Could not load versions.');
+    } finally {
+      if (showLoading) setSnapshotsLoading(false);
     }
   }, [tripId]);
 
@@ -178,18 +209,84 @@ export default function SoloPlanView() {
       // While the run is active, lock the displayed mode to whatever the
       // session was started in. Survives navigation away & back.
       setChatMode(session.mode);
+      if (session.mode === 'editing') {
+        setPlan((prev) => prev ? { ...prev, status: 'EDITING' } : prev);
+      }
+    }
+
+    if (session.mode === 'editing' && (
+      session.itineraryState.snapshotCursor !== undefined || session.itineraryState.eventsHash
+    )) {
+      setTripItinerary((prev) => prev ? {
+        ...prev,
+        events: flattenItineraryEvents(session.itineraryState),
+        cost: session.itineraryState.tripCostEstimate ?? prev.cost,
+        title: session.itineraryState.tripTitle ?? prev.title,
+        tips: session.itineraryState.tripTips ?? prev.tips,
+        status: 'GENERATED',
+        snapshot_cursor: session.itineraryState.snapshotCursor ?? prev.snapshot_cursor,
+        events_hash: session.itineraryState.eventsHash ?? prev.events_hash,
+      } : prev);
     }
 
     if (!session.isActive && session.errorType == null) {
       setGeneratingOverride(false);
       setPlan((prev) => prev ? { ...prev, status: 'GENERATED' } : prev);
       setTripItinerary((prev) => prev ? { ...prev, status: 'GENERATED' } : prev);
+      const cursor = session.itineraryState.snapshotCursor;
+      if (
+        session.mode === 'editing' &&
+        typeof cursor === 'number' &&
+        lastSnapshotRefreshCursorRef.current !== cursor
+      ) {
+        lastSnapshotRefreshCursorRef.current = cursor;
+        void refreshSnapshots(false);
+      }
       if (chatMode !== 'editing') setChatMode('editing');
     } else if (!session.isActive && session.errorType != null) {
       // Keep generatingOverride=true so the page stays on GENERATING
       // Don't reset plan/tripItinerary status; the UI handles error/stopped via errorType
     }
-  }, [chatMode]);
+  }, [chatMode, refreshSnapshots]);
+
+  const handleOpenSnapshots = useCallback(async () => {
+    if (!tripId || snapshotsLoading) return;
+    await refreshSnapshots(true);
+  }, [tripId, snapshotsLoading, refreshSnapshots]);
+
+  const handleRevertSnapshot = useCallback(async (versionIndex: number) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId || revertingSnapshot != null) return;
+    setRevertingSnapshot(versionIndex);
+    setSnapshotsError('');
+    try {
+      const res = await api.revertItinerary(token, tripId, versionIndex);
+      if (res.status_code && res.status_code >= 400) {
+        setSnapshotsError(res.message || 'Could not restore that version.');
+        return;
+      }
+      setItineraryState((prev) => buildStateFromItineraryPayload(prev, tripItinerary, res));
+      setTripItinerary((prev) => prev ? {
+        ...prev,
+        events: Array.isArray(res.events) ? res.events : prev.events,
+        cost: res.cost ?? prev.cost,
+        title: res.title ?? prev.title,
+        tips: Array.isArray(res.tips) ? res.tips : prev.tips,
+        status: 'GENERATED',
+        snapshot_cursor: typeof res.snapshot_cursor === 'number' ? res.snapshot_cursor : prev.snapshot_cursor,
+        events_hash: typeof res.events_hash === 'string' ? res.events_hash : prev.events_hash,
+      } : prev);
+      if (typeof res.snapshot_cursor === 'number') {
+        lastSnapshotRefreshCursorRef.current = res.snapshot_cursor;
+      }
+      setPlan((prev) => prev ? { ...prev, status: 'GENERATED' } : prev);
+      setSelectedEvents([]);
+    } catch {
+      setSnapshotsError('Could not restore that version.');
+    } finally {
+      setRevertingSnapshot(null);
+    }
+  }, [tripId, revertingSnapshot, tripItinerary]);
 
   // Subscribe to generationManager for this trip
   useEffect(() => {
@@ -254,6 +351,8 @@ export default function SoloPlanView() {
         setPlan(planRes.plan);
         const itin = planRes.tripItinerary || null;
         setTripItinerary(itin);
+        lastSnapshotRefreshCursorRef.current =
+          typeof itin?.snapshot_cursor === 'number' ? itin.snapshot_cursor : null;
         if (itin?.smart_anchors) setSmartAnchors(itin.smart_anchors);
 
         // Check if generationManager already has an active session (user navigated away and back)
@@ -293,7 +392,6 @@ export default function SoloPlanView() {
           }
         }
       } catch (err) {
-        console.error('SoloPlanView access error:', err);
         navigate('/');
       } finally {
         setLoading(false);
@@ -386,12 +484,14 @@ export default function SoloPlanView() {
       cachedItineraryEvents,
       cachedTripInput,
       cachedResearchFacts: {},
+      baseSnapshotCursor: itineraryState.snapshotCursor ?? tripItinerary?.snapshot_cursor,
+      baseEventsHash: itineraryState.eventsHash ?? tripItinerary?.events_hash,
       forceReloadItinerary: false,
       appendUserTurn: true,
     });
     setChatInput('');
     setSelectedEvents([]);
-  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, user?.preferences, selectedEvents]);
+  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, tripItinerary, user?.preferences, selectedEvents]);
 
   // Loading spinner
   if (loading) {
@@ -612,6 +712,13 @@ export default function SoloPlanView() {
               errorType={errorType}
               onRetry={canEdit ? handleRetry : undefined}
               onToggleLock={handleToggleLock}
+              snapshots={snapshots}
+              snapshotCursor={itineraryState.snapshotCursor ?? tripItinerary?.snapshot_cursor}
+              snapshotsLoading={snapshotsLoading}
+              snapshotsError={snapshotsError}
+              revertingSnapshot={revertingSnapshot}
+              onOpenSnapshots={canEdit ? handleOpenSnapshots : undefined}
+              onRevertSnapshot={canEdit && !isGenerating ? handleRevertSnapshot : undefined}
             />
 
             {/* RIGHT: Chat Panel — desktop only inline, mobile as overlay */}
@@ -834,6 +941,46 @@ function buildCachedTripInput(plan: Plan, preferences: any, textualContext: stri
     children: plan.children,
     preferences: preferences || {},
     textualContext,
+  };
+}
+
+function buildStateFromItineraryPayload(
+  prev: ItineraryState,
+  currentItinerary: TripItinerary | null,
+  payload: {
+    events?: any[];
+    cost?: number | null;
+    title?: string | null;
+    tips?: string[];
+    snapshot_cursor?: number;
+    events_hash?: string;
+  },
+): ItineraryState {
+  const events = Array.isArray(payload.events) ? payload.events : (currentItinerary?.events || []);
+  const next = replayEvents({
+    id: currentItinerary?.id || '',
+    title: payload.title ?? currentItinerary?.title ?? prev.tripTitle ?? null,
+    origin: currentItinerary?.origin ?? null,
+    destinations: currentItinerary?.destinations?.length
+      ? currentItinerary.destinations
+      : (prev.journey || []),
+    start_date: currentItinerary?.start_date ?? null,
+    end_date: currentItinerary?.end_date ?? null,
+    cost: payload.cost ?? currentItinerary?.cost ?? prev.tripCostEstimate ?? null,
+    days: currentItinerary?.days ?? prev.days.length,
+    events,
+    tips: Array.isArray(payload.tips) ? payload.tips : (currentItinerary?.tips || prev.tripTips || []),
+    status: 'GENERATED',
+    smart_anchors: currentItinerary?.smart_anchors || [],
+    snapshot_cursor: payload.snapshot_cursor,
+    events_hash: payload.events_hash,
+    created_at: currentItinerary?.created_at || '',
+    updated_at: currentItinerary?.updated_at || '',
+  });
+  return {
+    ...next,
+    snapshotCursor: typeof payload.snapshot_cursor === 'number' ? payload.snapshot_cursor : prev.snapshotCursor,
+    eventsHash: typeof payload.events_hash === 'string' ? payload.events_hash : prev.eventsHash,
   };
 }
 

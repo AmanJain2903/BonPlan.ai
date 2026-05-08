@@ -65,6 +65,8 @@ async def chat_with_itinerary(request: Request, trip_id: str):
     cached_itinerary_events = body.get("cached_itinerary_events") or []
     cached_trip_input = body.get("cached_trip_input") or {}
     cached_research_facts = body.get("cached_research_facts") or {}
+    base_snapshot_cursor = body.get("base_snapshot_cursor")
+    base_events_hash = body.get("base_events_hash")
     force_reload_itinerary = bool(body.get("force_reload_itinerary", False))
 
     if not isinstance(message, str) or not message.strip():
@@ -79,6 +81,10 @@ async def chat_with_itinerary(request: Request, trip_id: str):
         raise HTTPException(status_code=400, detail="`cached_trip_input` must be an object.")
     if cached_research_facts and not isinstance(cached_research_facts, dict):
         raise HTTPException(status_code=400, detail="`cached_research_facts` must be an object.")
+    if base_snapshot_cursor is not None and not isinstance(base_snapshot_cursor, int):
+        raise HTTPException(status_code=400, detail="`base_snapshot_cursor` must be an integer.")
+    if base_events_hash is not None and not isinstance(base_events_hash, str):
+        raise HTTPException(status_code=400, detail="`base_events_hash` must be a string.")
 
     await _assert_trip_access(str(trip_id), str(user_id))
 
@@ -102,6 +108,8 @@ async def chat_with_itinerary(request: Request, trip_id: str):
                 cached_itinerary_events=cached_itinerary_events,
                 cached_trip_input=cached_trip_input,
                 cached_research_facts=cached_research_facts,
+                base_snapshot_cursor=base_snapshot_cursor,
+                base_events_hash=base_events_hash,
                 force_reload_itinerary=force_reload_itinerary,
                 cancellation_callback=request.is_disconnected,
             )

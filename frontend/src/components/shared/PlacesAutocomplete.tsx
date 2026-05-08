@@ -211,7 +211,6 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         setActiveIdx(parsed.length > 0 ? 0 : -1);
       } catch (err) {
         if ((err as any)?.name === 'AbortError') return;
-        console.warn('[PlacesAutocomplete] autocomplete failed:', err);
       } finally {
         if (myReqId === reqIdRef.current) setIsFetching(false);
       }
@@ -285,9 +284,6 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
         // billable end of the session token. Block selection if exhausted.
         const preflight = await checkSkuQuota('places_place_details_essentials');
         if (!preflight.allowed && !preflight.skipped) {
-          console.warn(
-            '[PlacesAutocomplete] place_details_essentials quota exhausted — selection blocked',
-          );
           logRateLimitBlock(
             'places_place_details_essentials',
             'Place selection blocked — places_place_details_essentials quota exhausted',
@@ -338,7 +334,6 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
             placeId: s.placeId,
           });
         } catch (err) {
-          console.warn('[PlacesAutocomplete] details failed:', err);
           // Place Details failed → session ends without a billable close,
           // so Google will charge for the keystrokes after all. Commit them.
           flushPendingKeystrokes();

@@ -105,7 +105,6 @@ export async function checkSkuQuota(sku: ClientSku): Promise<SkuStatus> {
     writeCachedStatus(sku, value);
     return value;
   } catch (err) {
-    console.warn(`[rateLimiter] checkSkuQuota(${sku}) failed`, err);
     return DEFAULTS;
   }
 }
@@ -149,7 +148,6 @@ export async function trackClientSku(
         skipped: false,
       };
     }
-    console.warn(`[rateLimiter] trackClientSku(${sku}, ${count}) failed`, err);
     return DEFAULTS;
   }
 }

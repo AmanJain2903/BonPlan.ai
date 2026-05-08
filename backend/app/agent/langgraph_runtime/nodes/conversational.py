@@ -8,6 +8,7 @@ from typing import Any, Dict
 from app.agent.llm import litellm_types as types
 from app.agent.core.runtime import _DAY_MCP_TOOLS, _RESEARCH_MCP_TOOLS, runtime
 from app.agent.langgraph_runtime.editor_state import EditorState
+from app.agent.langgraph_runtime.output_style import with_user_facing_output_policy
 from app.agent.langgraph_runtime.streaming import emit
 from app.core.config import settings
 from app.logging import get_agent_logger
@@ -109,6 +110,7 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
         max_output_tokens=4096,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
+    config = with_user_facing_output_policy(config)
 
     CURRENT_ITINERARY = json.dumps(_compact_itinerary(state.get('current_itinerary_events') or []), default=str)
     if CURRENT_ITINERARY:

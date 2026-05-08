@@ -104,6 +104,7 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
         {options.map((option) => {
           const theme = THEME_MAP[option.id];
           if (!theme) return null;
+          const isComingSoon = option.id === 'squad';
 
           const IconComponent = theme.Icon;
           const AnimatedVisual = theme.Visual;
@@ -111,8 +112,16 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
           return (
             <button
               key={option.id}
-              onClick={() => onSelect(option.id as PlanningStyle)}
-              className={`group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-6 sm:p-10 text-left transition-all duration-300 hover:bg-carbon/60 cursor-pointer overflow-hidden ${theme.borderColorHover} ${theme.shadowHover}`}
+              onClick={() => {
+                if (!isComingSoon) onSelect(option.id as PlanningStyle);
+              }}
+              disabled={isComingSoon}
+              aria-disabled={isComingSoon}
+              className={`group relative rounded-2xl border border-white/[0.08] bg-carbon/40 backdrop-blur-sm p-6 sm:p-10 text-left transition-all duration-300 overflow-hidden ${
+                isComingSoon
+                  ? 'cursor-not-allowed opacity-75 hover:bg-red-300/10'
+                  : `hover:bg-carbon/60 cursor-pointer ${theme.borderColorHover} ${theme.shadowHover}`
+              }`}
             >
               {/* Background Glows */}
               <div className="pointer-events-none absolute -inset-24 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-3xl">
@@ -154,6 +163,12 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
                     </div>
                   )}
                 </div>
+
+                {isComingSoon && (
+                          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-200">
+                            Coming Soon
+                          </span>
+                        )}
               </div>
 
               {/* Description */}
@@ -165,6 +180,7 @@ export function Step1PlanningStyle({ hoveredTip, onTipChange, onSelect }: Props)
               <div className="relative h-28 rounded-xl bg-white/[0.02] border border-white/[0.04] overflow-hidden">
                 <AnimatedVisual />
               </div>
+
             </button>
           );
         })}

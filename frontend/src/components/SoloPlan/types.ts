@@ -31,6 +31,8 @@ export interface ItineraryState {
   days: ItineraryDay[];
   hasStarted?: boolean;
   tripTips?: string[];
+  snapshotCursor?: number;
+  eventsHash?: string;
 }
 
 export interface UserTurn {
@@ -113,6 +115,7 @@ export interface GenerationSession {
 export interface AttachedEventRef {
   day_number: number;
   event_number: number;
+  event_id?: string;
 }
 
 export interface ChatHistoryEntry {
@@ -129,6 +132,8 @@ export interface GenerationStartOptions {
   cachedItineraryEvents?: any[];
   cachedTripInput?: Record<string, any>;
   cachedResearchFacts?: Record<string, any>;
+  baseSnapshotCursor?: number;
+  baseEventsHash?: string;
   forceReloadItinerary?: boolean;
   appendUserTurn?: boolean;
 }

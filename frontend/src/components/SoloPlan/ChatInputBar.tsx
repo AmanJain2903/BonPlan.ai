@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useEffect, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, Clock, ChevronUp, X, Check } from 'lucide-react';
-import { EVENT_ICON, EVENT_LABEL } from './constants';
+import { EVENT_ICON, EVENT_LABEL, eventIdentityKey } from './constants';
 import type { ChatMode, ItineraryDay, AttachedEventRef } from './types';
 
 const SINGLE_LINE_INPUT_HEIGHT = 44;
@@ -57,6 +57,7 @@ export default function ChatInputBar({
           .map((event: any) => ({
             day_number: event.day_number as number,
             event_number: event.event_number as number,
+            event_id: typeof event.event_id === 'string' ? event.event_id : undefined,
             event_type: String(event.event_type || ''),
             title: getEventMainTitle(event),
           })),
@@ -65,7 +66,7 @@ export default function ChatInputBar({
   }, [itineraryDays]);
 
   const selectedKeySet = useMemo(
-    () => new Set(selectedEvents.map((event) => `${event.day_number}-${event.event_number}`)),
+    () => new Set(selectedEvents.map((event) => event.event_id ? `id:${event.event_id}` : `${event.day_number}-${event.event_number}`)),
     [selectedEvents],
   );
 
@@ -73,7 +74,7 @@ export default function ChatInputBar({
     const lookup = new Map<string, { title: string; event_type: string }>();
     for (const day of pickerDays) {
       for (const event of day.events) {
-        lookup.set(`${event.day_number}-${event.event_number}`, {
+        lookup.set(event.event_id ? `id:${event.event_id}` : `${event.day_number}-${event.event_number}`, {
           title: event.title,
           event_type: event.event_type,
         });
@@ -82,11 +83,13 @@ export default function ChatInputBar({
     return selectedEvents
       .map((selected) => {
         const meta = lookup.get(`${selected.day_number}-${selected.event_number}`);
-        if (!meta) return null;
+        const byId = selected.event_id ? lookup.get(`id:${selected.event_id}`) : null;
+        const resolved = byId || meta;
+        if (!resolved) return null;
         return {
           ...selected,
-          title: meta.title,
-          event_type: meta.event_type,
+          title: resolved.title,
+          event_type: resolved.event_type,
         };
       })
       .filter((item): item is NonNullable<typeof item> => item != null);
@@ -96,20 +99,20 @@ export default function ChatInputBar({
   const activeEvents = activeDay?.events || [];
   const activeEvent = activeEvents[activeEventIndex];
 
-  const toggleEventSelection = (event: { day_number: number; event_number: number }) => {
-    const key = `${event.day_number}-${event.event_number}`;
+  const toggleEventSelection = (event: { day_number: number; event_number: number; event_id?: string }) => {
+    const key = event.event_id ? `id:${event.event_id}` : `${event.day_number}-${event.event_number}`;
     if (selectedKeySet.has(key)) {
       setSelectedEvents(
         selectedEvents.filter(
           (selected) =>
-            !(selected.day_number === event.day_number && selected.event_number === event.event_number),
+            eventIdentityKey(selected) !== eventIdentityKey(event),
         ),
       );
       return;
     }
     setSelectedEvents([
       ...selectedEvents,
-      { day_number: event.day_number, event_number: event.event_number },
+      { day_number: event.day_number, event_number: event.event_number, event_id: event.event_id },
     ]);
   };
 
@@ -263,7 +266,7 @@ export default function ChatInputBar({
         {selectedEventDisplay.length > 0 && (
           <div className="w-full mb-2 flex flex-wrap gap-2">
             {selectedEventDisplay.map((event) => {
-              const key = `${event.day_number}-${event.event_number}`;
+              const key = event.event_id ? `id:${event.event_id}` : `${event.day_number}-${event.event_number}`;
               const Icon = (EVENT_ICON as Record<string, any>)[event.event_type] || EVENT_ICON.DEFAULT;
               return (
                 <button
@@ -272,7 +275,7 @@ export default function ChatInputBar({
                     setSelectedEvents(
                       selectedEvents.filter(
                         (selected) =>
-                          !(selected.day_number === event.day_number && selected.event_number === event.event_number),
+                          eventIdentityKey(selected) !== eventIdentityKey(event),
                       ),
                     )
                   }
@@ -353,7 +356,7 @@ export default function ChatInputBar({
                         <div className="max-h-48 overflow-y-auto scrollbar-hide mt-1 pr-1">
                           <div className="flex flex-col gap-1.5">
                             {activeEvents.map((event, index) => {
-                              const key = `${event.day_number}-${event.event_number}`;
+                              const key = event.event_id ? `id:${event.event_id}` : `${event.day_number}-${event.event_number}`;
                               const Icon = (EVENT_ICON as Record<string, any>)[event.event_type] || EVENT_ICON.DEFAULT;
                               const isSelected = selectedKeySet.has(key);
                               const isActive = index === activeEventIndex;

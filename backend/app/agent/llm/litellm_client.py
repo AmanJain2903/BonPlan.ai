@@ -10,9 +10,6 @@ from typing import Any, Iterable, Optional
 
 from app.core.config import settings
 
-if settings.LITELLM_LOCAL_MODEL_COST_MAP:
-    os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
-
 import litellm
 from litellm import acompletion, completion, token_counter
 
@@ -60,36 +57,18 @@ def _normalize_finish_reason(reason: Any) -> str:
 def configure_litellm() -> None:
     """Expose configured provider keys under the env names LiteLLM expects."""
     provider_env = {
-        "GEMINI_API_KEY": settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY,
-        "GOOGLE_API_KEY": settings.GOOGLE_API_KEY or settings.GEMINI_API_KEY,
-        "OPENAI_API_KEY": settings.OPENAI_API_KEY,
-        "ANTHROPIC_API_KEY": settings.ANTHROPIC_API_KEY,
         "OPENROUTER_API_KEY": settings.OPENROUTER_API_KEY,
-        "XAI_API_KEY": settings.XAI_API_KEY,
-        "GROQ_API_KEY": settings.GROQ_API_KEY,
-        "TOGETHERAI_API_KEY": settings.TOGETHERAI_API_KEY,
-        "MISTRAL_API_KEY": settings.MISTRAL_API_KEY,
-        "COHERE_API_KEY": settings.COHERE_API_KEY,
-        "AZURE_API_KEY": settings.AZURE_API_KEY,
-        "AZURE_API_BASE": settings.AZURE_API_BASE,
-        "AZURE_API_VERSION": settings.AZURE_API_VERSION,
-        "VERTEXAI_PROJECT": settings.VERTEXAI_PROJECT,
-        "VERTEXAI_LOCATION": settings.VERTEXAI_LOCATION,
-        "LITELLM_API_KEY": settings.LITELLM_API_KEY,
-        "LITELLM_API_BASE": settings.LITELLM_API_BASE,
-        "LITELLM_LOCAL_MODEL_COST_MAP": "True" if settings.LITELLM_LOCAL_MODEL_COST_MAP else None,
-        "OPENAI_API_BASE": settings.OPENAI_API_BASE,
-        "ANTHROPIC_API_BASE": settings.ANTHROPIC_API_BASE,
-        "OPENROUTER_API_BASE": settings.OPENROUTER_API_BASE,
-        "OR_SITE_URL": settings.OR_SITE_URL,
-        "OR_APP_NAME": settings.OR_APP_NAME,
+        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
     }
     for key, value in provider_env.items():
         if value and not os.getenv(key):
             os.environ[key] = value
 
-    litellm.drop_params = settings.LITELLM_DROP_UNSUPPORTED_PARAMS
-    litellm.set_verbose = settings.LITELLM_VERBOSE
+    litellm.drop_params = True
+    litellm.set_verbose = False
+    # Prevent repeated provider-list debug noise in terminal output.
+    if hasattr(litellm, "suppress_debug_info"):
+        litellm.suppress_debug_info = True
 
 
 def _tool_blocks_to_openai_tools(

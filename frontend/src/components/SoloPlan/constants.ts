@@ -215,9 +215,23 @@ export const EVENT_ACCENT: Record<string, { text: string; bg: string; border: st
 };
 
 
+export const eventIdentityKey = (event: any): string => {
+  if (event?.event_id) return `id:${event.event_id}`;
+  return `legacy:${event?.day_number}-${event?.event_number}`;
+};
+
+const eventSortValue = (event: any): number => {
+  const sort = Number(event?.event_sort_key);
+  if (Number.isFinite(sort)) return sort;
+  const display = Number(event?.display_event_number);
+  if (Number.isFinite(display)) return display * 1000;
+  const legacy = Number(event?.event_number);
+  return Number.isFinite(legacy) ? legacy * 1000 : 0;
+};
+
 /** Stable per-event key used for navigation highlights (view-on-map, etc). */
 export const eventKey = (event: any): string =>
-  `${event?.event_type}-d${event?.day_number}-e${event?.event_number}`;
+  event?.event_id ? `event-${event.event_id}` : `${event?.event_type}-d${event?.day_number}-e${event?.event_number}`;
 
 function normalizeCoordinates(input: any): { latitude: number; longitude: number } | null {
   if (!input) return null;
@@ -281,8 +295,9 @@ function isCountableEvent(eventType: string): boolean {
 }
 
 export function replayEvents(itinerary: TripItinerary): ItineraryState {
-  const totalDays = itinerary.days;
   const events = itinerary.events || [];
+  const startEvent = events.find((event: any) => event?.event_type === 'START');
+  const totalDays = itinerary.days || startEvent?.start_details?.number_of_days || null;
   const isFullyGenerated = (itinerary.status || '').toUpperCase() === 'GENERATED';
 
   if (events.length === 0 && totalDays == null) {
@@ -293,6 +308,8 @@ export function replayEvents(itinerary: TripItinerary): ItineraryState {
       days: [],
       hasStarted: false,
       tripTips: itinerary.tips?.length ? itinerary.tips : undefined,
+      snapshotCursor: itinerary.snapshot_cursor,
+      eventsHash: itinerary.events_hash,
     };
   }
 
@@ -336,11 +353,11 @@ export function replayEvents(itinerary: TripItinerary): ItineraryState {
     day.title = event.day_title || day.title;
     day.date = event.date || day.date;
 
-    // Upsert by event_number (mirrors backend dedup) so a replayed itinerary
-    // that happened to persist two entries with the same (day_number, event_number)
-    // still renders cleanly with correct cost/activity counts.
+    // Editing uses stable event_id + event_sort_key so insertions/moves do not
+    // require legacy event_number renumbering. Older generation events fall
+    // back to (day_number,event_number).
     const existingIdx = day.events.findIndex(
-      (e: any) => e.event_number === event.event_number,
+      (e: any) => eventIdentityKey(e) === eventIdentityKey(event),
     );
     if (existingIdx === -1) {
       day.events.push(event);
@@ -381,6 +398,9 @@ export function replayEvents(itinerary: TripItinerary): ItineraryState {
   }
 
   const sortedDays = Array.from(dayMap.values()).sort((a, b) => a.dayNumber - b.dayNumber);
+  for (const day of sortedDays) {
+    day.events.sort((a: any, b: any) => eventSortValue(a) - eventSortValue(b));
+  }
 
   return {
     tripTitle: itinerary.title || undefined,
@@ -389,5 +409,7 @@ export function replayEvents(itinerary: TripItinerary): ItineraryState {
     days: sortedDays,
     hasStarted: sortedDays.length > 0,
     tripTips: itinerary.tips?.length ? itinerary.tips : undefined,
+    snapshotCursor: itinerary.snapshot_cursor,
+    eventsHash: itinerary.events_hash,
   };
 }

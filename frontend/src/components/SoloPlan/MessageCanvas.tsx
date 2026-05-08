@@ -165,6 +165,46 @@ function WaitingDots({ visible }: { visible: boolean }) {
   );
 }
 
+const toolStatusLabels: Record<string, string> = {
+  load_itinerary: 'Loading the itinerary',
+  search_web: 'Checking current travel information',
+  get_content_from_url: 'Checking current travel information',
+  search_places: 'Checking places',
+  search_places_nearby: 'Checking nearby places',
+  get_place_info: 'Checking place details',
+  search_hotels: 'Checking hotels',
+  get_hotel_booking_url: 'Checking hotel booking details',
+  search_flights: 'Checking flights',
+  search_multi_city_flights: 'Checking flights',
+  get_next_flights: 'Checking flights',
+  get_flight_booking_details: 'Checking flight details',
+  get_flight_booking_url: 'Checking flight booking details',
+  search_rental_cars: 'Checking rental cars',
+  get_route: 'Checking the route',
+  get_route_matrix: 'Checking travel times',
+  get_optimal_route: 'Checking the best route',
+  get_coordinates: 'Checking the location',
+  get_address: 'Checking the address',
+  get_timezone: 'Checking local time',
+  get_current_timestamp: 'Checking local time',
+  convert_utc_string_to_timestamp: 'Checking local time',
+  convert_timestamp_to_utc_string: 'Checking local time',
+  convert_target_local_time_to_utc: 'Checking local time',
+  get_current_weather: 'Checking weather',
+  get_daily_forecast: 'Checking weather',
+  get_hourly_forecast: 'Checking weather',
+  get_current_air_quality: 'Checking air quality',
+  get_air_quality_forecast: 'Checking air quality',
+  convert_currency_to_USD: 'Checking prices',
+  get_supported_currencies: 'Checking currencies',
+  get_country_code: 'Checking location details',
+  get_airports_and_codes: 'Checking airport options',
+};
+
+function getToolStatusLabel(name: string): string {
+  return toolStatusLabels[name] || 'Checking details';
+}
+
 function ActiveToolIndicator({ activeTool }: { activeTool: { name: string; call_id: string } | null }) {
   return (
     <AnimatePresence>
@@ -177,7 +217,7 @@ function ActiveToolIndicator({ activeTool }: { activeTool: { name: string; call_
           className="flex items-center gap-3 px-4 py-2"
         >
           <Loader2 className="w-4 h-4 text-cyan animate-spin shrink-0" />
-          <span className="text-xs font-bold text-cyan/70 font-mono italic">Executing {activeTool.name}...</span>
+          <span className="text-xs font-bold text-cyan/70 font-mono italic">{getToolStatusLabel(activeTool.name)}...</span>
         </motion.div>
       )}
     </AnimatePresence>
@@ -198,7 +238,7 @@ function ActivePruningIndicator({ activePruningChunk }: { activePruningChunk: an
         >
           <div className="flex items-center gap-3">
             <Loader2 className="w-4 h-4 text-cyan animate-spin shrink-0" />
-            <span className="text-xs font-bold text-cyan/70 font-mono italic">Compacting Memory...</span>
+            <span className="text-xs font-bold text-cyan/70 font-mono italic">Refreshing context...</span>
             <button onClick={() => setExpanded(p => !p)} className="p-1 text-cyan/70 hover:text-cyan transition-colors ml-auto mr-2">
               <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
                 <ChevronDown className="w-4 h-4" />
