@@ -1,6 +1,6 @@
 # get_content_from_url
 
-Fetch a specific URL and return structured, cleaned text (Jina + Gemini parser).
+Fetch a specific URL and return structured, cleaned text (Jina + LLM parser).
 
 ### When to use
 - You have a concrete URL worth reading: a place's `websiteUrl`, a `pageExternalLinks` entry from `search_web`, or a link the user provided.

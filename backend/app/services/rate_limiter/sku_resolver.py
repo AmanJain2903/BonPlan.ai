@@ -21,8 +21,10 @@ Every SKU name returned here MUST match a row in the rate_limit_configs table.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Optional
 
+from app.core.config import settings
 from app.logging import get_rate_limiter_logger
 
 logger = get_rate_limiter_logger("sku_resolver")
@@ -58,17 +60,31 @@ SKU = {
     "autocomplete_session_usage": "autocomplete_session_usage",
     "places_place_details_essentials": "places_place_details_essentials",
     "autocomplete_requests": "autocomplete_requests",
-    # Third-party APIs and internal LLM SKUs.
+    # Third-party APIs.
     "serper_web_search": "serper_web_search",                # search_web tool
-    "serper_content_parser": "serper_content_parser",        # get_content_from_url Gemini parse
     "google_flights": "google_flights",                      # all flights.py RapidAPI tools
     "booking_com": "booking_com",                            # all accommodations.py RapidAPI tools
     "exchange_rates": "exchange_rates",                      # currency.py RapidAPI tools
-    "context_pruning": "context_pruning",                    # planner history-summarization Gemini call
-    "planner_agent": "planner_agent",                        # each planner Gemini turn
-    "conversation_agent": "conversation_agent",              # each conversation Gemini turn
-    "editing_agent": "editing_agent",                        # each editing Gemini turn
+    # LLM models
+    "nemotron_3_nano_30b": "nemotron_3_nano_30b",
+    "laguna_xs_2": "laguna_xs_2",
 }
+
+LLM_MODEL_TO_SKU = {
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": SKU["nemotron_3_nano_30b"],
+    "openrouter/poolside/laguna-xs.2:free": SKU["laguna_xs_2"],
+}
+
+
+def resolve_llm_model_sku(model: str) -> str:
+    model_key = (model or "").strip().lower()
+    sku = LLM_MODEL_TO_SKU.get(model_key)
+    if sku:
+        return sku
+
+    fallback = "llm_" + re.sub(r"[^a-z0-9]+", "_", model_key).strip("_")
+    logger.warning("No LLM model SKU mapping found", model=model, fallback_sku=fallback)
+    return fallback
 
 
 # --- branching resolvers -----------------------------------------------------
@@ -136,9 +152,9 @@ TOOL_TO_SKU: dict[str, SkuResolver] = {
     "search_places": resolve_search_places_sku,
     "search_places_nearby": resolve_search_places_nearby_sku,
     "get_place_info": lambda **_: SKU["places_place_details_enterprise_atmosphere"],
-    # Third-party / internal SKUs (no arg branching).
+    # Third-party / model SKUs (no arg branching).
     "search_web": lambda **_: SKU["serper_web_search"],
-    "get_content_from_url": lambda **_: SKU["serper_content_parser"],
+    "get_content_from_url": lambda **_: resolve_llm_model_sku(settings.SERPER_CONTENT_PARSER_MODEL),
     "get_country_code": lambda **_: SKU["google_flights"],
     "get_airports_and_codes": lambda **_: SKU["google_flights"],
     "search_flights": lambda **_: SKU["google_flights"],

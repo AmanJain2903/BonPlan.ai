@@ -31,7 +31,7 @@ export default function SkuManager() {
       const data = await api.admin.fetchConfigs(token);
       setConfigs(data);
     } catch (err) {
-      console.error(err);
+      // Do nothing
     } finally {
       setLoading(false);
     }
@@ -89,7 +89,6 @@ export default function SkuManager() {
       loadConfigs();
     } catch (err) {
       alert('Error saving config.');
-      console.error(err);
     }
   };
 

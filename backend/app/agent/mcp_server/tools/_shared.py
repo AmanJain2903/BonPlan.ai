@@ -23,8 +23,8 @@ class Waypoint(BaseModel):
       ``search_places_nearby``.
 
     This replaces the previous ``Union[LocationFormat, PlaceIdFormat,
-    AddressFormat]`` shape which was silently collapsed by the Gemini schema
-    conversion (only the first ``anyOf`` branch was kept), causing silent
+    AddressFormat]`` shape which was silently collapsed by the previous tool
+    schema conversion (only the first ``anyOf`` branch was kept), causing silent
     MALFORMED_FUNCTION_CALL failures when the model passed an address or
     place_id form.
     """

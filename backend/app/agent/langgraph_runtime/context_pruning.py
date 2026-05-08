@@ -1,23 +1,12 @@
-from typing import Optional
-
-from google.genai import types
+from typing import Any, Optional
 
 from app.agent.core.runtime import runtime
 from app.core.config import settings
 
 from app.logging import get_agent_logger
-from app.agent.mcp_server.tools._timeouts import TIMEOUTS
-from app.agent.helpers.utils import TOOL_NAME_TO_EVENT_TYPE, ASK_USER_QUESTION_TOOL_NAME
-from app.agent.langgraph_runtime.streaming import emit
-from app.agent.langgraph_runtime.validator import validate_itinerary_event
-from app.agent.langgraph_runtime.collaboration import (
-    await_answer_with_heartbeat,
-    format_answer_for_llm,
-    open_question,
-    validate_question_args,
-)
+from app.agent.llm import litellm_types as types
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_llm_model_sku
 
 log = get_agent_logger("context_pruning")
 
@@ -31,16 +20,35 @@ _PRUNE_TARGET_RATIO = 0.50
 _PRUNE_MAX_ITERS = 8
 
 _MODEL = settings.PLANNER_AGENT_MODEL
+_PRUNING_SKU = resolve_llm_model_sku(settings.CONTEXT_PRUNING_MODEL)
 
 # One-time cache for the static token overhead (system instruction + tool
 # schemas).  Keyed by id(config) so each node's config is measured once.
 _static_overhead_cache: dict[int, int] = {}
 
 
+def _stringify_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(str(item) for item in content)
+    if content is None:
+        return ""
+    return str(content)
+
+
 def _estimate_tokens_from_chars(history: list) -> int:
     """Char/4 heuristic — used when count_tokens fails so pruning still fires."""
     total_chars = 0
     for item in history:
+        if isinstance(item, dict):
+            total_chars += len(_stringify_content(item.get("content")))
+            for tool_call in item.get("tool_calls") or []:
+                fn = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                total_chars += len(str(fn.get("name") or ""))
+                total_chars += len(str(fn.get("arguments") or ""))
+            total_chars += len(str(item.get("name") or ""))
+            continue
         parts = getattr(item, "parts", None) or []
         for p in parts:
             txt = getattr(p, "text", None)
@@ -154,6 +162,23 @@ async def _summarize_dropped(dropped: list) -> Optional[str]:
     try:
         chunks: list[str] = []
         for item in dropped:
+            if isinstance(item, dict):
+                role = item.get("role") or ""
+                content = _stringify_content(item.get("content"))
+                if content:
+                    if role == "tool":
+                        chunks.append(f"[tool_response {item.get('name', '')}] {content[:2000]}")
+                    else:
+                        chunks.append(f"[{role}] {content}")
+                for tool_call in item.get("tool_calls") or []:
+                    if not isinstance(tool_call, dict):
+                        continue
+                    fn = tool_call.get("function") or {}
+                    chunks.append(
+                        f"[tool_call {fn.get('name', '')}] "
+                        f"{str(fn.get('arguments') or '')[:2000]}"
+                    )
+                continue
             parts = getattr(item, "parts", None) or []
             role = getattr(item, "role", "") or ""
             for p in parts:
@@ -179,9 +204,9 @@ async def _summarize_dropped(dropped: list) -> Optional[str]:
             return None
         # Rate-limit gate.
         try:
-            await get_rate_limiter().consume(SKU["context_pruning"])
+            await get_rate_limiter().consume(_PRUNING_SKU)
         except RateLimitExceeded as exc:
-            log.warning("context_pruning quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
+            log.warning("Pruning model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
             return None
         resp = await runtime.pruning_client.aio.models.generate_content(
             model=settings.CONTEXT_PRUNING_MODEL,

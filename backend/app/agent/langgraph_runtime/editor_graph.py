@@ -7,6 +7,7 @@ from app.agent.langgraph_runtime.editor_state import EditorState
 from app.agent.langgraph_runtime.nodes.conversational import conversational_node
 from app.agent.langgraph_runtime.nodes.editor_bootstrap import editor_bootstrap_node
 from app.agent.langgraph_runtime.nodes.intent_classifier import intent_classifier_node
+from app.agent.langgraph_runtime.nodes.itinerary_editor import itinerary_editor_node
 from app.agent.langgraph_runtime.nodes.structural_classifier import structural_classifier_node
 
 
@@ -19,13 +20,15 @@ def _route_after_intent(state: EditorState):
 def _route_after_bootstrap(state: EditorState):
     if state.get("cancelled"):
         return END
-    return "structural_classifier"
+    return "structural_classifier" if state.get("intent") == "edit" else "conversational"
 
 
 def _route_after_structural(state: EditorState):
     if state.get("cancelled"):
         return END
-    return "conversational"
+    if state.get("is_structural_change"):
+        return "conversational"
+    return "itinerary_editor"
 
 
 def build_editor_graph(checkpointer=None):
@@ -35,6 +38,7 @@ def build_editor_graph(checkpointer=None):
     builder.add_node("editor_bootstrap", editor_bootstrap_node)
     builder.add_node("structural_classifier", structural_classifier_node)
     builder.add_node("conversational", conversational_node)
+    builder.add_node("itinerary_editor", itinerary_editor_node)
 
     builder.add_edge(START, "intent_classifier")
     builder.add_conditional_edges(
@@ -51,6 +55,7 @@ def build_editor_graph(checkpointer=None):
         _route_after_bootstrap,
         {
             "structural_classifier": "structural_classifier",
+            "conversational": "conversational",
             END: END,
         },
     )
@@ -59,10 +64,12 @@ def build_editor_graph(checkpointer=None):
         _route_after_structural,
         {
             "conversational": "conversational",
+            "itinerary_editor": "itinerary_editor",
             END: END,
         },
     )
     builder.add_edge("conversational", END)
+    builder.add_edge("itinerary_editor", END)
 
     _checkpointer = checkpointer or MemorySaver()
     return builder.compile(checkpointer=_checkpointer)

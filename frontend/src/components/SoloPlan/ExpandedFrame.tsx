@@ -95,13 +95,13 @@ export default function ExpandedFrame({
         )}
 
         {/* Header */}
-        <div className="relative z-10 shrink-0 px-6 pt-5 pb-4 border-b border-white/[0.06]">
-          <div className="flex items-start gap-3">
-            {/* Left controls */}
-            <div className="flex items-center gap-2 shrink-0">
+        <div className="relative z-10 shrink-0 px-3 sm:px-6 pt-3 sm:pt-5 pb-2 sm:pb-4 border-b border-white/[0.06]">
+          <div className="flex items-start gap-1.5 sm:gap-3">
+            {/* Left: close */}
+            <div className="flex items-center shrink-0 pt-0.5">
               <button
                 onClick={onClose}
-                className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                className="p-1.5 sm:p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-all"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -110,14 +110,14 @@ export default function ExpandedFrame({
 
             {/* Center info */}
             <div className="flex-1 min-w-0">
-              <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white/90 truncate" title={displayTitle}>
+              <h3 className="text-base sm:text-2xl font-bold tracking-tight text-white/90 truncate" title={displayTitle}>
                 <AnimatePresence mode="wait">
                   <motion.span key={displayTitle} {...VALUE_SWAP} className="block truncate">
                     {displayTitle}
                   </motion.span>
                 </AnimatePresence>
               </h3>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
+              <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1 sm:mt-2">
                 <AnimatePresence>
                   {day.date && (
                     <motion.div
@@ -126,33 +126,33 @@ export default function ExpandedFrame({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                       transition={{ duration: 0.25 }}
-                      className="flex items-center gap-1.5 text-cyan/80 bg-cyan/10 px-2.5 py-1 rounded-full"
+                      className="flex items-center gap-1 sm:gap-1.5 text-cyan/80 bg-cyan/10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full"
                     >
-                      <Calendar className="w-3.5 h-3.5 shrink-0" />
-                      <span className="text-[10px] font-semibold uppercase tracking-wider">
+                      <Calendar className="w-3 sm:w-3.5 h-3 sm:h-3.5 shrink-0" />
+                      <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider">
                         {formatDateForDayCard(day.date)}
                       </span>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                <div className="flex items-center gap-1.5 text-white/70 bg-white/[0.04] border border-white/10 px-2.5 py-1 rounded-full">
-                  <Activity className="w-3.5 h-3.5 text-cyan" />
-                  <span className="text-[11px] font-semibold">
+                <div className="flex items-center gap-1 sm:gap-1.5 text-white/70 bg-white/[0.04] border border-white/10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full">
+                  <Activity className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-cyan" />
+                  <span className="text-[9px] sm:text-[11px] font-semibold">
                     {day.eventsCount} {day.eventsCount === 1 ? 'Activity' : 'Activities'}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 text-white/70 bg-white/[0.04] border border-white/10 px-2.5 py-1 rounded-full">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-[11px] font-semibold">
+                <div className="flex items-center gap-0.5 sm:gap-1 text-white/70 bg-white/[0.04] border border-white/10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full">
+                  <DollarSign className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-emerald-400" />
+                  <span className="text-[9px] sm:text-[11px] font-semibold">
                     {day.cost.toFixed(2)}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-white/70 bg-white/[0.04] border border-white/10 px-2.5 py-1 rounded-full">
-                  <Navigation className="w-3.5 h-3.5 text-cyan" />
-                  <span className="text-[11px] font-semibold">
+                <div className="flex items-center gap-1 sm:gap-1.5 text-white/70 bg-white/[0.04] border border-white/10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full">
+                  <Navigation className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-cyan" />
+                  <span className="text-[9px] sm:text-[11px] font-semibold">
                     {formatMiles(distanceMeters)}
                   </span>
                 </div>
@@ -167,9 +167,9 @@ export default function ExpandedFrame({
                     className="flex items-center"
                   >
                     {statusKey === 'error' ? (
-                      <AlertTriangle className="w-4 h-4 text-red-400" />
+                      <AlertTriangle className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-red-400" />
                     ) : statusKey === 'loading' ? (
-                      <Loader2 className="w-4 h-4 text-cyan animate-spin" />
+                      <Loader2 className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-cyan animate-spin" />
                     ) : null}
                   </motion.div>
                 </AnimatePresence>
@@ -177,14 +177,13 @@ export default function ExpandedFrame({
             </div>
 
             {/* Right controls */}
-            <div className="shrink-0">
+            <div className="shrink-0 flex flex-col items-center gap-0.5">
               {actionButton}
-              <div className="flex items-center gap-2 justify-center">
+              <div className="flex items-center gap-1 justify-center">
                 <button
                   onClick={() => canPrev && onNavigate(-1)}
                   disabled={!canPrev}
-                  className={`p-2 rounded-xl transition-all ${canPrev ? 'text-cyan hover:bg-cyan/10' : 'text-white/20 cursor-not-allowed'
-                    }`}
+                  className={`p-1.5 sm:p-2 rounded-xl transition-all ${canPrev ? 'text-cyan hover:bg-cyan/10' : 'text-white/20 cursor-not-allowed'}`}
                   title="Previous day"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -192,8 +191,7 @@ export default function ExpandedFrame({
                 <button
                   onClick={() => canNext && onNavigate(1)}
                   disabled={!canNext}
-                  className={`p-2 rounded-xl transition-all ${canNext ? 'text-cyan hover:bg-cyan/10' : 'text-white/20 cursor-not-allowed'
-                    }`}
+                  className={`p-1.5 sm:p-2 rounded-xl transition-all ${canNext ? 'text-cyan hover:bg-cyan/10' : 'text-white/20 cursor-not-allowed'}`}
                   title="Next day"
                 >
                   <ChevronRight className="w-4 h-4" />

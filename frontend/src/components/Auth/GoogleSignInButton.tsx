@@ -70,8 +70,14 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
                 isAdmin,
               });
 
-              const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-              const next = fromPath && fromPath.startsWith('/admin') && isAdmin ? fromPath : '/';
+              const from = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+              const fromPath = from?.pathname;
+              const fromSearch = from?.search || '';
+              const isInviteRedirect = fromPath === '/share-invite';
+              const next =
+                fromPath && fromPath.startsWith('/admin')
+                  ? (isAdmin ? `${fromPath}${fromSearch}` : '/')
+                  : (fromPath && fromPath !== '/login' && fromPath !== '/register' ? `${fromPath}${fromSearch}` : '/');
 
               const submitDraft = (location.state as any)?.submitDraft;
               
@@ -85,10 +91,9 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
                   resetTrip();
                   navigate(`/plan/${trip.planningStyle}/${draftRes.trip_id}`, { replace: true });
                 } catch (err) {
-                  console.error('Failed to submit draft post-login', err);
                   navigate(next, { replace: true });
                 }
-              } else if (res.is_new_user) {
+              } else if (res.is_new_user && !isInviteRedirect) {
                 setShowWelcome(true);
               } else {
                 navigate(next);
@@ -154,4 +159,3 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
     </>
   );
 }
-

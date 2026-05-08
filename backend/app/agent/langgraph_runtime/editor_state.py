@@ -24,6 +24,11 @@ class EditorState(TypedDict, total=False):
     current_itinerary_events: list
     trip_input: dict
     research_facts: dict
+    smart_anchors: list
+    snapshot_cursor: int
+    base_events_hash: str
+    client_base_snapshot_cursor: int
+    client_base_events_hash: str
     itinerary_context_loaded_from_cache: bool
 
     # ── Classification ────────────────────────────────────────────────────────

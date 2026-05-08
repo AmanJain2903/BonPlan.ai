@@ -31,12 +31,15 @@ export interface ItineraryState {
   days: ItineraryDay[];
   hasStarted?: boolean;
   tripTips?: string[];
+  snapshotCursor?: number;
+  eventsHash?: string;
 }
 
 export interface UserTurn {
   id: string;
   type: 'user';
   text: string;
+  attachedEvents?: AttachedEventRef[];
 }
 
 export interface PendingQuestion {
@@ -103,11 +106,16 @@ export interface GenerationSession {
   isWaitingForUser: boolean;
   abortController: AbortController | null;
   lastRequest: GenerationStartOptions | null;
+  // Unix ms when the current active run started. Survives navigation so the
+  // elapsed timer in SoloPlanView is computed from this rather than local
+  // component state (which resets to 0 on remount).
+  startedAt: number | null;
 }
 
 export interface AttachedEventRef {
   day_number: number;
   event_number: number;
+  event_id?: string;
 }
 
 export interface ChatHistoryEntry {
@@ -124,6 +132,8 @@ export interface GenerationStartOptions {
   cachedItineraryEvents?: any[];
   cachedTripInput?: Record<string, any>;
   cachedResearchFacts?: Record<string, any>;
+  baseSnapshotCursor?: number;
+  baseEventsHash?: string;
   forceReloadItinerary?: boolean;
   appendUserTurn?: boolean;
 }

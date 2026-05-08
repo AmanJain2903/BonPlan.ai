@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.agent.solo_planner import generate_trip_itinerary
+from app.agent.helpers.itinerary_event_cost import sum_chargeable_cost_usd
 from app.agent.langgraph_runtime.collaboration import (
     get_pending,
     submit_answer,
@@ -29,7 +30,7 @@ from app.agent.helpers.qa_persistence import load_collab_qa
 from app.core.config import settings
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary, TripItineraryStatus
-from app.database.models.tripMembersTable import TripMember
+from app.database.models.tripMembersTable import TripInvitationStatus, TripMember
 from app.database.models.tripsTable import PlanStatus, Trip
 from app.logging import get_api_logger
 
@@ -43,6 +44,64 @@ router = APIRouter()
 # internally; without this a task can be GC'd mid-execution when the
 # response generator unwinds from a client disconnect.
 _pending_finalize_tasks: set[asyncio.Task] = set()
+
+
+async def _apply_lock_updates(trip_id: str, updates: list) -> None:
+    """Patch is_locked on already-saved events without touching other fields."""
+    if not updates:
+        return
+    async with Session() as db:
+        itinerary = (
+            await db.execute(select(TripItinerary).where(TripItinerary.trip_id == trip_id))
+        ).scalar_one_or_none()
+        if itinerary is None:
+            return
+        events = list(itinerary.events or [])
+        index = {(e.get("day_number"), e.get("event_number")): i for i, e in enumerate(events)}
+        changed = False
+        for upd in updates:
+            key = (upd.get("day_number"), upd.get("event_number"))
+            idx = index.get(key)
+            if idx is not None:
+                events[idx] = {**events[idx], "is_locked": upd.get("is_locked")}
+                changed = True
+        if changed:
+            itinerary.events = events
+            await db.commit()
+
+
+def _remove_events_from_list(events: list, day_number: int, from_event_number: int) -> list:
+    """Drop regular events on one day from a retry point onward."""
+    return [
+        event
+        for event in events
+        if not (
+            event.get("event_type") not in ("START", "END")
+            and event.get("day_number") == day_number
+            and isinstance(event.get("event_number"), int)
+            and event["event_number"] >= from_event_number
+        )
+    ]
+
+
+async def _apply_event_removal(
+    trip_id: str,
+    day_number: int,
+    from_event_number: int,
+) -> None:
+    """Remove stale events that the validator stripped before a retry."""
+    async with Session() as db:
+        itinerary = (
+            await db.execute(select(TripItinerary).where(TripItinerary.trip_id == trip_id))
+        ).scalar_one_or_none()
+        if itinerary is None:
+            return
+        events = list(itinerary.events or [])
+        next_events = _remove_events_from_list(events, day_number, from_event_number)
+        if len(next_events) == len(events):
+            return
+        itinerary.events = next_events
+        await db.commit()
 
 
 async def _apply_event_write(trip_id: str, event: dict) -> None:
@@ -81,9 +140,8 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
                 if existing_start_event_index is not None:
                     itinerary.events[existing_start_event_index] = event
         elif event_type == "END":
-            end_details = event.get("end_details") or {}
+            end_details = dict(event.get("end_details") or {})
             itinerary.title = end_details.get("trip_title", itinerary.title)
-            itinerary.cost = end_details.get("trip_cost", itinerary.cost)
             itinerary.tips = end_details.get("trip_tips", itinerary.tips)
             # Persist to events so the full event record is available on load.
             if not any(e.get("event_type") == "END" for e in (itinerary.events or [])):
@@ -97,6 +155,11 @@ async def _apply_event_write(trip_id: str, event: dict) -> None:
                         break
                 if existing_end_event_index is not None:
                     itinerary.events[existing_end_event_index] = event
+            # Align column + END payload with summed event charges (frontend uses the same rollup).
+            rolled_up = sum_chargeable_cost_usd(itinerary.events)
+            itinerary.cost = rolled_up
+            end_details["trip_cost"] = rolled_up
+            event["end_details"] = end_details
         else:
             existing_event_index = None
             for i, existing_event in enumerate(itinerary.events):
@@ -148,7 +211,9 @@ async def generate_solo_plan(request: Request, id: str):
             rbac = (
                 await db.execute(
                     select(TripMember).where(
-                        TripMember.trip_id == id, TripMember.user_id == user_id
+                        TripMember.trip_id == id,
+                        TripMember.user_id == user_id,
+                        TripMember.invitation_status == TripInvitationStatus.ACCEPTED.value,
                     )
                 )
             ).scalar_one_or_none()
@@ -171,9 +236,11 @@ async def generate_solo_plan(request: Request, id: str):
                     select(TripItinerary).where(TripItinerary.trip_id == id)
                 )
             ).scalar_one_or_none()
+            _smart_anchors: list = []
             if itinerary_row:
                 current_trip_itinerary = itinerary_row.events
                 itinerary_row.status = TripItineraryStatus.GENERATING
+                _smart_anchors = itinerary_row.smart_anchors or []
 
             await db.commit()
 
@@ -244,6 +311,7 @@ async def generate_solo_plan(request: Request, id: str):
                 "children": plan.children,
                 "preferences": rbac.trip_preferences or {},
                 "textualContext": chat_input,
+                "smart_anchors": _smart_anchors,
             }
     except HTTPException:
         raise
@@ -283,7 +351,17 @@ async def generate_solo_plan(request: Request, id: str):
                     if item is None:
                         return
                     try:
-                        await _apply_event_write(str(id), item)
+                        # Lock-update marker — patch is_locked only.
+                        if isinstance(item, dict) and item.get("__lock_update"):
+                            await _apply_lock_updates(str(id), item.get("updates", []))
+                        elif isinstance(item, dict) and item.get("__events_removed"):
+                            await _apply_event_removal(
+                                str(id),
+                                int(item.get("day_number")),
+                                int(item.get("from_event_number")),
+                            )
+                        else:
+                            await _apply_event_write(str(id), item)
                     except Exception as e:
                         logger.exception("SSE DB write failed", error=str(e))
                 finally:
@@ -365,19 +443,37 @@ async def generate_solo_plan(request: Request, id: str):
 
                 chunk_type = chunk.get("type")
 
-                # Forward first — never block the stream on DB work.
-                yield f"data: {json.dumps(chunk)}\n\n"
-
+                # Queue DB work before forwarding. This does not wait for the
+                # commit, but it does ensure a client disconnect after receiving
+                # a chunk cannot skip the corresponding persistence action.
                 if chunk_type == "event":
                     event_data = chunk.get("data") or {}
                     if event_data:
                         await write_queue.put(event_data)
-                elif chunk_type == "summary":
+                elif chunk_type == "lock_update":
+                    updates = chunk.get("updates") or []
+                    if updates:
+                        await write_queue.put({"__lock_update": True, "updates": updates})
+                elif chunk_type == "events_removed":
+                    day_number = chunk.get("day_number")
+                    from_event_number = chunk.get("from_event_number")
+                    if isinstance(day_number, int) and isinstance(from_event_number, int):
+                        await write_queue.put({
+                            "__events_removed": True,
+                            "day_number": day_number,
+                            "from_event_number": from_event_number,
+                        })
+
+                if chunk_type == "summary":
                     # Any summary text means the agent reached END and is
                     # finalizing. Mark success; more summary chunks may follow.
                     success = True
                 elif chunk_type == "error":
                     success = False
+
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+                if chunk_type == "error":
                     break
 
         except asyncio.CancelledError:
@@ -472,7 +568,9 @@ async def respond_to_question(request: Request, id: str):
         rbac = (
             await db.execute(
                 select(TripMember).where(
-                    TripMember.trip_id == id, TripMember.user_id == user_id
+                    TripMember.trip_id == id,
+                    TripMember.user_id == user_id,
+                    TripMember.invitation_status == TripInvitationStatus.ACCEPTED.value,
                 )
             )
         ).scalar_one_or_none()

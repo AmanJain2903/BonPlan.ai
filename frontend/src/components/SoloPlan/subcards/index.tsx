@@ -32,30 +32,31 @@ export {
  */
 export function renderSubCardForEvent(
   event: any,
-  { onViewOnMap }: { onViewOnMap: (event: any) => void },
+  { onViewOnMap, onToggleLock }: { onViewOnMap: (event: any) => void; onToggleLock?: (event: any) => void },
 ): ReactNode {
   if (!event) return null;
   const handler = () => onViewOnMap(event);
+  const lockHandler = onToggleLock ? () => onToggleLock(event) : undefined;
   const contentKey = event._updatedAt || 'init';
   switch (event.event_type) {
     case 'FLIGHT_TAKEOFF':
-      return <FlightTakeoffCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <FlightTakeoffCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'FLIGHT_LAND':
-      return <FlightLandCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <FlightLandCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'HOTEL_CHECKIN':
-      return <HotelCheckinCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <HotelCheckinCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'HOTEL_CHECKOUT':
-      return <HotelCheckoutCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <HotelCheckoutCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'CAR_PICKUP':
-      return <CarPickupCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <CarPickupCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'CAR_DROPOFF':
-      return <CarDropoffCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <CarDropoffCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'DINING':
-      return <DiningCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <DiningCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'ACTIVITY':
-      return <ActivityCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <ActivityCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'OTHER':
-      return <OtherCard event={event} onViewOnMap={handler} contentKey={contentKey} />;
+      return <OtherCard event={event} onViewOnMap={handler} onToggleLock={lockHandler} contentKey={contentKey} />;
     case 'COMMUTE':
       return <CommuteConnector event={event} contentKey={contentKey} />;
     default:

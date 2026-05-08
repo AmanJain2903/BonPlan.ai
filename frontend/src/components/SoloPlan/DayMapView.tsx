@@ -353,7 +353,7 @@ async function fetchRoutePolyline(
           onResolve(encoded);
         }
       } else {
-        console.warn('[DayMapView] Directions request failed:', status);
+        // Do nothing
       }
     },
   );
@@ -559,6 +559,7 @@ export default function DayMapViewBody({
   const mapsLibRef = useRef<any>(null);
   const geometryLibRef = useRef<any>(null);
   const [libsReady, setLibsReady] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
   const markersRef = useRef<any[]>([]);
@@ -686,8 +687,7 @@ export default function DayMapViewBody({
     }
 
     return { pins, commutes, flightRoutes };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day, allDays, currentIdx, routeVersion, libsReady]);
+  }, [day, allDays, currentIdx, routeVersion]);
 
   // ── Fetch routes for commutes (side-effect, not in useMemo) ─
 
@@ -727,8 +727,7 @@ export default function DayMapViewBody({
         geometryLibRef.current = geometry;
         setLibsReady(true);
       } catch (err) {
-        console.warn('[DayMapView] Google Maps library load failed', err);
-        setMapError('Failed to load Google Maps libraries. Please check your browser console.');
+        setMapError('Failed to load Google Maps libraries.');
       }
     };
     load();
@@ -773,8 +772,8 @@ export default function DayMapViewBody({
           keyboardShortcuts: false,
           gestureHandling: 'greedy',
         });
+        setMapReady(true);
       } catch (err) {
-        console.error('[DayMapView] Map constructor threw:', err);
         setMapError('Failed to initialize the map.');
         return;
       }
@@ -803,7 +802,7 @@ export default function DayMapViewBody({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !libsReady) return;
+    if (!mapReady || !map) return;
     const maps = (window as any).google?.maps;
     const geometry = geometryLibRef.current;
     if (!maps?.Polyline) return;
@@ -902,13 +901,13 @@ export default function DayMapViewBody({
       for (const l of labelsRef.current) l.setMap(null);
       labelsRef.current = [];
     };
-  }, [libsReady, commutes, flightRoutes]);
+  }, [mapReady, commutes, flightRoutes]);
 
   // ── Render markers & set camera ────────────────────────────
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !libsReady) return;
+    if (!mapReady || !map) return;
     const maps = (window as any).google?.maps;
     if (!maps?.Marker || !maps?.LatLngBounds || !maps?.Size || !maps?.Point) return;
 
@@ -964,7 +963,7 @@ export default function DayMapViewBody({
     }
 
     return () => { for (const m of markersRef.current) m.setMap(null); markersRef.current = []; };
-  }, [libsReady, pins, commutes, highlightedEventKey, onNavigateToDay]);
+  }, [mapReady, pins, commutes, highlightedEventKey, onNavigateToDay]);
 
   // ── Tour Animation ─────────────────────────────────────────
 
@@ -1221,9 +1220,10 @@ export default function DayMapViewBody({
         </div>
       )}
 
-      {/* Tour controls (bottom-right) */}
+      {/* Tour controls (bottom-right) — z-30 keeps it above the legend (z-20). On
+           mobile the legend can be wide enough to overlap; move the button up. */}
       {libsReady && canTour && (
-        <div className="absolute bottom-4 right-4 z-20">
+        <div className="absolute bottom-16 sm:bottom-4 right-4 z-30">
           {!isTouring ? (
             <button
               onClick={startTour}

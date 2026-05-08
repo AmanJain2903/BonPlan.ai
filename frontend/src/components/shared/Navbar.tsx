@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, User, LogOut, ChevronDown, Settings, Headset, UserCircle, SlidersHorizontal, Plug, Bell, Shield } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Menu, X, User, LogOut, ChevronDown, Settings, Headset, UserCircle, SlidersHorizontal, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 
@@ -9,6 +9,7 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { isLoggedIn, user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,6 +21,11 @@ export default function Navbar() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     setMenuOpen(false);
@@ -34,13 +40,38 @@ export default function Navbar() {
     ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase()
     : '';
 
-  const menuItemClass =
-    'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:bg-white/[0.06] hover:text-white transition-all duration-150 cursor-pointer';
+  const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
+
+  const menuItemClass = (path: string) => {
+    const active = isActive(path);
+    return `w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 cursor-pointer ${
+      active
+        ? 'bg-cyan/10 text-cyan'
+        : 'text-white/70 hover:bg-white/[0.06] hover:text-white'
+    }`;
+  };
+
+  const mobileItemClass = (path: string) => {
+    const active = isActive(path);
+    return `flex items-center gap-3 py-2.5 text-sm transition-colors ${
+      active ? 'text-cyan' : 'text-white/70 hover:text-white'
+    }`;
+  };
+
+  const dropdownVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: -6, filter: 'blur(4px)' },
+    visible: { opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' },
+  };
+
+  const mobileVariants = {
+    hidden: { opacity: 0, height: 0 },
+    visible: { opacity: 1, height: 'auto' },
+  };
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-midnight/70 backdrop-blur-md border-b border-white/5">
-        <div className="w-full flex items-center justify-between px-6 lg:px-12 xl:px-20 py-4 max-w-8xl mx-auto">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-midnight/80 backdrop-blur-lg border-b border-white/[0.06]">
+        <div className="w-full flex items-center justify-between px-4 sm:px-6 lg:px-12 xl:px-20 py-4 max-w-8xl mx-auto">
           {/* Logo */}
           <Link
             to="/"
@@ -51,9 +82,9 @@ export default function Navbar() {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }
             }}
-            className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-white select-none"
+            className="flex items-center gap-1.5 text-lg sm:text-xl font-bold tracking-tight text-white select-none opacity-100 hover:opacity-75 transition-opacity duration-200 flex-shrink-0"
           >
-            <img src="/logo.png" alt="BonPlan.ai" className="h-9 w-9 object-contain" />
+            <img src="/logo.png" alt="BonPlan.ai" className="h-7 w-7 sm:h-9 sm:w-9 object-contain" />
             <span>BonPlan<span className="text-cyan">.</span>ai</span>
           </Link>
 
@@ -67,7 +98,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', willChange: 'transform, opacity, filter' }}
                   exit={{ opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
                   transition={{ duration: 0.3, ease: 'easeOut' }}
-                  className="relative" 
+                  className="relative"
                   ref={menuRef}
                 >
                   <button
@@ -85,79 +116,77 @@ export default function Navbar() {
                   </button>
 
                   {/* Dropdown */}
-                  <div
-                    className={`absolute right-0 mt-2 w-64 rounded-2xl border border-white/10 bg-carbon/95 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-200 origin-top-right ${menuOpen
-                      ? 'opacity-100 scale-100 translate-y-0'
-                      : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
-                      }`}
-                  >
-                    {/* User header */}
-                    <div className="px-4 py-4 flex items-center gap-3 border-b border-white/5">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-cyan/30 to-cyan/10 flex items-center justify-center text-sm font-bold text-cyan shrink-0">
-                        {initials || <User size={18} />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-white truncate">{fullName || 'User'}</p>
-                        <p className="text-xs text-white/40 truncate">{user?.email}</p>
-                      </div>
-                    </div>
-
-                    {/* Section 1 */}
-                    <div className="py-1.5">
-                      {user?.isAdmin && (
-                        <Link to="/admin" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                          <Shield size={16} className="shrink-0 text-white/40" />
-                          Admin Dashboard
-                        </Link>
-                      )}
-                      <Link to="/account/profile" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                        <UserCircle size={16} className="shrink-0 text-white/40" />
-                        My Profile
-                      </Link>
-                      <Link to="/account/preferences" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                        <SlidersHorizontal size={16} className="shrink-0 text-white/40" />
-                        Preferences
-                      </Link>
-                      <Link to="/account/integrations" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                        <Plug size={16} className="shrink-0 text-white/40" />
-                        Integrations
-                      </Link>
-                    </div>
-
-                    <div className="h-px bg-white/5" />
-
-                    {/* Section 2 */}
-                    <div className="py-1.5">
-                      <Link to="/account/notifications" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                        <Bell size={16} className="shrink-0 text-white/40" />
-                        Notifications
-                      </Link>
-                      <Link to="/account/settings" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                        <Settings size={16} className="shrink-0 text-white/40" />
-                        Settings
-                      </Link>
-                    </div>
-
-                    <div className="h-px bg-white/5" />
-
-                    {/* Section 3 */}
-                    <div className="py-1.5">
-                      <Link to="/account/support" onClick={() => setMenuOpen(false)} className={menuItemClass}>
-                        <Headset size={16} className="shrink-0 text-white/40" />
-                        Support
-                      </Link>
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400/80 hover:bg-red-400/10 hover:text-red-400 transition-all duration-150 cursor-pointer"
+                  <AnimatePresence>
+                    {menuOpen && (
+                      <motion.div
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={dropdownVariants}
+                        transition={{ duration: 0.18, ease: 'easeOut' }}
+                        className="absolute right-0 mt-2 w-64 rounded-2xl border border-white/10 bg-carbon/95 backdrop-blur-xl shadow-2xl overflow-hidden origin-top-right"
                       >
-                        <LogOut size={16} className="shrink-0" />
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
+                        {/* User header */}
+                        <div className="px-4 py-4 flex items-center gap-3 border-b border-white/[0.08]">
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-cyan/30 to-cyan/10 flex items-center justify-center text-sm font-bold text-cyan shrink-0">
+                            {initials || <User size={18} />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{fullName || 'User'}</p>
+                            <p className="text-xs text-white/40 truncate">{user?.email}</p>
+                          </div>
+                        </div>
+
+                        {/* Section 1 */}
+                        <div className="py-1.5">
+                          {user?.isAdmin && (
+                            <Link to="/admin" className={menuItemClass('/admin')}>
+                              <Shield size={16} className="shrink-0 text-white/40" />
+                              Admin Dashboard
+                            </Link>
+                          )}
+                          <Link to="/account/profile" className={menuItemClass('/account/profile')}>
+                            <UserCircle size={16} className="shrink-0 text-white/40" />
+                            My Profile
+                          </Link>
+                          <Link to="/account/preferences" className={menuItemClass('/account/preferences')}>
+                            <SlidersHorizontal size={16} className="shrink-0 text-white/40" />
+                            Preferences
+                          </Link>
+                        </div>
+
+                        <div className="h-px bg-white/[0.08]" />
+
+                        {/* Section 2 */}
+                        <div className="py-1.5">
+                          <Link to="/account/settings" className={menuItemClass('/account/settings')}>
+                            <Settings size={16} className="shrink-0 text-white/40" />
+                            Settings
+                          </Link>
+                        </div>
+
+                        <div className="h-px bg-white/[0.08]" />
+
+                        {/* Section 3 */}
+                        <div className="py-1.5">
+                          <Link to="/account/support" className={menuItemClass('/account/support')}>
+                            <Headset size={16} className="shrink-0 text-white/40" />
+                            Support
+                          </Link>
+                          <button
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400/80 hover:bg-red-400/10 hover:text-red-400 transition-all duration-150 cursor-pointer"
+                          >
+                            <LogOut size={16} className="shrink-0" />
+                            Sign Out
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               ) : (
-                <motion.div 
+                <motion.div
                   key="auth-buttons"
                   initial={{ opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
                   animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', willChange: 'transform, opacity, filter' }}
@@ -185,7 +214,7 @@ export default function Navbar() {
           {/* Mobile toggle */}
           {isLoggedIn ? (
             <button
-              className={`md:hidden flex items-center gap-1.5 rounded-full border border-cyan/30 bg-cyan/10 pl-1.5 pr-2 py-1 text-xs font-medium text-cyan hover:bg-cyan/20 transition-all duration-300 cursor-pointer ${mobileOpen ? 'bg-cyan/20' : ''}`}
+              className={`md:hidden flex-shrink-0 flex items-center gap-1.5 rounded-full border border-cyan/30 bg-cyan/10 pl-1.5 pr-2 py-1 text-xs font-medium text-cyan hover:bg-cyan/20 transition-all duration-300 cursor-pointer ${mobileOpen ? 'bg-cyan/20' : ''}`}
               onClick={() => setMobileOpen(!mobileOpen)}
             >
               <div className="h-6 w-6 rounded-full bg-cyan/20 flex items-center justify-center text-[10px] font-bold text-cyan">
@@ -195,7 +224,7 @@ export default function Navbar() {
             </button>
           ) : (
             <button
-              className="md:hidden text-white cursor-pointer"
+              className="md:hidden flex-shrink-0 text-white cursor-pointer"
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
@@ -205,86 +234,84 @@ export default function Navbar() {
         </div>
 
         {/* Mobile menu */}
-        <div
-          className={`md:hidden border-t border-white/5 bg-midnight/95 backdrop-blur-xl px-6 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${mobileOpen ? 'max-h-[400px] pb-5 pt-3 opacity-100' : 'max-h-0 pb-0 pt-0 opacity-0'
-            }`}
-        >
-          {isLoggedIn ? (
-            <>
-              {/* User info */}
-              <div className="flex items-center gap-3 pb-3 mb-2 border-b border-white/5">
-                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-cyan/30 to-cyan/10 flex items-center justify-center text-xs font-bold text-cyan shrink-0">
-                  {initials || <User size={16} />}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{fullName || 'User'}</p>
-                  <p className="text-[11px] text-white/40 truncate">{user?.email}</p>
-                </div>
-              </div>
+        <AnimatePresence>
+          {mobileOpen && (
+            <motion.div
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+              variants={mobileVariants}
+              transition={{ duration: 0.22, ease: 'easeInOut' }}
+              className="md:hidden border-t border-white/[0.06] bg-midnight/95 backdrop-blur-xl px-6 pb-5 pt-3 overflow-hidden"
+            >
+              {isLoggedIn ? (
+                <>
+                  {/* User info */}
+                  <div className="flex items-center gap-3 pb-3 mb-2 border-b border-white/[0.08]">
+                    <div className="h-9 w-9 rounded-full bg-gradient-to-br from-cyan/30 to-cyan/10 flex items-center justify-center text-xs font-bold text-cyan shrink-0">
+                      {initials || <User size={16} />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{fullName || 'User'}</p>
+                      <p className="text-[11px] text-white/40 truncate">{user?.email}</p>
+                    </div>
+                  </div>
 
-              {user?.isAdmin && (
-                <Link to="/admin" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                  <Shield size={16} className="text-white/40" />
-                  Admin Dashboard
-                </Link>
+                  {user?.isAdmin && (
+                    <Link to="/admin" className={mobileItemClass('/admin')}>
+                      <Shield size={16} className="text-white/40" />
+                      Admin Dashboard
+                    </Link>
+                  )}
+                  <Link to="/account/profile" className={mobileItemClass('/account/profile')}>
+                    <UserCircle size={16} className="text-white/40" />
+                    My Profile
+                  </Link>
+                  <Link to="/account/preferences" className={mobileItemClass('/account/preferences')}>
+                    <SlidersHorizontal size={16} className="text-white/40" />
+                    Preferences
+                  </Link>
+
+                  <div className="h-px bg-white/[0.08] my-1.5" />
+
+                  <Link to="/account/settings" className={mobileItemClass('/account/settings')}>
+                    <Settings size={16} className="text-white/40" />
+                    Settings
+                  </Link>
+
+                  <div className="h-px bg-white/[0.08] my-1.5" />
+
+                  <Link to="/account/support" className={mobileItemClass('/account/support')}>
+                    <Headset size={16} className="text-white/40" />
+                    Support
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 py-2.5 text-sm text-red-400/80 hover:text-red-400 transition-colors cursor-pointer"
+                  >
+                    <LogOut size={16} />
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    className="text-sm text-white text-center border border-white/20 rounded-lg px-5 py-2.5 hover:border-white/40 transition-colors mt-1 block"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/register"
+                    className="text-sm font-semibold text-center bg-cyan text-midnight rounded-lg px-5 py-2.5 hover:shadow-[0_0_20px_rgba(102,252,241,0.35)] transition-all mt-3 block"
+                  >
+                    Sign Up
+                  </Link>
+                </>
               )}
-              <Link to="/account/profile" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                <UserCircle size={16} className="text-white/40" />
-                My Profile
-              </Link>
-              <Link to="/account/preferences" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                <SlidersHorizontal size={16} className="text-white/40" />
-                Preferences
-              </Link>
-              <Link to="/account/integrations" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                <Plug size={16} className="text-white/40" />
-                Integrations
-              </Link>
-
-              <div className="h-px bg-white/5 my-1.5" />
-
-              <Link to="/account/notifications" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                <Bell size={16} className="text-white/40" />
-                Notifications
-              </Link>
-              <Link to="/account/settings" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                <Settings size={16} className="text-white/40" />
-                Settings
-              </Link>
-
-              <div className="h-px bg-white/5 my-1.5" />
-
-              <Link to="/account/support" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2.5 text-sm text-white/70 hover:text-white transition-colors">
-                <Headset size={16} className="text-white/40" />
-                Support
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-3 py-2.5 text-sm text-red-400/80 hover:text-red-400 transition-colors cursor-pointer"
-              >
-                <LogOut size={16} />
-                Sign Out
-              </button>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="text-sm text-white text-center border border-white/20 rounded-lg px-5 py-2.5 hover:border-white/40 transition-colors mt-1"
-                onClick={() => setMobileOpen(false)}
-              >
-                Login
-              </Link>
-              <Link
-                to="/register"
-                className="text-sm font-semibold text-center bg-cyan text-midnight rounded-lg px-5 py-2.5 hover:shadow-[0_0_20px_rgba(102,252,241,0.35)] transition-all mt-3"
-                onClick={() => setMobileOpen(false)}
-              >
-                Sign Up
-              </Link>
-            </>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </nav>
     </>
   );

@@ -14,3 +14,5 @@ from app.database.models.rateLimitConfigs import RateLimitConfigs
 from app.database.models.rateLimitUsage import RateLimitUsage
 from app.database.models.tripCollabQATable import TripCollabQA
 from app.database.models.tripItinerarySnapshotsTable import TripItinerarySnapshot
+from app.database.models.faqTable import FAQ
+from app.database.models.supportTicketsTable import SupportTicket

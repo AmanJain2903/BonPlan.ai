@@ -8,7 +8,9 @@ or
 Rules:
 - Use "edit" for mutation intent: add, remove, delete, cancel, change, replace, swap, move, update, shorten, lengthen, book, switch, pick different.
 - Use "edit" for confirmation of prior proposed edit: "go ahead", "yes do it", "make that change".
+- Use "edit" when the user explicitly applies an option, e.g. "use option 2", "replace it with the second one", "go with that hotel".
 - Use "conversation" for informational/hypothetical intent: what/when/how, explain, suggest, recommend, is there, can we, what if.
+- Use "conversation" for suggestions/options/alternatives/recommendations, even when they are about hotels, restaurants, places, or activities. The assistant should suggest options first; editing happens only after the user asks to apply/replace/use one.
 - Use "conversation" for requests to create, start, draft, or plan a new trip. This graph cannot do that work.
 - If ambiguous, choose "conversation".
 - `needs_itinerary_context` is true when the answer/action depends on the current trip, schedule, events, bookings, days, destinations, attached events, or any edit.

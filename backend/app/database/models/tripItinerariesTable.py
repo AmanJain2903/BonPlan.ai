@@ -34,6 +34,7 @@ class TripItinerary(Base):
     days = Column(Integer, nullable=True)
 
     events = Column(MutableList.as_mutable(JSONB), nullable=False, default=[])
+    smart_anchors = Column(MutableList.as_mutable(JSONB), nullable=False, server_default=text("'[]'"))
 
     tips = Column(ARRAY(String), nullable=False, default=[])
 

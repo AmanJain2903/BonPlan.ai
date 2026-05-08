@@ -21,7 +21,7 @@ import { PlanSummary } from './PlanSummary.tsx';
 import { api } from '../../api';
 
 export default function PlanSetup() {
-  const { isLoggedIn, user, token } = useAuth();
+  const { user, token } = useAuth();
   const { trip, setTrip, updateTripData } = useTrip();
   const navigate = useNavigate();
 
@@ -72,7 +72,6 @@ export default function PlanSetup() {
   const handleNext = () => {
     setCurrentStepIndex((prev) => prev + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    console.log('trip', trip);
   };
 
   const handleBack = () => {
@@ -103,7 +102,6 @@ export default function PlanSetup() {
                 const tripId = response.trip_id;
                 navigate(`/plan/${trip.planningStyle}/${tripId}`, { replace: true });
               } catch (e) {
-                console.error('Failed to draft plan API call', e);
                 navigate('/', { replace: true });
               }
             } else {

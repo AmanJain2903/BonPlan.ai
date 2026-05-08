@@ -11,9 +11,7 @@ Design:
 - A single Lua script performs the atomic check-then-INCR + sets TTL only on
   the first write in a period. This prevents race conditions under concurrent
   requests and guarantees that going over the limit is impossible.
-- TTLs are computed at increment time using "Lazy Reset" semantics. All
-  periods reset at `RATE_LIMITER_RESET_HOUR`:00 in `RATE_LIMITER_RESET_TZ`
-  (default 7:00 AM America/Los_Angeles).
+- TTLs are computed at increment time using "Lazy Reset" semantics.
 - The limiter is cache-aware: callers pass `cache_hit=True` when they served
   the response from their own cache, which skips the counter entirely.
 - When Redis is unreachable, behaviour is controlled by `RATE_LIMITER_MODE`:
@@ -351,7 +349,20 @@ class RateLimiter:
         if config is None:
             # No config row => no enforcement. Log once per SKU so missing
             # seed data is visible without spamming on every request.
-            logger.warning("Rate-limit config missing for SKU — allowing.", sku=sku_normalized)
+            logger.warning(
+                "Rate-limit config missing for SKU.",
+                sku=sku_normalized,
+                mode=settings.RATE_LIMITER_MODE,
+            )
+            if settings.RATE_LIMITER_MODE == "strict":
+                logger.error("Rate-limit config missing in strict mode, rejecting.", sku=sku_normalized)
+                raise RateLimitExceeded(
+                    sku=sku_normalized,
+                    limit=0,
+                    current=0,
+                    retry_after_seconds=60,
+                    scope=Scope.GLOBAL.value,
+                )
             return ConsumeResult(
                 allowed=True,
                 sku=sku_normalized,

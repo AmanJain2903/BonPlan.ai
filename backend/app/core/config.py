@@ -4,6 +4,7 @@
 Configuration settings for the backend application.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from pathlib import Path
@@ -13,6 +14,26 @@ import os
 # Load environment variables
 load_dotenv()
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_litellm_model_name(value: str) -> str:
+    value = value.strip()
+    if "/" in value:
+        return value
+    if value.startswith(("gemini-", "gemma-")):
+        return f"gemini/{value}"
+    return value
+
+
+def _litellm_model(env_name: str, default: str) -> str:
+    return _normalize_litellm_model_name(os.getenv(env_name, default))
+
+
 class Settings(BaseSettings):
 
     # Deployment settings
@@ -20,11 +41,14 @@ class Settings(BaseSettings):
     AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+    # Logging settings
+    LOG_ROOT: str = os.getenv("LOG_ROOT", "backend/logs")
+
     # Project settings
-    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "BonPlan.ai")
-    AGENT_NAME: str = os.getenv("AGENT_NAME", "BonPlan.ai - Agent")
-    PROJECT_VERSION: str = os.getenv("PROJECT_VERSION", "v0.0.0")
-    AGENT_VERSION: str = os.getenv("AGENT_VERSION", "v0.0.0")
+    PROJECT_NAME: str = "BonPlan.ai"
+    AGENT_NAME: str = "BonPlan.ai - Agent"
+    PROJECT_VERSION: str = os.getenv("PROJECT_VERSION", "v1.0.0") # Version is not set in environment for production build. Set fallback for the production build. Local and Staging uses the Environment Variable.
+    AGENT_VERSION: str = os.getenv("AGENT_VERSION", "v1.0.0") # Version is not set in environment for production build. Set fallback for the production build. Local and Staging uses the Environment Variable.
 
     # PostgreSQL settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "bonplan_admin")
@@ -33,55 +57,68 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "bonplan_db")
 
-    # Redis settings (used by the SKU rate limiter)
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
+    # Redis settings
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    # Key prefix lets multiple environments share a single Redis instance safely.
-    REDIS_RATE_LIMIT_PREFIX: str = os.getenv("REDIS_RATE_LIMIT_PREFIX", "rl")
-    # When Redis is unreachable we fail-open by default so a Redis outage
-    # doesn't take the whole app down. Flip to "strict" in prod to fail-closed.
-    RATE_LIMITER_MODE: str = os.getenv("RATE_LIMITER_MODE", "lenient")
-    # Short in-process TTL for SKU config lookups so we don't hammer Postgres.
-    RATE_LIMITER_CONFIG_TTL_SECONDS: int = int(os.getenv("RATE_LIMITER_CONFIG_TTL_SECONDS", "60"))
-    # Hard reset hour (local time in RATE_LIMITER_RESET_TZ).
-    RATE_LIMITER_RESET_HOUR: int = int(os.getenv("RATE_LIMITER_RESET_HOUR", "0"))
-    RATE_LIMITER_RESET_TZ: str = os.getenv("RATE_LIMITER_RESET_TZ", "America/Los_Angeles")
+
+    # Redis Rate Limiter settings
+    REDIS_RATE_LIMIT_PREFIX: str = "rl"
+    RATE_LIMITER_MODE: str = "lenient" # "lenient" (default) — allow the call, log the failure. "strict" — treat as rate-limited (raise). In staging and production, set to "strict".
+    RATE_LIMITER_CONFIG_TTL_SECONDS: int = "60"
+    RATE_LIMITER_RESET_TZ: str = "America/Los_Angeles"
 
     # Google Cloud Platform settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY")
 
-    # Gemini API Keys
-    SERPER_CONTENT_PARSER_API_KEY: str = os.getenv("SERPER_CONTENT_PARSER_API_KEY")
-    PLANNER_AGENT_API_KEY: str = os.getenv("PLANNER_AGENT_API_KEY")
-    CONTEXT_PRUNING_API_KEY: str = os.getenv("CONTEXT_PRUNING_API_KEY")
-    CONVERSATION_AGENT_API_KEY: str = os.getenv("CONVERSATION_AGENT_API_KEY")
-    EDITING_AGENT_API_KEY: str = os.getenv("EDITING_AGENT_API_KEY")
+    # LiteLLM provider API keys. LiteLLM reads these provider-native env names,
+    # so keep them explicit and set only the keys needed for the configured models.
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY")
 
-    # Gemini Models
-    # "gemma-4-31b-it" #"gemini-3.1-flash-lite-preview" #"gemma-4-26b-a4b-it" #"gemini-2.5-flash-lite"
-    SERPER_CONTENT_PARSER_MODEL: str = "gemma-4-26b-a4b-it"
-    SERPER_CONTENT_PARSER_MODEL_CONTEXT_WINDOW: int = 256000 # 128K
+    # LiteLLM model settings. Values must include provider prefixes, e.g.
+    # "gemini/gemini-2.0-flash", "openai/gpt-5.1", "anthropic/claude-sonnet-4-5",
+    # or "openrouter/openai/gpt-4o".
+    SERPER_CONTENT_PARSER_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
+    SERPER_CONTENT_PARSER_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
-    CONVERSATION_AGENT_MODEL: str = "gemma-4-26b-a4b-it"
-    CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K``
+    # Gemini Model Settings for Conversation Agent
+    CONVERSATION_AGENT_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
+    CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
-    PLANNER_AGENT_MODEL: str = "gemma-4-31b-it"
-    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+    # Gemini Model Settings for Context Pruning
+    CONTEXT_PRUNING_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
+    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
-    EDITING_AGENT_MODEL: str = "gemma-4-31b-it"
-    EDITING_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+    # Gemini Model Settings for Planner Agent
+    PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
+    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
 
-    CONTEXT_PRUNING_MODEL: str = "gemini-3.1-flash-lite-preview"
-    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 1024000 # 1M
+    # Gemini Model Settings for Editor Agent
+    EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
+    EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
 
-    # Serper API key
+    @field_validator(
+        "SERPER_CONTENT_PARSER_MODEL",
+        "CONVERSATION_AGENT_MODEL",
+        "PLANNER_AGENT_MODEL",
+        "CONTEXT_PRUNING_MODEL",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_model_env(cls, value: str) -> str:
+        return _normalize_litellm_model_name(str(value or ""))
+
+    # Serper Web Search API key
     SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")
     
     # Rapid API key
     RAPID_API_KEY: str = os.getenv("RAPID_API_KEY")
 
-    # Secret key for JWT
+    # Secret key for JWT Tokens
     SECRET_KEY: str = os.getenv("SECRET_KEY")
 
     # Email settings
@@ -90,10 +127,5 @@ class Settings(BaseSettings):
 
     # Fallbacks
     FALLBACK_IMAGE: str = os.getenv("FALLBACK_IMAGE", "https://images.unsplash.com/photo-1488085061387-422e29b40080?q=80&w=3131&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
-
-
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
 settings = Settings()

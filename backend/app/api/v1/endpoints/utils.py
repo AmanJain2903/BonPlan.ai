@@ -22,7 +22,7 @@ Get timezone endpoint
 @router.post("/get-timezone", response_model=dict)
 async def get_timezone(lat: float, lng: float):
     try:
-        timezoneInfo = await get_timezone_tool(lat, lng, timestamp=None)
+        timezoneInfo = await get_timezone_tool(lat, lng, timestamp=None, timeout_seconds=None)
         if timezoneInfo.get("timeZoneId", {}).get("value", ""):
             return {"timezoneId": timezoneInfo.get("timeZoneId").get("value")}
         return {"timezoneId": "UTC"}

@@ -2,8 +2,8 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
-import { api, Plan, TripItinerary } from '../../apis/plan';
-import { Bot, Minimize2, ArrowLeftRight } from 'lucide-react';
+import { api, Plan, TripItinerary, SmartAnchor, ItinerarySnapshot } from '../../apis/plan';
+import { Bot, Minimize2, ArrowLeftRight, MessageSquare, X as XIcon } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
 import {
@@ -22,6 +22,13 @@ import ItineraryPanel from './ItineraryPanel';
 import HeroPanel from './HeroPanel';
 import MessageCanvas from './MessageCanvas';
 import ChatInputBar from './ChatInputBar';
+import TripShareMenu from './TripShareMenu';
+import SmartAnchorsModal from './SmartAnchorsModal';
+import {
+  DeleteTripModal,
+  OpenBookingsMenu,
+  TripNavigationControls,
+} from './TripHeaderControls';
 
 function derivePageState(
   plan: Plan | null,
@@ -67,15 +74,31 @@ export default function SoloPlanView() {
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
 
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [thoughtsExpanded, setThoughtsExpanded] = useState(false);
   const [systemLogExpanded, setSystemLogExpanded] = useState(false);
   const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024);
+  const [deleteTripOpen, setDeleteTripOpen] = useState(false);
+  const [deletingTrip, setDeletingTrip] = useState(false);
+  const [deleteTripError, setDeleteTripError] = useState('');
+
+  const [smartAnchors, setSmartAnchors] = useState<SmartAnchor[]>([]);
+  const [anchorDrafts, setAnchorDrafts] = useState<SmartAnchor[]>([]);
+  const [anchorsModalOpen, setAnchorsModalOpen] = useState(false);
+  const [savingAnchors, setSavingAnchors] = useState(false);
+  const [snapshots, setSnapshots] = useState<ItinerarySnapshot[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  const [snapshotsError, setSnapshotsError] = useState('');
+  const [revertingSnapshot, setRevertingSnapshot] = useState<number | null>(null);
 
   const messageEndRef = useRef<HTMLDivElement>(null);
   const thinkingEndRef = useRef<HTMLDivElement>(null);
   const summaryEndRef = useRef<HTMLDivElement>(null);
+  const lastSnapshotRefreshCursorRef = useRef<number | null>(null);
 
   // Message Canvas Scroll Position and State
   const scrollPositionRef = useRef(0);
@@ -86,6 +109,93 @@ export default function SoloPlanView() {
     [plan, tripItinerary, generatingOverride],
   );
 
+  const handleDeleteTrip = useCallback(async () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+
+    setDeletingTrip(true);
+    setDeleteTripError('');
+    try {
+      const res = await api.deletePlan(token, tripId);
+      if (res.status_code && res.status_code >= 400) {
+        setDeleteTripError(res.message || 'Could not delete this trip.');
+        return;
+      }
+      generationManager.clearSession(tripId);
+      navigate('/');
+    } catch (err: unknown) {
+      const detail =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string; message?: string } } }).response?.data?.detail ||
+            (err as { response?: { data?: { detail?: string; message?: string } } }).response?.data?.message
+          : undefined;
+      setDeleteTripError(detail || 'Could not delete this trip.');
+    } finally {
+      setDeletingTrip(false);
+    }
+  }, [navigate, tripId]);
+
+  const handleSaveAnchors = useCallback(async (anchors: SmartAnchor[]) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+    setSavingAnchors(true);
+    try {
+      await api.updateSmartAnchors(token, tripId, anchors);
+      setSmartAnchors(anchors);
+      setAnchorDrafts([]);
+      setAnchorsModalOpen(false);
+    } finally {
+      setSavingAnchors(false);
+    }
+  }, [tripId]);
+
+  const handleToggleLock = useCallback(async (event: any) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+    const newLocked = !(event?.is_locked === true);
+    try {
+      await api.toggleEventLock(token, tripId, event.day_number, event.event_number, newLocked, event.event_id);
+      setItineraryState((prev) => {
+        const days = prev.days.map((day) => {
+          if (day.dayNumber !== event.day_number) return day;
+          const events = day.events.map((ev: any) =>
+            (event.event_id ? ev.event_id === event.event_id : ev.event_number === event.event_number)
+              ? { ...ev, is_locked: newLocked }
+              : ev,
+          );
+          return { ...day, events };
+        });
+        return { ...prev, days };
+      });
+    } catch {
+      // silently ignore
+    }
+  }, [tripId]);
+
+  const refreshSnapshots = useCallback(async (showLoading = false) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId) return;
+    if (showLoading) setSnapshotsLoading(true);
+    setSnapshotsError('');
+    try {
+      const res = await api.getItinerarySnapshots(token, tripId);
+      if (res.status_code && res.status_code >= 400) {
+        setSnapshotsError(res.message || 'Could not load versions.');
+        return;
+      }
+      setSnapshots(res.snapshots || []);
+      if (typeof res.snapshot_cursor === 'number') {
+        lastSnapshotRefreshCursorRef.current = res.snapshot_cursor;
+        setItineraryState((prev) => ({ ...prev, snapshotCursor: res.snapshot_cursor }));
+        setTripItinerary((prev) => prev ? { ...prev, snapshot_cursor: res.snapshot_cursor } : prev);
+      }
+    } catch {
+      setSnapshotsError('Could not load versions.');
+    } finally {
+      if (showLoading) setSnapshotsLoading(false);
+    }
+  }, [tripId]);
+
   // Sync from generationManager subscription
   const handleSessionUpdate = useCallback((session: GenerationSession) => {
     setTurns([...session.turns]);
@@ -93,23 +203,90 @@ export default function SoloPlanView() {
     setErrorType(session.errorType);
     setIsSessionActive(session.isActive);
     setIsWaitingForUser(!!session.isWaitingForUser);
+    setGenerationStartedAt(session.startedAt ?? null);
 
     if (session.isActive) {
       // While the run is active, lock the displayed mode to whatever the
       // session was started in. Survives navigation away & back.
       setChatMode(session.mode);
+      if (session.mode === 'editing') {
+        setPlan((prev) => prev ? { ...prev, status: 'EDITING' } : prev);
+      }
+    }
+
+    if (session.mode === 'editing' && (
+      session.itineraryState.snapshotCursor !== undefined || session.itineraryState.eventsHash
+    )) {
+      setTripItinerary((prev) => prev ? {
+        ...prev,
+        events: flattenItineraryEvents(session.itineraryState),
+        cost: session.itineraryState.tripCostEstimate ?? prev.cost,
+        title: session.itineraryState.tripTitle ?? prev.title,
+        tips: session.itineraryState.tripTips ?? prev.tips,
+        status: 'GENERATED',
+        snapshot_cursor: session.itineraryState.snapshotCursor ?? prev.snapshot_cursor,
+        events_hash: session.itineraryState.eventsHash ?? prev.events_hash,
+      } : prev);
     }
 
     if (!session.isActive && session.errorType == null) {
       setGeneratingOverride(false);
       setPlan((prev) => prev ? { ...prev, status: 'GENERATED' } : prev);
       setTripItinerary((prev) => prev ? { ...prev, status: 'GENERATED' } : prev);
+      const cursor = session.itineraryState.snapshotCursor;
+      if (
+        session.mode === 'editing' &&
+        typeof cursor === 'number' &&
+        lastSnapshotRefreshCursorRef.current !== cursor
+      ) {
+        lastSnapshotRefreshCursorRef.current = cursor;
+        void refreshSnapshots(false);
+      }
       if (chatMode !== 'editing') setChatMode('editing');
     } else if (!session.isActive && session.errorType != null) {
       // Keep generatingOverride=true so the page stays on GENERATING
       // Don't reset plan/tripItinerary status; the UI handles error/stopped via errorType
     }
-  }, [chatMode]);
+  }, [chatMode, refreshSnapshots]);
+
+  const handleOpenSnapshots = useCallback(async () => {
+    if (!tripId || snapshotsLoading) return;
+    await refreshSnapshots(true);
+  }, [tripId, snapshotsLoading, refreshSnapshots]);
+
+  const handleRevertSnapshot = useCallback(async (versionIndex: number) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token || !tripId || revertingSnapshot != null) return;
+    setRevertingSnapshot(versionIndex);
+    setSnapshotsError('');
+    try {
+      const res = await api.revertItinerary(token, tripId, versionIndex);
+      if (res.status_code && res.status_code >= 400) {
+        setSnapshotsError(res.message || 'Could not restore that version.');
+        return;
+      }
+      setItineraryState((prev) => buildStateFromItineraryPayload(prev, tripItinerary, res));
+      setTripItinerary((prev) => prev ? {
+        ...prev,
+        events: Array.isArray(res.events) ? res.events : prev.events,
+        cost: res.cost ?? prev.cost,
+        title: res.title ?? prev.title,
+        tips: Array.isArray(res.tips) ? res.tips : prev.tips,
+        status: 'GENERATED',
+        snapshot_cursor: typeof res.snapshot_cursor === 'number' ? res.snapshot_cursor : prev.snapshot_cursor,
+        events_hash: typeof res.events_hash === 'string' ? res.events_hash : prev.events_hash,
+      } : prev);
+      if (typeof res.snapshot_cursor === 'number') {
+        lastSnapshotRefreshCursorRef.current = res.snapshot_cursor;
+      }
+      setPlan((prev) => prev ? { ...prev, status: 'GENERATED' } : prev);
+      setSelectedEvents([]);
+    } catch {
+      setSnapshotsError('Could not restore that version.');
+    } finally {
+      setRevertingSnapshot(null);
+    }
+  }, [tripId, revertingSnapshot, tripItinerary]);
 
   // Subscribe to generationManager for this trip
   useEffect(() => {
@@ -120,25 +297,32 @@ export default function SoloPlanView() {
 
   const isTimerRunning = isSessionActive && !errorType;
 
-  // Timer for active planner/editor run elapsed time
+  // Timer for active planner/editor run elapsed time.
+  // Uses generationStartedAt (stored in the singleton GenerationManager session)
+  // so elapsed survives navigation away and back without resetting to 0.
   useEffect(() => {
-    if (isTimerRunning) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (isTimerRunning && generationStartedAt) {
+      const tick = () => setElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
+      tick();
+      timerRef.current = setInterval(tick, 1000);
+    } else if (!isTimerRunning) {
       setElapsedSeconds(0);
-      timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isTimerRunning]);
+  }, [isTimerRunning, generationStartedAt]);
+
+  // Mobile screen detection
+  useEffect(() => {
+    const check = () => setIsMobileScreen(window.innerWidth < 1024);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   // Auth, RBAC, and initialization
   useEffect(() => {
@@ -153,7 +337,7 @@ export default function SoloPlanView() {
         if (!token || !tripId) return;
 
         const rbacRes = await api.getRBAC(token, tripId);
-        if (!rbacRes.rbac || (rbacRes.rbac !== 'owner' && rbacRes.rbac !== 'shared_editor')) {
+        if (!rbacRes.rbac || !['owner', 'shared_editor', 'shared_viewer'].includes(rbacRes.rbac)) {
           navigate('/');
           return;
         }
@@ -167,6 +351,9 @@ export default function SoloPlanView() {
         setPlan(planRes.plan);
         const itin = planRes.tripItinerary || null;
         setTripItinerary(itin);
+        lastSnapshotRefreshCursorRef.current =
+          typeof itin?.snapshot_cursor === 'number' ? itin.snapshot_cursor : null;
+        if (itin?.smart_anchors) setSmartAnchors(itin.smart_anchors);
 
         // Check if generationManager already has an active session (user navigated away and back)
         const existingSession = generationManager.getSession(tripId);
@@ -193,10 +380,18 @@ export default function SoloPlanView() {
           }
           else if (hasEvents && itinStatus === 'GENERATED') {
             setChatMode('editing');
+            // If itin is GENERATED but plan status lags behind (DB inconsistency),
+            // sync plan status locally so pageState resolves to EDITING, not DRAFT.
+            // Without this, chatMode='editing' + pageState='DRAFT' causes startPlanner
+            // to be reachable, which previously sent generation traffic to the chat endpoint.
+            setPlan((prev) => {
+              if (!prev) return prev;
+              const s = (prev.status || '').toUpperCase();
+              return s === 'GENERATED' || s === 'EDITING' ? prev : { ...prev, status: 'GENERATED' };
+            });
           }
         }
       } catch (err) {
-        console.error('SoloPlanView access error:', err);
         navigate('/');
       } finally {
         setLoading(false);
@@ -231,7 +426,7 @@ export default function SoloPlanView() {
 
     generationManager.startGeneration(tripId, token, {
       chatInput: inputText,
-      mode: chatMode === 'editing' ? 'editing' : chatMode,
+      mode: chatMode === 'collaborative' ? 'collaborative' : 'autonomous',
       initialItineraryState: currentItineraryState,
     });
   }, [plan, tripId, contextMessage, chatMode, itineraryState]);
@@ -249,12 +444,13 @@ export default function SoloPlanView() {
   const handleRetry = useCallback(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (!tripId || !token) return;
-    if (chatMode === 'editing') {
+    const session = generationManager.getSession(tripId);
+    if (session?.lastRequest?.mode === 'editing') {
       generationManager.retryGeneration(tripId, token);
       return;
     }
     startPlanner();
-  }, [chatMode, startPlanner, tripId]);
+  }, [startPlanner, tripId]);
 
   const handleAnswerQuestion = useCallback(
     async (params: { callId: string; answer: string | null; skipped: boolean }) => {
@@ -288,12 +484,14 @@ export default function SoloPlanView() {
       cachedItineraryEvents,
       cachedTripInput,
       cachedResearchFacts: {},
+      baseSnapshotCursor: itineraryState.snapshotCursor ?? tripItinerary?.snapshot_cursor,
+      baseEventsHash: itineraryState.eventsHash ?? tripItinerary?.events_hash,
       forceReloadItinerary: false,
       appendUserTurn: true,
     });
     setChatInput('');
     setSelectedEvents([]);
-  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, user?.preferences, selectedEvents]);
+  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, tripItinerary, user?.preferences, selectedEvents]);
 
   // Loading spinner
   if (loading) {
@@ -312,28 +510,129 @@ export default function SoloPlanView() {
   if (!plan) return null;
 
   const isGenerating = pageState === 'GENERATING' || (pageState === 'EDITING' && isSessionActive);
+  const canEdit = plan.role === 'owner' || plan.role === 'shared_editor';
+  const isItineraryGenerated = (tripItinerary?.status || '').toLowerCase() === 'generated';
+  const tripTitleForDelete = itineraryState.tripTitle || tripItinerary?.title || 'this trip';
+  const leftControl = (
+    <TripNavigationControls
+      canDelete={plan.role === 'owner'}
+      deleting={deletingTrip}
+      deleteDisabled={isSessionActive}
+      onBack={() => navigate('/')}
+      onDelete={() => {
+        setDeleteTripError('');
+        setDeleteTripOpen(true);
+      }}
+    />
+  );
+  const shareControl = tripId && isItineraryGenerated && !isGenerating
+    ? (
+      <div className="flex items-center gap-2">
+        <OpenBookingsMenu itineraryState={itineraryState} />
+        <TripShareMenu tripId={tripId} plan={plan} />
+      </div>
+    )
+    : undefined;
+  const deleteModal = deleteTripOpen ? (
+    <DeleteTripModal
+      tripTitle={tripTitleForDelete}
+      deleting={deletingTrip}
+      error={deleteTripError}
+      onCancel={() => {
+        if (deletingTrip) return;
+        setDeleteTripOpen(false);
+        setDeleteTripError('');
+      }}
+      onConfirm={handleDeleteTrip}
+    />
+  ) : null;
+
+  // Convert JSONB {year,month,day,timezoneId} to ISO date strings for the modal
+  const anchorTripContext = (() => {
+    const toIso = (d: any): string => {
+      if (!d || !d.year || !d.month || !d.day) return '';
+      return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+    };
+    return {
+      start_date: toIso(plan?.start_date),
+      end_date: toIso(plan?.end_date),
+      destinations: tripItinerary?.destinations ?? (plan?.destinations?.map((d: any) => typeof d === 'string' ? d : d?.name ?? '') ?? []),
+      adults: plan?.adults ?? 1,
+      children: plan?.children ?? 0,
+      timezoneId: (plan?.start_date as any)?.timezoneId ?? '',
+    };
+  })();
+
+  const anchorsModal = anchorsModalOpen ? (
+    <SmartAnchorsModal
+      savedAnchors={smartAnchors}
+      drafts={anchorDrafts}
+      setDrafts={setAnchorDrafts}
+      saving={savingAnchors}
+      tripContext={anchorTripContext}
+      onSave={handleSaveAnchors}
+      onClose={() => setAnchorsModalOpen(false)}
+    />
+  ) : null;
 
   // ─── DRAFT View ──────────────────────────────────────────────
   if (pageState === 'DRAFT') {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0, transition: { duration: 0.3 } }}
-        className="h-screen overflow-hidden bg-black flex flex-col pt-16"
-      >
-        <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+    if (!canEdit) {
+      return (
+        <>
+          {deleteModal}
+          {anchorsModal}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.3 } }}
+            className="h-screen overflow-hidden bg-black flex flex-col pt-16"
+          >
+            <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-2 sm:p-4 lg:px-8 xl:px-12 pt-3 sm:pt-6 lg:pt-8 w-full max-h-[calc(100vh-64px)]">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+              <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
+                <TripSummaryPills
+                  plan={plan}
+                  tripCostEstimate={tripItinerary?.cost ?? undefined}
+                  actualCost={0}
+                  isGenerating={false}
+                  dynamicTitle={itineraryState.tripTitle}
+                  dynamicJourney={itineraryState.journey}
+                  leftControl={leftControl}
+                />
+                <div className="flex flex-1 items-center justify-center text-sm text-white/45">
+                  This shared itinerary is not ready to view yet.
+                </div>
+              </div>
+            </main>
+          </motion.div>
+        </>
+      );
+    }
 
-          <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
-            <TripSummaryPills
-              plan={plan}
-              tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
-              actualCost={0}
-              isGenerating={false}
-              dynamicTitle={itineraryState.tripTitle}
-              dynamicJourney={itineraryState.journey}
-            />
+    return (
+      <>
+        {deleteModal}
+        {anchorsModal}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.3 } }}
+          className="h-screen overflow-hidden bg-black flex flex-col pt-16"
+        >
+          <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-2 sm:p-4 lg:px-8 xl:px-12 pt-3 sm:pt-6 lg:pt-8 w-full max-h-[calc(100vh-64px)]">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+
+            <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
+              <TripSummaryPills
+                plan={plan}
+                tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
+                actualCost={0}
+                isGenerating={false}
+                dynamicTitle={itineraryState.tripTitle}
+                dynamicJourney={itineraryState.journey}
+                leftControl={leftControl}
+              />
 
             <motion.div
               layout
@@ -353,13 +652,17 @@ export default function SoloPlanView() {
                   contextInput={contextMessage}
                   setContextInput={setContextMessage}
                   onStart={startPlanner}
-                  hasEvents={itineraryState.days.some(day => day.events && day.events.length > 0)}
+                  hasEvents={itineraryState.hasStarted}
+                  anchorCount={smartAnchors.length + anchorDrafts.filter(d => d.prefill_status === 'done').length}
+                  onOpenAnchors={() => setAnchorsModalOpen(true)}
+                  anchorPrefilling={anchorDrafts.some(d => d.prefill_status === 'loading')}
                 />
               </motion.div>
             </motion.div>
-          </div>
-        </main>
-      </motion.div>
+            </div>
+          </main>
+        </motion.div>
+      </>
     );
   }
 
@@ -370,25 +673,30 @@ export default function SoloPlanView() {
     : `${chatMode} mode`;
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: 0.3 } }}
-      className="h-screen overflow-hidden bg-black flex flex-col pt-16"
-    >
-      <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-4 sm:p-6 lg:px-8 xl:px-12 pt-6 sm:pt-8 w-full max-h-[calc(100vh-64px)]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
-        <FloatingRestoreButton visible={isChatMinimized} onRestore={() => setIsChatMinimized(false)} />
+    <>
+      {deleteModal}
+      {anchorsModal}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: { duration: 0.3 } }}
+        className="h-screen overflow-hidden bg-black flex flex-col pt-16"
+      >
+        <main className="flex-1 min-h-0 flex flex-col items-center justify-start relative p-2 sm:p-4 lg:px-8 xl:px-12 pt-3 sm:pt-6 lg:pt-8 w-full max-h-[calc(100vh-64px)]">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan/5 via-carbon/20 to-black pointer-events-none" />
+          <FloatingRestoreButton visible={isChatMinimized} onRestore={() => setIsChatMinimized(false)} />
 
-        <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
-          <TripSummaryPills
-            plan={plan}
-            tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
-            actualCost={itineraryState.days.reduce((acc, day) => acc + day.cost, 0)}
-            isGenerating={isGenerating}
-            dynamicTitle={itineraryState.tripTitle}
-            dynamicJourney={itineraryState.journey}
-          />
+          <div className="w-full h-full max-w-[1400px] 2xl:max-w-[1600px] flex-1 flex flex-col items-center z-10 min-h-0 pb-2">
+            <TripSummaryPills
+              plan={plan}
+              tripCostEstimate={itineraryState.tripCostEstimate ?? (tripItinerary?.cost ?? undefined)}
+              actualCost={itineraryState.days.reduce((acc, day) => acc + day.cost, 0)}
+              isGenerating={isGenerating}
+              dynamicTitle={itineraryState.tripTitle}
+              dynamicJourney={itineraryState.journey}
+              leftControl={leftControl}
+              shareControl={shareControl}
+            />
 
           <motion.div
             initial={{ opacity: 0, scale: 0.9, clipPath: 'inset(10% 40% 10% 40% round 24px)', filter: 'blur(8px)' }}
@@ -398,16 +706,24 @@ export default function SoloPlanView() {
           >
             {/* LEFT: Itinerary Panel */}
             <ItineraryPanel
-              isChatMinimized={isChatMinimized}
+              isChatMinimized={isChatMinimized || !canEdit || isMobileScreen}
               planStatus={pageState}
               itineraryState={itineraryState}
               errorType={errorType}
-              onRetry={handleRetry}
+              onRetry={canEdit ? handleRetry : undefined}
+              onToggleLock={handleToggleLock}
+              snapshots={snapshots}
+              snapshotCursor={itineraryState.snapshotCursor ?? tripItinerary?.snapshot_cursor}
+              snapshotsLoading={snapshotsLoading}
+              snapshotsError={snapshotsError}
+              revertingSnapshot={revertingSnapshot}
+              onOpenSnapshots={canEdit ? handleOpenSnapshots : undefined}
+              onRevertSnapshot={canEdit && !isGenerating ? handleRevertSnapshot : undefined}
             />
 
-            {/* RIGHT: Chat Panel */}
+            {/* RIGHT: Chat Panel — desktop only inline, mobile as overlay */}
             <AnimatePresence>
-              {!isChatMinimized && (
+              {canEdit && !isChatMinimized && !isMobileScreen && (
                 <motion.div
                   layout
                   initial={{ opacity: 0, width: 0, x: 20 }}
@@ -494,9 +810,108 @@ export default function SoloPlanView() {
               )}
             </AnimatePresence>
           </motion.div>
-        </div>
-      </main>
-    </motion.div>
+
+          {/* Mobile chat FAB */}
+          {canEdit && isMobileScreen && (
+            <button
+              onClick={() => setIsMobileChatOpen(true)}
+              className="fixed bottom-6 right-5 z-40 flex items-center gap-2 rounded-2xl border border-cyan/30 bg-midnight/90 backdrop-blur-md px-4 py-3 text-sm font-semibold text-cyan shadow-[0_0_20px_rgba(102,252,241,0.15)] hover:bg-cyan/10 transition-all"
+            >
+              <MessageSquare className="w-4 h-4" />
+              {isGenerating ? 'Live' : 'Chat'}
+              {isWaitingForUser && <span className="w-2 h-2 rounded-full bg-cyan animate-pulse ml-0.5" />}
+            </button>
+          )}
+
+          {/* Mobile chat drawer */}
+          <AnimatePresence>
+            {canEdit && isMobileScreen && isMobileChatOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+                  onClick={() => setIsMobileChatOpen(false)}
+                />
+                <motion.div
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+                  className="fixed bottom-0 left-0 right-0 z-50 flex flex-col bg-[#0a0d12] border-t border-white/[0.08] rounded-t-3xl overflow-hidden"
+                  style={{ height: '72vh' }}
+                >
+                  {/* Drawer handle */}
+                  <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] shrink-0">
+                    <div className="flex items-center gap-3">
+                      <Bot className="w-6 h-6 text-cyan shrink-0" />
+                      <div className="flex flex-col">
+                        <h3 className="text-sm font-bold text-white">BonPlan AI Planner</h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-widest text-cyan/70 font-semibold">
+                            {modeLabel}
+                          </span>
+                          {!isSessionActive && pageState !== 'EDITING' && (
+                            <button
+                              onClick={toggleMode}
+                              className="p-1 rounded-md text-cyan/40 hover:text-cyan hover:bg-cyan/10 transition-all"
+                            >
+                              <ArrowLeftRight className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setIsMobileChatOpen(false)}
+                      className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all"
+                    >
+                      <XIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <MessageCanvas
+                    scrollPositionRef={scrollPositionRef}
+                    isAtBottomRef={isAtBottomRef}
+                    turns={turns}
+                    toolsExpanded={toolsExpanded}
+                    onToggleTools={() => setToolsExpanded((p) => !p)}
+                    thoughtsExpanded={thoughtsExpanded}
+                    onToggleThoughts={() => setThoughtsExpanded((p) => !p)}
+                    systemLogExpanded={systemLogExpanded}
+                    onToggleSystemLog={() => setSystemLogExpanded((p) => !p)}
+                    onRetry={handleRetry}
+                    errorType={errorType}
+                    messageEndRef={messageEndRef}
+                    thinkingEndRef={thinkingEndRef}
+                    summaryEndRef={summaryEndRef}
+                    onAnswerQuestion={handleAnswerQuestion}
+                    isWaitingForUser={isWaitingForUser}
+                  />
+
+                  <ChatInputBar
+                    isGenerating={isGenerating}
+                    chatMode={chatMode}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    itineraryDays={itineraryState.days}
+                    selectedEvents={selectedEvents}
+                    setSelectedEvents={setSelectedEvents}
+                    onSend={handleMessageSend}
+                    onStop={stopPlanner}
+                    elapsedSeconds={elapsedSeconds}
+                    errorType={errorType}
+                  />
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+          </div>
+        </main>
+      </motion.div>
+    </>
   );
 }
 
@@ -526,6 +941,46 @@ function buildCachedTripInput(plan: Plan, preferences: any, textualContext: stri
     children: plan.children,
     preferences: preferences || {},
     textualContext,
+  };
+}
+
+function buildStateFromItineraryPayload(
+  prev: ItineraryState,
+  currentItinerary: TripItinerary | null,
+  payload: {
+    events?: any[];
+    cost?: number | null;
+    title?: string | null;
+    tips?: string[];
+    snapshot_cursor?: number;
+    events_hash?: string;
+  },
+): ItineraryState {
+  const events = Array.isArray(payload.events) ? payload.events : (currentItinerary?.events || []);
+  const next = replayEvents({
+    id: currentItinerary?.id || '',
+    title: payload.title ?? currentItinerary?.title ?? prev.tripTitle ?? null,
+    origin: currentItinerary?.origin ?? null,
+    destinations: currentItinerary?.destinations?.length
+      ? currentItinerary.destinations
+      : (prev.journey || []),
+    start_date: currentItinerary?.start_date ?? null,
+    end_date: currentItinerary?.end_date ?? null,
+    cost: payload.cost ?? currentItinerary?.cost ?? prev.tripCostEstimate ?? null,
+    days: currentItinerary?.days ?? prev.days.length,
+    events,
+    tips: Array.isArray(payload.tips) ? payload.tips : (currentItinerary?.tips || prev.tripTips || []),
+    status: 'GENERATED',
+    smart_anchors: currentItinerary?.smart_anchors || [],
+    snapshot_cursor: payload.snapshot_cursor,
+    events_hash: payload.events_hash,
+    created_at: currentItinerary?.created_at || '',
+    updated_at: currentItinerary?.updated_at || '',
+  });
+  return {
+    ...next,
+    snapshotCursor: typeof payload.snapshot_cursor === 'number' ? payload.snapshot_cursor : prev.snapshotCursor,
+    eventsHash: typeof payload.events_hash === 'string' ? payload.events_hash : prev.eventsHash,
   };
 }
 

@@ -27,6 +27,7 @@ const features: {
   title: string;
   description: string;
   Visual: ComponentType;
+  comingSoon?: boolean;
 }[] = [
     {
       icon: Lock,
@@ -39,14 +40,14 @@ const features: {
       icon: RefreshCw,
       title: 'Dynamic Auto-Shuffling',
       description:
-        'Travel plans change. Using an intuitive drag-and-drop timeline, extend, move, or remove any activity and the AI will instantly reshuffle the rest of the day to make the new schedule fit. The time changes are cascaded to subsequent events, transit buffers are recalculated, and the ripple effect is halted right before it collides with any Smart Anchor — prompting you to compress or drop the lowest-priority event.',
+        'Travel plans change. Type your edit request in plain English and BonPlan instantly reshuffles the day in real time. Time changes cascade to subsequent events, transit buffers are recalculated, and the ripple effect halts right before colliding with any Smart Anchor — prompting smart suggestions like compressing or dropping a low-priority stop.',
       Visual: ShuffleVisual,
     },
     {
       icon: Crosshair,
       title: 'Surgical Activity Swaps',
       description:
-        "Don't like a specific museum suggestion? Highlight that single activity and ask the AI to swap it out for a food tour. The agentic loop isolates that exact time window, checks the geographical distance to surrounding events, queries external APIs for a replacement that fits the precise temporal and spatial boundaries, and patches it in — leaving the rest of your meticulously planned day completely untouched.",
+        'Need to replace just one stop? Type your request and BonPlan runs the editing pipeline on that exact slot only. It isolates the time window, checks fit with nearby events, fetches a replacement that matches timing and location constraints, and updates the itinerary in real time without disturbing the rest of your day.',
       Visual: SwapVisual,
     },
     {
@@ -55,13 +56,6 @@ const features: {
       description:
         'Whether you want an aggressively efficient sightseeing blitz, a relaxed vacation with long coffee breaks, or a mix of both — set your Pacing Preference and the AI adapts. It directly controls the minimum rest intervals injected between scheduled events, optimizing travel routes and activity density to match your exact desired rhythm. From "Action-Packed" to "Leisurely," every itinerary feels personally calibrated.',
       Visual: PacingVisual,
-    },
-    {
-      icon: Users,
-      title: 'Multiplayer Collaborative Mode',
-      description:
-        'Planning a group trip is no longer a headache of endless group chat messages and conflicting opinions. Generate a shareable link, invite friends or family to the live canvas, and let them vote on AI-generated activities. The itinerary dynamically updates based on group consensus. Assign Owner, Editor, or Viewer roles so nobody accidentally drags and wrecks the timeline — and even create Split Events for subgroups who want to do different things at the same time.',
-      Visual: MultiplayerVisual,
     },
     {
       icon: MessageSquare,
@@ -78,11 +72,20 @@ const features: {
       Visual: MapVisual,
     },
     {
+      icon: Users,
+      title: 'Multiplayer Collaborative Mode',
+      description:
+        'Planning a group trip is no longer a headache of endless group chat messages and conflicting opinions. Generate a shareable link, invite friends or family to the live canvas, and let them vote on AI-generated activities. The itinerary dynamically updates based on group consensus. Assign Owner, Editor, or Viewer roles so nobody accidentally drags and wrecks the timeline — and even create Split Events for subgroups who want to do different things at the same time.',
+      Visual: MultiplayerVisual,
+      comingSoon: true,
+    },
+    {
       icon: Radio,
       title: 'Real-Time Travel Concierge',
       description:
         "BonPlan doesn't stop working when the itinerary is finalized. Throughout your journey, the agent acts as your live companion — providing a morning summary of today's schedule and weather, real-time traffic routing to your next stop, and instant contingency plans for last-minute disruptions. If your Smart Anchor flight is suddenly delayed by 3 hours, the concierge sends a push notification offering to automatically compress your day to absorb the lost time.",
       Visual: ConciergeVisual,
+      comingSoon: true,
     },
   ];
 
@@ -107,6 +110,7 @@ export default function Features() {
         <div>
           {features.map((feature, i) => {
             const isEven = i % 2 === 0;
+            const isComingSoon = Boolean(feature.comingSoon);
 
             return (
               <motion.div
@@ -121,7 +125,7 @@ export default function Features() {
                   <div className="h-px bg-gradient-to-r from-white/10 via-cyan to-white/10" />
                 )}
 
-                <div className="group py-12 sm:py-16 lg:py-20">
+                <div className={`group py-12 sm:py-16 lg:py-20 ${isComingSoon ? 'opacity-80' : ''}`}>
                   {/* Two-column layout: text + visual, alternating sides */}
                   <div className={`flex flex-col lg:flex-row items-center gap-10 lg:gap-16 ${!isEven ? 'lg:flex-row-reverse' : ''}`}>
                     {/* Text side */}
@@ -133,6 +137,11 @@ export default function Features() {
                         <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight group-hover:text-cyan transition-colors duration-300">
                           {feature.title}
                         </h3>
+                        {isComingSoon && (
+                          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-200">
+                            Coming Soon
+                          </span>
+                        )}
                       </div>
                       <p className="pl-16 text-base sm:text-lg leading-[1.75] text-slate/75 group-hover:text-slate/70 transition-colors duration-300">
                         {feature.description}

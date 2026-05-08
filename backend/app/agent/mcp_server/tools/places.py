@@ -112,7 +112,10 @@ def _format_place_info(data: dict) -> dict:
             .get("text", "")
         )[:_SUMMARY_MAX_CHARS]
     }
-    base["reviews"]["reviewSummary"] = (data.get("reviewSummary", {}).get("text", "") or "")[:_SUMMARY_MAX_CHARS]
+    _review_summary_raw = data.get("reviewSummary", {}).get("text", "") or ""
+    if isinstance(_review_summary_raw, dict):
+        _review_summary_raw = _review_summary_raw.get("text", "") or ""
+    base["reviews"]["reviewSummary"] = str(_review_summary_raw)[:_SUMMARY_MAX_CHARS]
     base["phoneNumber"] = data.get("internationalPhoneNumber", "")
     return base
 
@@ -121,9 +124,9 @@ def _format_place_info(data: dict) -> dict:
 # module load from the `GooglePlaceType` Literal in `constants.py`. Kept as
 # a frozenset for O(1) membership checks during input validation.
 #
-# The Literal itself is NOT exposed to Gemini as an enum anymore: the
+# The Literal itself is NOT exposed to the LLM as an enum anymore: the
 # `included_types` / `excluded_types` parameters use `List[str]` in the
-# tool schema so Gemini's constrained decoder doesn't have to stay inside
+# tool schema so provider constrained decoders do not have to stay inside
 # a 280-member enum (the old shape was a common MALFORMED_FUNCTION_CALL
 # trigger). We instead validate each entry at runtime and return an
 # actionable error with a sample of valid types if the model guesses wrong.

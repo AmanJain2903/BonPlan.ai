@@ -4,11 +4,12 @@ import { AlertTriangle } from 'lucide-react';
 import { ItineraryDay } from './types';
 import { renderSubCardForEvent } from './subcards';
 import PlaceholderSubCard from './subcards/PlaceholderSubCard';
-import { EASE_OUT_EXPO } from './constants';
+import { EASE_OUT_EXPO, eventIdentityKey } from './constants';
 
 interface ExpandedDayCardBodyProps {
   day: ItineraryDay;
   onViewOnMap: (event: any) => void;
+  onToggleLock?: (event: any) => void;
   /** Direction of prev/next navigation, used to slide the list on day change. */
   navDirection?: 1 | -1;
 }
@@ -28,7 +29,7 @@ const slideVariants = {
  * so that when the AI edits an event (potentially changing its type entirely),
  * the old card exits and the new card enters with a smooth crossfade.
  */
-export default function ExpandedDayCardBody({ day, onViewOnMap, navDirection = 1 }: ExpandedDayCardBodyProps) {
+export default function ExpandedDayCardBody({ day, onViewOnMap, onToggleLock, navDirection = 1 }: ExpandedDayCardBodyProps) {
   const showPlaceholder = day.isLoading && !day.hasError;
 
   // Track which _updatedAt values were already present when the view opened
@@ -76,7 +77,7 @@ export default function ExpandedDayCardBody({ day, onViewOnMap, navDirection = 1
           <div className="flex flex-col gap-3 w-full">
             <AnimatePresence initial={false}>
               {day.events.map((event: any) => {
-                const stableKey = `${event.event_type}-d${event.day_number}-e${event.event_number}`;
+                const stableKey = `${event.event_type}-${eventIdentityKey(event)}`;
                 const updatedAt: number | undefined = event._updatedAt;
 
                 // Only pulse if this _updatedAt value is genuinely new
@@ -95,7 +96,7 @@ export default function ExpandedDayCardBody({ day, onViewOnMap, navDirection = 1
                     {isNewUpdate && (
                       <PulseOverlay updatedAt={updatedAt!} seenRef={seenUpdatesRef} />
                     )}
-                    {renderSubCardForEvent(event, { onViewOnMap })}
+                    {renderSubCardForEvent(event, { onViewOnMap, onToggleLock })}
                   </motion.div>
                 );
               })}

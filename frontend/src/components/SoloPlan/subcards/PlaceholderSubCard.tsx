@@ -48,16 +48,16 @@ export default function PlaceholderSubCard() {
         className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none"
       />
 
-      <div className="relative z-10 flex items-center gap-4 px-4 py-3">
-        <div className="flex items-center gap-2 shrink-0 px-2.5 py-1 rounded-full bg-cyan/20 border border-cyan/50 text-cyan min-w-[6.5rem] justify-center">
+      <div className="relative z-10 flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-3">
+        <div className="flex items-center gap-1.5 shrink-0 px-2 sm:px-2.5 py-1 rounded-full bg-cyan/20 border border-cyan/50 text-cyan min-w-[5rem] sm:min-w-[6.5rem] justify-center">
           <motion.span
             animate={{ rotate: [0, 360], scale: [1, 1.15, 1] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
             className="inline-flex"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
           </motion.span>
-          <span className="text-[10px] font-bold uppercase tracking-wider">Generating</span>
+          <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Generating</span>
         </div>
 
         <div className="flex-1 min-w-0 flex flex-col gap-2">

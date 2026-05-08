@@ -5,18 +5,18 @@ import os
 import re
 from typing import Any, Dict
 
-from google import genai
-from google.genai import types
-
+from app.agent.llm import litellm_types as types
 from app.agent.core.runtime import _DAY_MCP_TOOLS, _RESEARCH_MCP_TOOLS, runtime
 from app.agent.langgraph_runtime.editor_state import EditorState
+from app.agent.langgraph_runtime.output_style import with_user_facing_output_policy
 from app.agent.langgraph_runtime.streaming import emit
 from app.core.config import settings
 from app.logging import get_agent_logger
 from app.services.rate_limiter.rate_limiter import RateLimitExceeded, get_rate_limiter
-from app.services.rate_limiter.sku_resolver import SKU
+from app.services.rate_limiter.sku_resolver import resolve_llm_model_sku
 
 log = get_agent_logger("conversational_node")
+CONVERSATION_MODEL_SKU = resolve_llm_model_sku(settings.CONVERSATION_AGENT_MODEL)
 
 _PROMPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "prompts", "editor", "conversationalPrompt.md"
@@ -92,13 +92,13 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
         emit({"type": "conversation_end"})
         return {}
 
-    if runtime.mcp_session is None:
-        emit({"type": "error", "content": "MCP session not ready."})
+    if runtime.mcp_session is None or runtime.model_client is None:
+        emit({"type": "error", "content": "Agent runtime not ready."})
         return {"cancelled": True}
 
     allowed = set(_RESEARCH_MCP_TOOLS) | set(_DAY_MCP_TOOLS)
     mcp_decls = [
-        d for d in (runtime.gemini_tools or [])
+        d for d in (runtime.llm_tools or [])
         if d.name in allowed and d.name != "add_itinerary_event"
     ]
     tool_block = types.Tool(function_declarations=mcp_decls)
@@ -110,6 +110,7 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
         max_output_tokens=4096,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
+    config = with_user_facing_output_policy(config)
 
     CURRENT_ITINERARY = json.dumps(_compact_itinerary(state.get('current_itinerary_events') or []), default=str)
     if CURRENT_ITINERARY:
@@ -129,20 +130,20 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
         f"USER QUESTION: {state.get('user_message', '')}\n\n"
     )
 
-    client = genai.Client(api_key=settings.CONVERSATION_AGENT_API_KEY)
+    client = runtime.model_client
     chat = client.aio.chats.create(model=settings.CONVERSATION_AGENT_MODEL, config=config)
     current_message: Any = initial_message
 
     max_turns = 24
     for _turn in range(max_turns):
         try:
-            await get_rate_limiter().consume(SKU["conversation_agent"])
+            await get_rate_limiter().consume(CONVERSATION_MODEL_SKU)
         except RateLimitExceeded as exc:
             emit({"type": "error", "content": f"Conversation quota exhausted. Retry after {exc.retry_after_seconds}s."})
             return {"cancelled": True}
 
         try:
-            response_stream = await chat.send_message_stream(current_message)
+            response_stream = chat.send_message_stream(current_message)
         except Exception as exc:
             emit({"type": "error", "content": f"Conversation model error: {exc}"})
             return {"cancelled": True}
@@ -151,28 +152,33 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
         tool_calls: list[types.FunctionCall] = []
         pending_turn_text = ""
 
-        async for chunk in response_stream:
-            if chunk.candidates:
-                try:
-                    finish_reason = str(chunk.candidates[0].finish_reason or "")
-                except Exception:
-                    finish_reason = ""
+        try:
+            async for chunk in response_stream:
+                if chunk.candidates:
+                    try:
+                        finish_reason = str(chunk.candidates[0].finish_reason or "")
+                    except Exception:
+                        finish_reason = ""
 
-            parts = (
-                chunk.candidates[0].content.parts
-                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts
-                else []
-            )
+                parts = (
+                    chunk.candidates[0].content.parts
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts
+                    else []
+                )
 
-            for part in parts:
-                if isinstance(part.text, str) and part.text:
-                    is_thought = bool(getattr(part, "thought", False))
-                    if is_thought:
-                        emit({"type": "thinking", "content": part.text})
-                    else:
-                        pending_turn_text += part.text
-                if part.function_call:
-                    tool_calls.append(part.function_call)
+                for part in parts:
+                    if isinstance(part.text, str) and part.text:
+                        is_thought = bool(getattr(part, "thought", False))
+                        if is_thought:
+                            emit({"type": "thinking", "content": part.text})
+                        else:
+                            pending_turn_text += part.text
+                    if part.function_call:
+                        tool_calls.append(part.function_call)
+        except Exception as exc:
+            log.error("Conversation stream error", error=str(exc))
+            emit({"type": "error", "content": f"Conversation model error: {exc}"})
+            return {"cancelled": True}
 
         if not tool_calls:
             finish_upper = finish_reason.upper()
@@ -195,6 +201,7 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
                     types.Part.from_function_response(
                         name=fc.name,
                         response={"error": "Itinerary mutation tools are disabled in conversational mode."},
+                        tool_call_id=fc.id,
                     )
                 )
                 continue
@@ -204,11 +211,19 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
                 output = "".join(c.text for c in mcp_result.content if hasattr(c, "text")) or "Task completed."
                 output = _truncate_tool_output(output)
                 tool_responses.append(
-                    types.Part.from_function_response(name=fc.name, response={"output": output})
+                    types.Part.from_function_response(
+                        name=fc.name,
+                        response={"output": output},
+                        tool_call_id=fc.id,
+                    )
                 )
             except Exception as exc:
                 tool_responses.append(
-                    types.Part.from_function_response(name=fc.name, response={"error": str(exc)})
+                    types.Part.from_function_response(
+                        name=fc.name,
+                        response={"error": str(exc)},
+                        tool_call_id=fc.id,
+                    )
                 )
 
         current_message = tool_responses

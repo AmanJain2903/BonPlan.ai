@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Shield, Activity, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, Shield, Activity, ArrowLeft, HelpCircle, Ticket } from 'lucide-react';
 import { cn } from '../../utils/tailwind';
 
 interface AdminSidebarProps {
@@ -7,12 +7,26 @@ interface AdminSidebarProps {
   setSidebarOpen: (open: boolean) => void;
 }
 
-export default function AdminSidebar({ sidebarOpen, setSidebarOpen }: AdminSidebarProps) {
-  const navItems = [
-    { name: 'SKU Management', href: '/admin/skus', icon: Shield },
-    { name: 'Usage Viewer', href: '/admin/usage', icon: Activity },
-  ];
+type NavItem = { name: string; href: string; icon: React.ElementType };
 
+const sections: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'Rate Limiting',
+    items: [
+      { name: 'SKU Management', href: '/admin/skus', icon: Shield },
+      { name: 'Usage Viewer', href: '/admin/usage', icon: Activity },
+    ],
+  },
+  {
+    label: 'Support',
+    items: [
+      { name: 'FAQ Manager', href: '/admin/faq', icon: HelpCircle },
+      { name: 'Support Tickets', href: '/admin/tickets', icon: Ticket },
+    ],
+  },
+];
+
+export default function AdminSidebar({ sidebarOpen, setSidebarOpen }: AdminSidebarProps) {
   return (
     <div
       className={cn(
@@ -25,45 +39,49 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }: AdminSideb
         <span className="ml-3 text-lg font-bold tracking-tight text-white">BonPlan Admin</span>
       </div>
 
-      <div className="px-4 py-6 flex-1 overflow-y-auto">
-        <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-4 px-2">
-          Rate Limiting
-        </div>
-        <nav className="space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.name}
-                to={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={({ isActive }) =>
-                  cn(
-                    "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200",
-                    isActive
-                      ? "bg-white/[0.06] text-cyan"
-                      : "text-white/70 hover:bg-white/[0.06] hover:text-white"
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <Icon
-                      className={cn(
-                        "mr-3 flex-shrink-0 h-5 w-5 transition-colors",
+      <div className="px-4 py-6 flex-1 overflow-y-auto space-y-6">
+        {sections.map((section) => (
+          <div key={section.label}>
+            <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3 px-2">
+              {section.label}
+            </div>
+            <nav className="space-y-1">
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.name}
+                    to={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200",
                         isActive
-                          ? "text-cyan"
-                          : "text-white/40 group-hover:text-white/70"
-                      )}
-                      aria-hidden="true"
-                    />
-                    {item.name}
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
-        </nav>
+                          ? "bg-white/[0.06] text-cyan"
+                          : "text-white/70 hover:bg-white/[0.06] hover:text-white"
+                      )
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <Icon
+                          className={cn(
+                            "mr-3 flex-shrink-0 h-5 w-5 transition-colors",
+                            isActive
+                              ? "text-cyan"
+                              : "text-white/40 group-hover:text-white/70"
+                          )}
+                          aria-hidden="true"
+                        />
+                        {item.name}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </nav>
+          </div>
+        ))}
       </div>
       
       <div className="p-4 border-t border-white/10 shrink-0">

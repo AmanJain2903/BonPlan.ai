@@ -1,7 +1,9 @@
 import { RefObject, useState, useEffect, useRef, useCallback, useLayoutEffect, MutableRefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Brain, ChevronDown, Loader2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown } from 'lucide-react';
+import { User, Brain, ChevronDown, Loader2, AlertTriangle, RefreshCw, Play, ArrowUp, ArrowDown, CalendarCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { EASE_OUT_EXPO } from './constants';
 import { SystemLog, ChatTurn, BotTurn, UserTurn, QAPairTurn } from './types';
 import { BotAvatar, BouncingDots } from './Atoms';
@@ -9,11 +11,51 @@ import QuestionCard from './QuestionCard';
 
 // ─── Sub-sections ─────────────────────────────────────────────
 
-function UserMessage({ text }: { text: string }) {
+const markdownComponents: Components = {
+  table({ node: _node, ...props }) {
+    return (
+      <div className="my-3 block w-full max-w-full overflow-x-auto rounded-md border border-white/10">
+        <table {...props} className="w-max min-w-full max-w-none border-collapse text-left text-xs" />
+      </div>
+    );
+  },
+  th({ node: _node, ...props }) {
+    return (
+      <th
+        {...props}
+        className="border-b border-white/10 bg-white/[0.06] px-3 py-2 font-semibold text-white"
+      />
+    );
+  },
+  td({ node: _node, ...props }) {
+    return <td {...props} className="border-b border-white/10 px-3 py-2 align-top text-white/75" />;
+  },
+};
+
+function MarkdownContent({
+  children,
+  className = '',
+}: {
+  children: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`min-w-0 max-w-full overflow-x-hidden text-sm text-white/80 leading-relaxed prose prose-invert prose-sm prose-strong:text-white prose-em:text-white/70 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-1 prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1 prose-pre:max-w-full prose-pre:overflow-x-auto prose-code:break-words ${className}`}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function UserMessage({ text, attachedEventsCount = 0 }: { text: string; attachedEventsCount?: number }) {
   const [expanded, setExpanded] = useState(false);
   if (!text.trim()) return null;
   const needsTruncation = text.length > 50;
   const displayText = needsTruncation && !expanded ? text.slice(0, 50) + '...' : text;
+  const hasAttachedEvents = attachedEventsCount > 0;
   return (
     <motion.div
       initial={{ opacity: 0, y: 10, scale: 0.97 }}
@@ -33,6 +75,18 @@ function UserMessage({ text }: { text: string }) {
             </button>
           )}
         </p>
+        {hasAttachedEvents && (
+          <div className="mt-2 flex justify-end">
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-cyan/25 bg-cyan/10 px-2 py-0.5 text-[11px] font-semibold leading-none text-cyan/85"
+              title={`${attachedEventsCount} attached ${attachedEventsCount === 1 ? 'event' : 'events'}`}
+              aria-label={`${attachedEventsCount} attached ${attachedEventsCount === 1 ? 'event' : 'events'}`}
+            >
+              <CalendarCheck className="w-3 h-3" />
+              +{attachedEventsCount}
+            </span>
+          </div>
+        )}
       </div>
       <div className="w-7 h-7 rounded-full bg-cyan/10 border border-cyan/20 flex items-center justify-center shrink-0 mt-0.5">
         <User className="w-3.5 h-3.5 text-cyan" />
@@ -111,6 +165,46 @@ function WaitingDots({ visible }: { visible: boolean }) {
   );
 }
 
+const toolStatusLabels: Record<string, string> = {
+  load_itinerary: 'Loading the itinerary',
+  search_web: 'Checking current travel information',
+  get_content_from_url: 'Checking current travel information',
+  search_places: 'Checking places',
+  search_places_nearby: 'Checking nearby places',
+  get_place_info: 'Checking place details',
+  search_hotels: 'Checking hotels',
+  get_hotel_booking_url: 'Checking hotel booking details',
+  search_flights: 'Checking flights',
+  search_multi_city_flights: 'Checking flights',
+  get_next_flights: 'Checking flights',
+  get_flight_booking_details: 'Checking flight details',
+  get_flight_booking_url: 'Checking flight booking details',
+  search_rental_cars: 'Checking rental cars',
+  get_route: 'Checking the route',
+  get_route_matrix: 'Checking travel times',
+  get_optimal_route: 'Checking the best route',
+  get_coordinates: 'Checking the location',
+  get_address: 'Checking the address',
+  get_timezone: 'Checking local time',
+  get_current_timestamp: 'Checking local time',
+  convert_utc_string_to_timestamp: 'Checking local time',
+  convert_timestamp_to_utc_string: 'Checking local time',
+  convert_target_local_time_to_utc: 'Checking local time',
+  get_current_weather: 'Checking weather',
+  get_daily_forecast: 'Checking weather',
+  get_hourly_forecast: 'Checking weather',
+  get_current_air_quality: 'Checking air quality',
+  get_air_quality_forecast: 'Checking air quality',
+  convert_currency_to_USD: 'Checking prices',
+  get_supported_currencies: 'Checking currencies',
+  get_country_code: 'Checking location details',
+  get_airports_and_codes: 'Checking airport options',
+};
+
+function getToolStatusLabel(name: string): string {
+  return toolStatusLabels[name] || 'Checking details';
+}
+
 function ActiveToolIndicator({ activeTool }: { activeTool: { name: string; call_id: string } | null }) {
   return (
     <AnimatePresence>
@@ -123,7 +217,7 @@ function ActiveToolIndicator({ activeTool }: { activeTool: { name: string; call_
           className="flex items-center gap-3 px-4 py-2"
         >
           <Loader2 className="w-4 h-4 text-cyan animate-spin shrink-0" />
-          <span className="text-xs font-bold text-cyan/70 font-mono italic">Executing {activeTool.name}...</span>
+          <span className="text-xs font-bold text-cyan/70 font-mono italic">{getToolStatusLabel(activeTool.name)}...</span>
         </motion.div>
       )}
     </AnimatePresence>
@@ -144,7 +238,7 @@ function ActivePruningIndicator({ activePruningChunk }: { activePruningChunk: an
         >
           <div className="flex items-center gap-3">
             <Loader2 className="w-4 h-4 text-cyan animate-spin shrink-0" />
-            <span className="text-xs font-bold text-cyan/70 font-mono italic">Compacting Memory...</span>
+            <span className="text-xs font-bold text-cyan/70 font-mono italic">Refreshing context...</span>
             <button onClick={() => setExpanded(p => !p)} className="p-1 text-cyan/70 hover:text-cyan transition-colors ml-auto mr-2">
               <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
                 <ChevronDown className="w-4 h-4" />
@@ -200,13 +294,13 @@ function ActiveThinkingBubble({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -5 }}
           transition={{ duration: 0.3 }}
-          className="flex items-start gap-3"
+          className="flex w-full min-w-0 max-w-full items-start gap-3 overflow-x-hidden"
         >
           <BotAvatar icon={Brain} className="mt-0.5" />
-          <div className="flex-1 px-0 py-0">
+          <div className="min-w-0 max-w-full flex-1 px-0 py-0">
             <div
               ref={scrollRef}
-              className="max-w-70 max-h-20 overflow-y-auto scrollbar-hide pointer-events-none relative"
+              className="relative max-h-20 max-w-full overflow-y-auto overflow-x-hidden scrollbar-hide pointer-events-none"
             >
               <p className="text-xs text-white/50 leading-relaxed whitespace-normal">
                 <ReactMarkdown>{activeThinking.trim()}</ReactMarkdown>
@@ -317,13 +411,11 @@ function FinalSummaryMessage({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -5 }}
           transition={{ duration: 0.3 }}
-          className="flex items-start gap-3"
+          className="flex w-full min-w-0 max-w-full items-start gap-3 overflow-x-hidden"
         >
           <BotAvatar className="mt-0.5" />
-          <div className="flex-1 px-0 py-0">
-            <div className="text-sm text-white/80 leading-relaxed prose prose-invert prose-sm max-w-none prose-strong:text-white prose-em:text-white/70 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-1 prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1">
-              <ReactMarkdown>{finalSummary.trim()}</ReactMarkdown>
-            </div>
+          <div className="min-w-0 max-w-full flex-1 px-0 py-0">
+            <MarkdownContent>{finalSummary.trim()}</MarkdownContent>
             {summaryEndRef && <div ref={summaryEndRef} />}
           </div>
         </motion.div>
@@ -437,7 +529,7 @@ function FrozenBotTurn({ turn }: { turn: BotTurn }) {
   // no in-progress indicators (no active tool, no active thinking bubble,
   // no pruning, no pending question, no waiting dots).
   return (
-    <div className="flex flex-col gap-1.5 mb-3">
+    <div className="mb-3 flex min-w-0 max-w-full flex-col gap-1.5 overflow-x-hidden">
       <ThoughtsAccordion thoughtHistory={turn.thoughtHistory} expanded={thoughtsExpanded} onToggle={() => setThoughtsExpanded(p => !p)} />
       <FinalSummaryMessage finalSummary={turn.finalSummary} />
       <SystemMessageAccordion
@@ -473,7 +565,6 @@ interface MessageCanvasProps {
 export default function MessageCanvas({
   turns,
   toolsExpanded,
-  onToggleTools,
   thoughtsExpanded,
   onToggleThoughts,
   systemLogExpanded,
@@ -566,7 +657,7 @@ export default function MessageCanvas({
   // }, [turns]);
 
   return (
-    <div className="relative flex-1 flex flex-col min-h-0 pb-3">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-x-hidden pb-3">
 
       {/* Scroll to Top - Top Right */}
       <div className="absolute right-0 top-0 z-20 pointer-events-none">
@@ -608,14 +699,21 @@ export default function MessageCanvas({
         A horizontal rule sits ABOVE the latest live turn to separate it from
         the frozen past (frozen previous bot turns + qa_pair past blocks).
       */}
-      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 chat-scrollbar">
-        <div className="max-w-3xl mx-auto flex flex-col gap-1.5 relative">
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-5 chat-scrollbar">
+        <div className="relative mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-1.5 overflow-x-hidden">
 
           {/* History (older turns) — chronological top-to-bottom (oldest
               first, newest just before the separator). */}
           {historyTurns.map((turn) => {
             if (turn.type === 'user') {
-              return <UserMessage key={turn.id} text={(turn as UserTurn).text} />;
+              const userTurn = turn as UserTurn;
+              return (
+                <UserMessage
+                  key={userTurn.id}
+                  text={userTurn.text}
+                  attachedEventsCount={userTurn.attachedEvents?.length || 0}
+                />
+              );
             }
             if (turn.type === 'qa_pair') {
               return <QAPairMessage key={turn.id} turn={turn as QAPairTurn} />;
@@ -631,7 +729,7 @@ export default function MessageCanvas({
           {/* Latest (live) bot turn — at the BOTTOM of DOM. Auto-scroll
               parks the viewport here. */}
           {latestBot && (
-            <div key={latestBot.id} className="flex flex-col gap-1.5">
+            <div key={latestBot.id} className="flex min-w-0 max-w-full flex-col gap-1.5 overflow-x-hidden">
               <ThoughtsAccordion thoughtHistory={latestBot.thoughtHistory} expanded={thoughtsExpanded} onToggle={onToggleThoughts} />
               <WaitingDots visible={latestBot.isStreaming && !latestBot.activeThinkingBubble && !latestBot.finalSummary && !latestBot.pendingQuestion} />
               <ActiveToolIndicator activeTool={latestBot.activeToolIndicator} />

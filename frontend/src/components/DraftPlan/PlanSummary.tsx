@@ -124,28 +124,28 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
               </div>
             </div>
 
-            <div className="p-6 rounded-xl bg-white/[0.03] border border-white/[0.05] space-y-4 transition-colors hover:bg-white/[0.05]">
+            <div className="p-4 sm:p-6 rounded-xl bg-white/[0.03] border border-white/[0.05] space-y-4 transition-colors hover:bg-white/[0.05]">
               <div className="flex items-center gap-3 text-white/70 mb-2">
                 <MapPin size={16} />
                 <span>Journey Outline</span>
               </div>
 
-              <div className="relative w-full bg-black/20 rounded-xl px-2 py-6">
+              <div className="relative w-full bg-black/20 rounded-xl py-5">
                 <div
-                    className="overflow-x-auto scrollbar-hide"
+                    className="overflow-x-auto scrollbar-hide px-4"
                     style={{
-                        maskImage: 'linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent)',
-                        WebkitMaskImage: 'linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent)'
+                        maskImage: 'linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent)',
+                        WebkitMaskImage: 'linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent)'
                     }}
                 >
-                    <div className="relative w-full min-w-max px-10">
+                    <div className="relative min-w-max px-4">
                         {allNodes.length > 1 && (
-                        <div className="absolute top-[0.65rem] left-[15%] right-[15%] h-[2px] bg-cyan/40 overflow-hidden rounded-full z-0" />
+                        <div className="absolute top-[0.65rem] left-[10%] right-[10%] h-[2px] bg-cyan/40 overflow-hidden rounded-full z-0" />
                         )}
 
-                        <div className="relative flex justify-between items-start gap-8 z-10">
+                        <div className="relative flex items-center justify-center gap-4 sm:gap-8 z-10">
                         {allNodes.map((node, i) => (
-                            <div key={i} className="flex flex-col items-center gap-3 w-28 shrink-0">
+                            <div key={i} className="flex flex-col items-center gap-2 w-20 sm:w-28 shrink-0">
                             <div className="h-6 w-6 bg-carbon rounded-full border-2 border-cyan flex items-center justify-center shrink-0">
                                 {i === 0 ? (
                                 <PlaneTakeoff size={12} className="text-cyan" />
@@ -153,7 +153,7 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
                                 <MapPin size={12} className="text-cyan" />
                                 )}
                             </div>
-                            <span className="text-cyan font-bold text-[13px] text-center leading-tight [text-shadow:0_0_10px_rgba(102,252,241,0.2)]">
+                            <span className="text-cyan font-bold text-[11px] sm:text-[13px] text-center leading-tight [text-shadow:0_0_10px_rgba(102,252,241,0.2)] break-words w-full">
                                 {node}
                             </span>
                             </div>
@@ -164,12 +164,12 @@ export function PlanSummary({ trip, name, onDraft }: PlanDraftProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/[0.05] transition-colors hover:bg-white/[0.05]">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 p-4 rounded-xl bg-white/[0.03] border border-white/[0.05] transition-colors hover:bg-white/[0.05]">
               <div className="flex items-center gap-3 text-white/70">
-                <Calendar size={16} />
+                <Calendar size={16} className="shrink-0" />
                 <span>Dates</span>
               </div>
-              <span className="font-semibold text-cyan tracking-wide">
+              <span className="font-semibold text-cyan tracking-wide text-sm pl-7 sm:pl-0 sm:text-right">
                 {formatDate(trip.tripData?.startDate)} — {formatDate(trip.tripData?.endDate)}
               </span>
             </div>

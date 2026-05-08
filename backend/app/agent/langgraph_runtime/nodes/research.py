@@ -15,11 +15,10 @@ import os
 import uuid
 from typing import Any, Dict, Optional
 
-from google.genai import types
-
 from app.logging import get_agent_logger, set_agent_log_context
+from app.agent.llm import litellm_types as types
 from app.agent.core.runtime import runtime
-from app.agent.langgraph_runtime.gemini_adapter import run_chat_loop
+from app.agent.langgraph_runtime.litellm_adapter import run_chat_loop
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.langgraph_runtime.streaming import emit
 from app.agent.schemas.structuredInput import TripInput
@@ -46,6 +45,17 @@ async def _truncate_research_facts(facts: dict) -> dict:
     if len(raw.encode()) > _RESEARCH_FACTS_SIZE_LIMIT:
         log.warning("Research facts still too big. Returning anyways")
     return facts
+
+def _compute_cardinal_bearing(
+    origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float
+) -> str:
+    """Returns the dominant cardinal direction from origin to destination."""
+    dlat = dest_lat - origin_lat
+    dlng = dest_lng - origin_lng
+    if abs(dlat) >= abs(dlng):
+        return "NORTH" if dlat > 0 else "SOUTH"
+    return "EAST" if dlng > 0 else "WEST"
+
 
 async def _parse_llm_research_json(text: Optional[str]) -> dict:
     """Best-effort JSON extraction from the LLM's post-START output."""
@@ -84,8 +94,23 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
+    # Compute dominant travel direction so the LLM can correctly identify
+    # which section of any named road/highway aligns with the trip direction.
+    bearing_block = ""
+    origin_obj = getattr(trip_data, "origin", None)
+    destinations = list(getattr(trip_data, "destinations", None) or [])
+    if origin_obj and destinations:
+        dest_lats = [d.lat for d in destinations if hasattr(d, "lat")]
+        dest_lngs = [d.lng for d in destinations if hasattr(d, "lng")]
+        if dest_lats and dest_lngs:
+            mean_lat = sum(dest_lats) / len(dest_lats)
+            mean_lng = sum(dest_lngs) / len(dest_lngs)
+            cardinal = _compute_cardinal_bearing(origin_obj.lat, origin_obj.lng, mean_lat, mean_lng)
+            bearing_block = f"Net travel direction (origin → destination): {cardinal}\n\n"
+
     initial_message = (
         "Phase: RESEARCH + START\n"
+        f"{bearing_block}"
         "Your only task for this phase:\n"
         "1. Do at most 1-2 quick searches to fill gaps in the user request"
         "For example (a short weather summary, "
@@ -128,6 +153,7 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
         log.warning("Research phase failed", error=result.error)
         return {
             "research_facts": {},
+            "day_zones": [],
             "journey": journey,
             "prior_events": existing_prior,
             "next_event_number": 1,   # day 1 starts fresh from event 1
@@ -135,12 +161,29 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
         }
 
     llm_facts = await _parse_llm_research_json(result.last_text)
+
+    # Extract day_zones before size-truncation; it is structured data, not prose.
+    day_zones: list = llm_facts.pop("day_zones", None) or []
+    if not isinstance(day_zones, list):
+        day_zones = []
+
     research_facts = await _truncate_research_facts(llm_facts)
 
-    log.info("Research phase complete", journey=journey)
+    # Embed research_facts and day_zones into the START event so they survive
+    # resume runs (research phase is skipped on resume; day_planner recovers
+    # these fields from the START event in prior_events).
+    # Re-emitting START is safe — _apply_event_write replaces the existing START
+    # in itinerary.events rather than appending a duplicate.
+    if start_event is not None:
+        start_event["_research_facts"] = research_facts
+        start_event["_day_zones"] = day_zones
+        emit({"type": "event", "data": start_event})
+
+    log.info("Research phase complete", journey=journey, day_zones_count=len(day_zones))
 
     return {
         "research_facts": research_facts,
+        "day_zones": day_zones,
         "journey": journey,
         "prior_events": existing_prior,
         "next_event_number": 1,   # day 1 starts fresh from event 1

@@ -2,12 +2,13 @@ import { DollarSign, Star, MapPin, ExternalLink, UtensilsCrossed } from 'lucide-
 import SubCardShell from './common/SubCardShell';
 import TipsSection from './common/TipsSection';
 import ViewOnMapButton from './common/ViewOnMapButton';
-import { Dot } from '../Atoms';
+import LockToggle from './common/LockToggle';
 import { EVENT_ACCENT, EVENT_ICON, EVENT_LABEL, formatClockTime, formatDurationEnglish, isValidUrl } from '../constants';
 
 interface Props {
   event: any;
   onViewOnMap: () => void;
+  onToggleLock?: () => void;
   contentKey?: string | number;
 }
 
@@ -31,7 +32,7 @@ function LogoOrIcon({ url, name }: { url?: string; name: string }) {
   );
 }
 
-export default function DiningCard({ event, onViewOnMap, contentKey }: Props) {
+export default function DiningCard({ event, onViewOnMap, onToggleLock, contentKey }: Props) {
   const d = event?.place_details;
   if (!d) return null;
 
@@ -47,6 +48,7 @@ export default function DiningCard({ event, onViewOnMap, contentKey }: Props) {
       Icon={Icon}
       accent={accent}
       contentKey={contentKey}
+      lockButton={onToggleLock ? <LockToggle isLocked={event?.is_locked === true} onToggle={onToggleLock} /> : undefined}
       viewOnMapButton={<ViewOnMapButton onClick={onViewOnMap} />}
       startTime={d.start_time}
       endTime={d.end_time}
@@ -60,12 +62,12 @@ export default function DiningCard({ event, onViewOnMap, contentKey }: Props) {
             {d.place_name && (
               <span className="text-[11px] text-white/50 truncate">{d.place_name}</span>
             )}
-            <div className="flex items-center gap-2 text-[11px] text-white/60 mt-0.5">
-              <span>{formatClockTime(d.start_time)} {duration && `– ${formatClockTime(d.end_time)}`}</span>
-              {duration && <><Dot /> {duration}</>}
+            <div className="mt-0.5 text-[10px] sm:text-[11px] text-white/60 leading-tight">
+              <span className="whitespace-nowrap">{formatClockTime(d.start_time)}{duration ? ` – ${formatClockTime(d.end_time)}` : ''}</span>
+              {duration && <span className="whitespace-nowrap"> · {duration}</span>}
             </div>
           </div>
-          <div className="flex flex-col items-center gap-1 shrink-0 w-[6rem]">
+          <div className="flex flex-col items-center gap-1 shrink-0 sm:w-[6rem]">
             <div className="flex items-center gap-1 shrink-0 justify-center">
               <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-sm font-semibold text-white/90">{(d.cost || 0).toFixed(2)}</span>

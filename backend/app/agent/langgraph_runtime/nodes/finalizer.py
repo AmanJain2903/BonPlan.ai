@@ -13,17 +13,18 @@ import os
 import uuid
 from typing import Any, Dict, List
 
-from google.genai import types
 from sqlalchemy import select
 
+from app.agent.llm import litellm_types as types
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary
 from app.logging import get_agent_logger, set_agent_log_context
 from app.agent.core.runtime import runtime
-from app.agent.langgraph_runtime.gemini_adapter import run_chat_loop
+from app.agent.langgraph_runtime.litellm_adapter import run_chat_loop
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
 from app.agent.langgraph_runtime.streaming import emit
+from app.agent.helpers.itinerary_event_cost import sum_chargeable_cost_usd
 
 log = get_agent_logger("finalizer")
 
@@ -33,31 +34,6 @@ _FINALIZER_PROMPT_PATH = os.path.join(
 with open(_FINALIZER_PROMPT_PATH, "r", encoding="utf-8") as _f:
     FINALIZER_SYSTEM_PROMPT = _f.read()
 
-
-# (details_field, cost_key) pairs for every event type that contributes to the
-# trip cost. Aggregated once in Python so the model never has to re-sum.
-_COST_SOURCES = (
-    ("flight_takeoff_details", "cost"),
-    ("hotel_checkin_details", "cost"),
-    ("car_pickup_details", "cost"),
-    ("place_details", "cost"),
-    ("other_details", "cost"),
-    ("commute_details", "transit_fare"),
-)
-
-
-def _sum_trip_cost(events: list) -> float:
-    total = 0.0
-    for e in events or []:
-        for field, key in _COST_SOURCES:
-            details = e.get(field) or {}
-            val = details.get(key)
-            try:
-                if val is not None:
-                    total += float(val)
-            except (TypeError, ValueError):
-                continue
-    return round(total, 2)
 
 async def finalizer_node(state: PlannerState) -> Dict[str, Any]:
     run_id = (state.get("trip_id") + "-" + state.get("user_id")) if state.get("user_id") and state.get("trip_id") else str(uuid.uuid4())
@@ -73,7 +49,7 @@ async def finalizer_node(state: PlannerState) -> Dict[str, Any]:
     trip_state_json = json.dumps(prior_events, default=str)
 
     # Using the precomputed value keeps finalization one-shot.
-    precomputed_trip_cost = _sum_trip_cost(prior_events)
+    precomputed_trip_cost = sum_chargeable_cost_usd(prior_events)
 
 
     config = types.GenerateContentConfig(

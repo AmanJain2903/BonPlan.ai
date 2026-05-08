@@ -20,6 +20,8 @@ async def run_editor_chat(
     cached_itinerary_events: Optional[List[Dict]] = None,
     cached_trip_input: Optional[Dict[str, Any]] = None,
     cached_research_facts: Optional[Dict[str, Any]] = None,
+    base_snapshot_cursor: Optional[int] = None,
+    base_events_hash: Optional[str] = None,
     force_reload_itinerary: bool = False,
     cancellation_callback: Optional[Callable[[], Awaitable[bool]]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -34,6 +36,8 @@ async def run_editor_chat(
         "cached_itinerary_events": cached_itinerary_events or [],
         "cached_trip_input": cached_trip_input or {},
         "cached_research_facts": cached_research_facts or {},
+        "client_base_snapshot_cursor": base_snapshot_cursor,
+        "client_base_events_hash": base_events_hash or "",
         "force_reload_itinerary": force_reload_itinerary,
         "cancelled": False,
     }

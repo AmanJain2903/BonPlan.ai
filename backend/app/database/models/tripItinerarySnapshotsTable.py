@@ -1,6 +1,6 @@
 # database/models/tripItinerarySnapshotsTable.py
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -11,6 +11,9 @@ import uuid
 
 class TripItinerarySnapshot(Base):
     __tablename__ = "trip_itinerary_snapshots"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "version_index", name="uq_snapshot_trip_version"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False, index=True)
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True)

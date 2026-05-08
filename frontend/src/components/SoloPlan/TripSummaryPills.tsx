@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, CalendarDays, Route, DollarSign } from 'lucide-react';
 import { SPRING_PILL, EASE_OUT_EXPO, safelyParseJSON, formatDate } from './constants';
@@ -11,6 +11,8 @@ interface TripSummaryPillsProps {
   isGenerating: boolean;
   dynamicTitle?: string;
   dynamicJourney?: string[];
+  leftControl?: ReactNode;
+  shareControl?: ReactNode;
 }
 
 /** Derives trip display data from a Plan object */
@@ -68,6 +70,7 @@ function Pill({
 }) {
   const isActive = hoveredPill === id;
   const isFaded = hoveredPill !== null && !isActive;
+  const activeWidth = `calc(${label.length}ch + 4rem)`;
 
   return (
     <motion.div
@@ -76,7 +79,10 @@ function Pill({
       transition={{ ...SPRING_PILL, delay: 0.1 + index * 0.08 }}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
-      className={`flex items-center gap-2.5 bg-black/60 border border-white/10 rounded-full px-5 py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,max-width,border-color,box-shadow] duration-300 ${isActive ? 'max-w-[800px] transition-smooth duration-800 z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'max-w-[200px] sm:max-w-[250px] z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
+      style={{
+        width: isActive ? activeWidth : undefined,
+      }}
+      className={`flex h-9 sm:h-11 min-w-0 flex-none items-center gap-2 sm:gap-2.5 bg-black/60 border border-white/10 rounded-full px-3 sm:px-4 lg:px-5 py-2 sm:py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,width,border-color,box-shadow] duration-300 ${isActive ? 'z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'w-28 sm:w-40 lg:w-48 xl:w-52 z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
     >
       <Icon className="text-cyan w-4 h-4 shrink-0" />
       <AnimatePresence mode="wait">
@@ -101,7 +107,7 @@ const PILLS_CONFIG = [
   { id: 'dates', icon: CalendarDays, dataKey: 'datesLabel' as const },
 ];
 
-export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, isGenerating, dynamicTitle, dynamicJourney }: TripSummaryPillsProps) {
+export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, isGenerating, dynamicTitle, dynamicJourney, leftControl, shareControl }: TripSummaryPillsProps) {
   const [hoveredPill, setHoveredPill] = useState<string | null>(null);
   const data = useTripDisplayData(plan, dynamicTitle, dynamicJourney);
 
@@ -113,34 +119,57 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, i
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20, height: 0, marginBottom: 0, transition: { duration: 0.3  } }}
           transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
-          className="w-full shrink-0 flex flex-wrap items-center justify-center gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8"
+          className="w-full shrink-0 relative mb-2 sm:mb-6 lg:mb-8"
         >
-          {PILLS_CONFIG.map(({ id, icon, dataKey }, i) => (
-            <Pill
-              key={id}
-              id={id}
-              icon={icon}
-              label={data[dataKey]}
-              index={i}
-              hoveredPill={hoveredPill}
-              onHover={() => setHoveredPill(id)}
-              onLeave={() => setHoveredPill(null)}
-            />
-          ))}
-          {tripCostEstimate !== undefined && (
-            <Pill
-              id="cost"
-              icon={DollarSign}
-              label={
-                !isGenerating && actualCost !== undefined
-                  ? `Estimated Cost: $${actualCost.toFixed(2)}`
-                  : `Estimated Cost: $${tripCostEstimate.toFixed(2)}`
-              }
-              index={PILLS_CONFIG.length}
-              hoveredPill={hoveredPill}
-              onHover={() => setHoveredPill('cost')}
-              onLeave={() => setHoveredPill(null)}
-            />
+          {/* Mobile: two-row — controls on top, pills below */}
+          {(leftControl || shareControl) && (
+            <div className="flex sm:hidden items-center justify-between px-2 mb-2">
+              <div>{leftControl}</div>
+              <div>{shareControl}</div>
+            </div>
+          )}
+
+          {/* Pills row */}
+          <div className="scrollbar-hide flex min-h-11 w-full flex-nowrap items-center justify-start gap-2 sm:gap-3 overflow-x-auto overflow-y-visible px-3 sm:justify-center sm:px-14 lg:gap-4 lg:px-20">
+            {PILLS_CONFIG.map(({ id, icon, dataKey }, i) => (
+              <Pill
+                key={id}
+                id={id}
+                icon={icon}
+                label={data[dataKey]}
+                index={i}
+                hoveredPill={hoveredPill}
+                onHover={() => setHoveredPill(id)}
+                onLeave={() => setHoveredPill(null)}
+              />
+            ))}
+            {tripCostEstimate !== undefined && (
+              <Pill
+                id="cost"
+                icon={DollarSign}
+                label={
+                  !isGenerating && actualCost !== undefined
+                    ? `Estimated Cost: $${actualCost.toFixed(2)}`
+                    : `Estimated Cost: $${tripCostEstimate.toFixed(2)}`
+                }
+                index={PILLS_CONFIG.length}
+                hoveredPill={hoveredPill}
+                onHover={() => setHoveredPill('cost')}
+                onLeave={() => setHoveredPill(null)}
+              />
+            )}
+          </div>
+
+          {/* Desktop: absolute-positioned controls */}
+          {leftControl && (
+            <div className="hidden sm:block absolute left-0 top-0 z-[70]">
+              {leftControl}
+            </div>
+          )}
+          {shareControl && (
+            <div className="hidden sm:block absolute right-0 top-0 z-[70]">
+              {shareControl}
+            </div>
           )}
         </motion.div>
       )}

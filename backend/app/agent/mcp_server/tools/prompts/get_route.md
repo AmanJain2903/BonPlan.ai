@@ -27,3 +27,10 @@ Each waypoint uses exactly ONE of:
 
 ### Returns
 `{ routes: [{ distance, durationWithTraffic, durationWithoutTraffic, routeLegs, mapsUrl, warnings, travelAdvisory, optimizedRoute? }] }`
+
+### Selecting the Right Route
+
+When the trip request names a specific road, highway, or scenic route as a preferred corridor:
+1. Inspect the `description` field of every returned route for that road name. Prefer the matching route even if it is longer or slower than the default.
+2. If no returned route's `description` contains the named road, re-call with `avoidHighways: true` inside `route_modifiers` — scenic and coastal roads are more likely to surface when freeways are excluded.
+3. From the second call, pick the route whose `description` best matches the named road. If still no match, use the closest scenic alternative and note the discrepancy.

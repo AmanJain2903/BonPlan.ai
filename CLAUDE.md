@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Codebase Discovery
 - For any query about project structure, architecture, or cross-file logic, **always call `graphify` tool**
-- Do not attempt to use `grep` or `ls` for codebase mapping; use the graph representation to save context tokens.
-- **Always** browse codebase using **graphify** only.
+- Do not attempt to use `grep` or `ls` or `cat` for codebase mapping; use the graph representation to save context tokens.
+- **Always** browse codebase using **graphify** only. Use of other methods is strictly prohibitted. Only use the other methods if graphify fails to resolve the context you want.
 
 ### 3-Layer Query Rule
 1. **First:** query `graphify-out/graph.json` or `graphify-out/wiki/index.md`
@@ -87,7 +87,7 @@ Two FastAPI apps run as separate processes:
 
 ```
 app.py          ← Main FastAPI (DB init, Redis restore, rate limiter lifespan)
-ai.py           ← Agent FastAPI (MCP subprocess + GenAI client lifespan)
+ai.py           ← Agent FastAPI (MCP subprocess + LiteLLM client lifespan)
 core/config.py  ← All env vars via pydantic-settings (single source of truth)
 api/v1/endpoints/
   auth.py             — Google OAuth + local auth
@@ -103,15 +103,15 @@ services/rate_limiter/rate_limiter.py  ← Redis+Lua SKU-based rate limiter
 ### Agent (`backend/app/agent/`)
 
 ```
-ai.py → agent_runtime_context() → spins up MCP subprocess + GenAI client
+ai.py → agent_runtime_context() → spins up MCP subprocess + LiteLLM client
 solo_planner.py             — generate_trip_itinerary() / edit_trip_itinerary()
 langgraph_runtime/
   graph.py                  — LangGraph StateGraph definition (see topology below)
   state.py                  — PlannerState TypedDict (single shared state)
   streaming.py              — emit() SSE chunks to frontend
   validator.py              — validate_itinerary_event()
-  context_pruning.py        — _prune_history() (Gemini-based, 1M context window)
-  gemini_adapter.py         — run_chat_loop() wrapping Gemini API calls
+  context_pruning.py        — _prune_history() (configured LLM context window)
+  litellm_adapter.py        — run_chat_loop() wrapping LiteLLM chat calls
   nodes/
     bootstrap.py            — load trip + prior events, set is_resuming
     research.py             — web search + research_facts (≤2KB JSON)
@@ -146,8 +146,8 @@ START → bootstrap → research_and_start → collaboration_checkpoint
 - **Two separate Uvicorn processes** — main API and agent API are never merged. Frontend talks to both on different ports.
 - **`PlannerState`** is the single source of truth for all LangGraph state. Reducer fields (`operator.add`) are append-only.
 - **Rate limiter** is Redis+Lua SKU-based, persists counters to Postgres, restores on startup. `RATE_LIMITER_MODE=lenient` (fail-open default); set `strict` in prod.
-- **Context pruning** uses a separate Gemini model with 1M context window to compress history between day-planner iterations.
-- **Gemini models** are configured per-role in `config.py` — planner uses `gemma-4-31b-it`, pruner uses `gemini-3.1-flash-lite-preview`. Do not mix keys/models across roles.
+- **Context pruning** uses a separate configured LLM context window to compress history between day-planner iterations.
+- **LLM models** are configured per-role in `config.py` using LiteLLM provider-prefixed model names. Do not mix keys/models across roles.
 - **Editing mode** (`build_editor_graph()`) is stubbed — graph returns `None`. Do not implement features that assume it exists.
 - **MCP server** runs as a subprocess owned by `agent_runtime_context`. Tools in `mcp_server/tools/` are invoked by the planner LLM, not called directly by backend code.
 

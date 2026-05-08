@@ -1,5 +1,6 @@
 import { api } from '../../apis/plan';
 import { GenerationSession, ChatTurn, BotTurn, ItineraryState, ItineraryDay, PendingQuestion, ChatMode, QAPairTurn, GenerationStartOptions } from './types';
+import { eventIdentityKey, replayEvents } from './constants';
 
 type Subscriber = (session: GenerationSession) => void;
 
@@ -36,6 +37,43 @@ function getEventCost(data: any): number {
 
 function isCountableEvent(eventType: string): boolean {
   return ['HOTEL_CHECKIN', 'ACTIVITY', 'DINING', 'OTHER'].includes(eventType);
+}
+
+function rebuildDayAfterRemoval(day: ItineraryDay, fromEventNumber: number): ItineraryDay {
+  const timestamp = Date.now();
+  const events = day.events.filter((event: any) => {
+    const eventNumber = event?.event_number;
+    return typeof eventNumber !== 'number' || eventNumber < fromEventNumber;
+  });
+
+  const latestEventWithDayMeta = [...events]
+    .reverse()
+    .find((event: any) => event?.day_title || event?.date);
+
+  return {
+    ...day,
+    title: latestEventWithDayMeta?.day_title || (events.length ? day.title : ''),
+    date: latestEventWithDayMeta?.date || (events.length ? day.date : ''),
+    events,
+    eventsCount: events.reduce(
+      (count, event: any) => count + (isCountableEvent(event.event_type) ? 1 : 0),
+      0,
+    ),
+    cost: events.reduce((sum, event: any) => sum + getEventCost(event), 0),
+    isLoading: true,
+    hasError: false,
+    lastUpdatedAt: timestamp,
+  };
+}
+
+function removeEventsFromItinerary(prev: ItineraryState, dayNumber: number, fromEventNumber: number): ItineraryState {
+  if (typeof dayNumber !== 'number' || typeof fromEventNumber !== 'number') return prev;
+  return {
+    ...prev,
+    days: prev.days.map((day) =>
+      day.dayNumber === dayNumber ? rebuildDayAfterRemoval(day, fromEventNumber) : day,
+    ),
+  };
 }
 
 function processEventIntoItinerary(prev: ItineraryState, data: any): ItineraryState {
@@ -90,7 +128,7 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
           // the prior entry instead of duplicating. Backend already upserts on
           // the same key (see backend/app/agent/api/v1/endpoints/solo_planner.py).
           const existingIdx = day.events.findIndex(
-            (e: any) => e.event_number === data.event_number,
+            (e: any) => eventIdentityKey(e) === eventIdentityKey(data),
           );
 
           const timestamp = Date.now();
@@ -126,6 +164,38 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
       };
     }
   }
+}
+
+function replaceItineraryState(prev: ItineraryState, chunk: any): ItineraryState {
+  const timestamp = Date.now();
+  const events = Array.isArray(chunk.events)
+    ? chunk.events.map((event: any) => (
+        event && typeof event === 'object' ? { ...event, _updatedAt: timestamp } : event
+      ))
+    : [];
+  const next = replayEvents({
+    id: '',
+    title: chunk.title ?? prev.tripTitle ?? null,
+    origin: null,
+    destinations: prev.journey || [],
+    start_date: null,
+    end_date: null,
+    cost: chunk.cost ?? prev.tripCostEstimate ?? null,
+    days: prev.days.length || null,
+    events,
+    tips: Array.isArray(chunk.tips) ? chunk.tips : (prev.tripTips || []),
+    status: 'GENERATED',
+    smart_anchors: [],
+    snapshot_cursor: chunk.snapshot_cursor,
+    events_hash: chunk.events_hash,
+    created_at: '',
+    updated_at: '',
+  });
+  return {
+    ...next,
+    snapshotCursor: typeof chunk.snapshot_cursor === 'number' ? chunk.snapshot_cursor : prev.snapshotCursor,
+    eventsHash: typeof chunk.events_hash === 'string' ? chunk.events_hash : prev.eventsHash,
+  };
 }
 
 function flushThinking(turn: BotTurn): Pick<BotTurn, 'thoughtHistory' | 'activeThinkingBubble'> {
@@ -233,6 +303,14 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       break;
     }
 
+    case 'events_removed':
+      session.itineraryState = removeEventsFromItinerary(
+        session.itineraryState,
+        chunk.day_number,
+        chunk.from_event_number,
+      );
+      break;
+
     case 'event':
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
@@ -240,6 +318,16 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
         activePruningChunk: null,
       }));
       session.itineraryState = processEventIntoItinerary(session.itineraryState, chunk.data);
+      break;
+
+    case 'itinerary_replace':
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        ...flushThinking(turn),
+        activeToolIndicator: null,
+        activePruningChunk: null,
+      }));
+      session.itineraryState = replaceItineraryState(session.itineraryState, chunk);
       break;
 
     case 'summary':
@@ -277,10 +365,15 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
     case 'conversation_end':
     case 'intent':
     case 'structural_change':
+    case 'edit_status':
+    case 'edit_clarification':
+    case 'edit_rejected':
+    case 'edit_commit':
+    case 'edit_end':
       return;
 
     default:
-      console.log('[UNKNOWN CHUNK]', chunk);
+      // Do nothing
   }
 }
 
@@ -432,6 +525,7 @@ class GenerationManager {
       isActive: true,
       isWaitingForUser: false,
       abortController: controller,
+      startedAt: Date.now(),
       lastRequest: {
         chatInput: options.chatInput,
         mode: options.mode,
@@ -440,6 +534,8 @@ class GenerationManager {
         cachedItineraryEvents: [...(options.cachedItineraryEvents || [])],
         cachedTripInput: { ...(options.cachedTripInput || {}) },
         cachedResearchFacts: { ...(options.cachedResearchFacts || {}) },
+        baseSnapshotCursor: options.baseSnapshotCursor,
+        baseEventsHash: options.baseEventsHash,
         forceReloadItinerary: !!options.forceReloadItinerary,
       },
     };
@@ -450,10 +546,12 @@ class GenerationManager {
     const newTurns: ChatTurn[] = [...session.turns];
     const shouldAppendUserTurn = options.appendUserTurn !== false;
     if (shouldAppendUserTurn && options.chatInput && options.chatInput.trim().length > 0) {
+      const attachedEvents = [...(options.attachedEvents || [])];
       newTurns.push({
         id: `${Date.now()}-user`,
         type: 'user' as const,
         text: options.chatInput,
+        ...(attachedEvents.length > 0 ? { attachedEvents } : {}),
       });
     }
     newTurns.push({
@@ -486,6 +584,8 @@ class GenerationManager {
               cached_itinerary_events: options.cachedItineraryEvents || [],
               cached_trip_input: options.cachedTripInput || {},
               cached_research_facts: options.cachedResearchFacts || {},
+              base_snapshot_cursor: options.baseSnapshotCursor,
+              base_events_hash: options.baseEventsHash,
               force_reload_itinerary: !!options.forceReloadItinerary,
             },
             controller.signal,
@@ -540,7 +640,7 @@ class GenerationManager {
               return;
             }
           } catch (err) {
-            console.error('Error parsing SSE chunk', err, part);
+            // Do nothing
           }
         }
       }
@@ -555,19 +655,19 @@ class GenerationManager {
             this.notify(tripId);
           }
         } catch (err) {
-          console.error('Error parsing final buffered SSE chunk', err);
+          // Do nothing
         }
       }
 
       session.turns = updateLastBotTurn(session.turns, (turn) => ({ ...turn, isStreaming: false }));
       session.isActive = false;
       session.isWaitingForUser = false;
+      session.startedAt = null;
       this.notify(tripId);
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('Stream aborted by user for trip', tripId);
+        // Do nothing
       } else {
-        console.error('Stream connection failed:', err);
         session.turns = updateLastBotTurn(session.turns, (turn) => ({
           ...turn,
           systemLog: { type: 'error', content: 'Stream connection failed.' },
@@ -578,6 +678,7 @@ class GenerationManager {
       }
       session.isActive = false;
       session.isWaitingForUser = false;
+      session.startedAt = null;
       this.notify(tripId);
     }
   }
@@ -753,6 +854,7 @@ class GenerationManager {
     session.errorType = 'stopped';
     session.isActive = false;
     session.isWaitingForUser = false;
+    session.startedAt = null;
     if (session.mode !== 'editing') this.markLoadingDaysAsError(session);
     this.notify(tripId);
   }

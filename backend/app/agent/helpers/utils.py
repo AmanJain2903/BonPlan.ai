@@ -1,6 +1,7 @@
 import os
 from typing import Dict, List, Tuple, Optional
-from google.genai import types
+
+from app.agent.llm import litellm_types as types
 from app.agent.schemas.structuredOutput import (
     AddItineraryEvent,
     StartEventDetails,
@@ -21,7 +22,7 @@ from app.logging import get_agent_logger
 logger = get_agent_logger("helpers.utils")
 
 
-def fix_schema_for_gemini(schema: dict) -> dict:
+def normalize_llm_schema(schema: dict) -> dict:
     import copy
     schema = copy.deepcopy(schema)
     defs = schema.pop("$defs", {})
@@ -92,7 +93,7 @@ def _load_ask_user_question_description() -> str:
 ADD_EVENT_TOOL = types.FunctionDeclaration(
     name="add_itinerary_event",
     description=_load_add_event_description(),
-    parameters=fix_schema_for_gemini(AddItineraryEvent.model_json_schema())
+    parameters=normalize_llm_schema(AddItineraryEvent.model_json_schema())
 )
 
 ASK_USER_QUESTION_TOOL_NAME="ask_user_question"
@@ -100,15 +101,15 @@ ASK_USER_QUESTION_TOOL_NAME="ask_user_question"
 ASK_USER_QUESTION_TOOL = types.FunctionDeclaration(
     name=ASK_USER_QUESTION_TOOL_NAME,
     description=_load_ask_user_question_description(),
-    parameters=fix_schema_for_gemini(AdkUserQuestionTool.model_json_schema())
+    parameters=normalize_llm_schema(AdkUserQuestionTool.model_json_schema())
 )
 
 
-def convert_mcp_to_gemini(mcp_tool) -> types.FunctionDeclaration:
+def convert_mcp_to_llm_tool(mcp_tool) -> types.FunctionDeclaration:
     return types.FunctionDeclaration(
         name=mcp_tool.name,
         description=mcp_tool.description or "",
-        parameters=fix_schema_for_gemini(mcp_tool.inputSchema)
+        parameters=normalize_llm_schema(mcp_tool.inputSchema)
     )
 
 
@@ -118,7 +119,7 @@ def convert_mcp_to_gemini(mcp_tool) -> types.FunctionDeclaration:
 # Instead of one ~46 KB `add_itinerary_event` tool whose schema carries all 11
 # optional `*_details` sub-objects every turn, we expose 10 small tools, each
 # carrying only the sub-schema for one event type.  The dispatcher in
-# gemini_adapter.py maps each tool name back to a unified `AddItineraryEvent`
+# litellm_adapter.py maps each tool name back to a unified `AddItineraryEvent`
 # payload and runs the existing validator, so the frontend event chunk shape
 # is untouched.
 #
@@ -129,7 +130,7 @@ def convert_mcp_to_gemini(mcp_tool) -> types.FunctionDeclaration:
 
 # Pull the top-level AddItineraryEvent property descriptions once so the
 # per-type tools stay in lock-step with structuredOutput.py.
-_BASE_ITINERARY_SCHEMA = fix_schema_for_gemini(AddItineraryEvent.model_json_schema())
+_BASE_ITINERARY_SCHEMA = normalize_llm_schema(AddItineraryEvent.model_json_schema())
 _TOP_LEVEL_FIELDS = ("day_number", "day_title", "date", "event_number")
 
 
@@ -144,7 +145,7 @@ def _build_event_tool(
     detail_field: str,
     details_model,
 ) -> types.FunctionDeclaration:
-    details_schema = fix_schema_for_gemini(details_model.model_json_schema())
+    details_schema = normalize_llm_schema(details_model.model_json_schema())
     props = _top_level_props()
     props["event_type"] = {
         "type": "string",
