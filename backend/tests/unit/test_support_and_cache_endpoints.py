@@ -80,7 +80,8 @@ def test_support_decode_token_and_submit_ticket(monkeypatch, user_factory, jwt_t
     assert result["status_code"] == 200
     assert factory.added[0].subject == "Help"
     assert factory.added[0].body == "Body"
-    assert sent[0]["to_email"] == support.settings.SENDER_EMAIL
+    assert sent[0]["to_email"] == support.SUPPORT_EMAIL_ADDRESS
+    assert sent[0]["from_email"] == support.SUPPORT_EMAIL_FROM
 
 
 def test_support_admin_faq_crud(monkeypatch):
@@ -133,6 +134,7 @@ def test_support_ticket_status_and_acknowledge(monkeypatch):
     assert ticket.status == TicketStatus.RESOLVED
     assert ticket.acknowledged is True
     assert len(sent) == 3
+    assert {call["from_email"] for call in sent} == {support.SUPPORT_EMAIL_FROM}
 
 
 def test_support_acknowledge_conflict(monkeypatch):

@@ -35,7 +35,7 @@ export default function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-midnight flex items-center justify-center px-4">
+      <div className="min-h-[100svh] bg-midnight flex items-center justify-start sm:justify-center px-4 pt-24 pb-12 sm:py-24">
         <motion.div 
           initial={{ opacity: 0, y: 30, filter: 'blur(8px)', willChange: 'transform, opacity, filter' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -71,7 +71,7 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12 sm:py-24">
+    <div className="min-h-[100svh] flex items-center justify-start sm:justify-center px-4 pt-24 pb-12 sm:py-24">
       <div className="pointer-events-none fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-cyan/[0.03] blur-[120px]" />
 
       <motion.div 

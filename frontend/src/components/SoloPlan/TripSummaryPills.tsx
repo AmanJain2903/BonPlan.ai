@@ -50,7 +50,7 @@ function useTripDisplayData(plan: Plan, dynamicTitle?: string, dynamicJourney?: 
   return { tripTitle, journeyFlow, datesLabel };
 }
 
-/** A single hoverable info pill */
+/** A single info pill that expands on hover and tap. */
 function Pill({
   id,
   icon: Icon,
@@ -59,6 +59,7 @@ function Pill({
   hoveredPill,
   onHover,
   onLeave,
+  onToggle,
 }: {
   id: string;
   icon: typeof MapPin;
@@ -67,6 +68,7 @@ function Pill({
   hoveredPill: string | null;
   onHover: () => void;
   onLeave: () => void;
+  onToggle: () => void;
 }) {
   const isActive = hoveredPill === id;
   const isFaded = hoveredPill !== null && !isActive;
@@ -79,10 +81,19 @@ function Pill({
       transition={{ ...SPRING_PILL, delay: 0.1 + index * 0.08 }}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
+      onClick={onToggle}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
       style={{
         width: isActive ? activeWidth : undefined,
       }}
-      className={`flex h-9 sm:h-11 min-w-0 flex-none items-center gap-2 sm:gap-2.5 bg-black/60 border border-white/10 rounded-full px-3 sm:px-4 lg:px-5 py-2 sm:py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-default transition-[filter,opacity,width,border-color,box-shadow] duration-300 ${isActive ? 'z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'w-28 sm:w-40 lg:w-48 xl:w-52 z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
+      className={`flex h-9 sm:h-11 min-w-0 flex-none items-center gap-2 sm:gap-2.5 bg-black/60 border border-white/10 rounded-full px-3 sm:px-4 lg:px-5 py-2 sm:py-2.5 backdrop-blur-md shadow-xl overflow-hidden cursor-pointer select-none transition-[filter,opacity,width,border-color,box-shadow] duration-300 ${isActive ? 'z-20 shadow-[0_0_20px_rgba(102,252,241,0.15)] border-cyan/30' : 'w-28 sm:w-40 lg:w-48 xl:w-52 z-10'} ${isFaded ? 'blur-sm opacity-40' : 'opacity-100'}`}
     >
       <Icon className="text-cyan w-4 h-4 shrink-0" />
       <AnimatePresence mode="wait">
@@ -110,6 +121,10 @@ const PILLS_CONFIG = [
 export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, isGenerating, dynamicTitle, dynamicJourney, leftControl, shareControl }: TripSummaryPillsProps) {
   const [hoveredPill, setHoveredPill] = useState<string | null>(null);
   const data = useTripDisplayData(plan, dynamicTitle, dynamicJourney);
+
+  const handleTogglePill = (id: string) => {
+    setHoveredPill((current) => (current === id ? null : id));
+  };
 
   return (
     <AnimatePresence>
@@ -141,6 +156,7 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, i
                 hoveredPill={hoveredPill}
                 onHover={() => setHoveredPill(id)}
                 onLeave={() => setHoveredPill(null)}
+                onToggle={() => handleTogglePill(id)}
               />
             ))}
             {tripCostEstimate !== undefined && (
@@ -156,6 +172,7 @@ export default function TripSummaryPills({ plan, tripCostEstimate, actualCost, i
                 hoveredPill={hoveredPill}
                 onHover={() => setHoveredPill('cost')}
                 onLeave={() => setHoveredPill(null)}
+                onToggle={() => handleTogglePill('cost')}
               />
             )}
           </div>

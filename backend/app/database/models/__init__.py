@@ -16,3 +16,7 @@ from app.database.models.tripCollabQATable import TripCollabQA
 from app.database.models.tripItinerarySnapshotsTable import TripItinerarySnapshot
 from app.database.models.faqTable import FAQ
 from app.database.models.supportTicketsTable import SupportTicket
+from app.database.models.emailSubscriptionsTable import EmailSubscription
+from app.database.models.tripEmailNotificationsTable import TripEmailNotification
+from app.database.models.rateLimitAlertSettingsTable import RateLimitAlertSettings
+from app.database.models.rateLimitAlertEventsTable import RateLimitAlertEvent

@@ -176,8 +176,12 @@ export default function WorldMapBackground() {
     }
 
     function resize() {
-      W = el!.clientWidth;
-      H = el!.clientHeight;
+      const nextW = el!.clientWidth;
+      const nextH = el!.clientHeight;
+      if (nextW === W && nextH === H) return;
+
+      W = nextW;
+      H = nextH;
       canvas.width = W * dpr;
       canvas.height = H * dpr;
       canvas.style.width = W + 'px';
@@ -348,5 +352,5 @@ export default function WorldMapBackground() {
   }, []);
 
 
-  return <div ref={ref} className={`fixed inset-0 z-0 pointer-events-none scale-110 translate-x-[-5%] translate-y-[5%] opacity-75 from-white/1 via-black/50 to-white/1 bg-gradient-to-r`} />;
+  return <div ref={ref} className="fixed left-0 top-0 z-0 h-screen min-h-[100lvh] w-screen pointer-events-none scale-110 translate-x-[-5%] translate-y-[5%] opacity-75 from-white/1 via-black/50 to-white/1 bg-gradient-to-r" />;
 }

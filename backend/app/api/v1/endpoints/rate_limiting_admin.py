@@ -20,6 +20,7 @@ from app.database.models.usersTable import User
 import jwt
 from app.core.config import settings
 from app.logging import get_api_logger
+from app.services.rate_limiter.limit_alerts import DEFAULT_ALERT_THRESHOLDS, get_or_create_alert_settings, normalize_thresholds
 from app.services.rate_limiter.rate_limiter import get_rate_limiter
 
 logger = get_api_logger("api.rate_limiting_admin")
@@ -110,6 +111,10 @@ class DeleteRateLimitConfigBody(BaseModel):
     sku: Optional[str] = None
     sku_id: Optional[str] = None
 
+class UpdateAlertSettingsBody(BaseModel):
+    enabled: bool = True
+    thresholds: List[int]
+
 def _titlelize_optional(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -122,6 +127,18 @@ def _format_for_insert(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     return value.lower().strip().replace(" ", "_")
+
+def _settings_response(settings) -> dict:
+    thresholds = settings.thresholds or DEFAULT_ALERT_THRESHOLDS
+    try:
+        thresholds = normalize_thresholds(thresholds)
+    except ValueError:
+        thresholds = DEFAULT_ALERT_THRESHOLDS
+    return {
+        "enabled": bool(settings.enabled),
+        "thresholds": thresholds,
+        "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
+    }
 
 @router.post("/create-rate-limit-config", response_model=dict)
 async def create_rate_limit_config(token: str, data: CreateRateLimitConfigBody):
@@ -378,3 +395,38 @@ async def get_all_usage(
         except Exception as e:
             logger.error("Failed to get rate limit usages", scope=scope, period_bucket=period_bucket, error=str(e))
             raise HTTPException(status_code=500, detail=f"Failed to get usage: {e}")
+
+@router.get("/alert-settings", response_model=dict)
+async def get_alert_settings(token: str):
+    await _verify_admin(token)
+    async with Session() as db:
+        try:
+            settings = await get_or_create_alert_settings(db)
+            await db.commit()
+            return {"status_code": 200, "settings": _settings_response(settings)}
+        except Exception as e:
+            logger.error("Failed to get rate limit alert settings", error=str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to get alert settings: {e}")
+
+
+@router.put("/alert-settings", response_model=dict)
+async def update_alert_settings(token: str, data: UpdateAlertSettingsBody):
+    await _verify_admin(token)
+    try:
+        thresholds = normalize_thresholds(data.thresholds)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    async with Session() as db:
+        try:
+            settings = await get_or_create_alert_settings(db)
+            settings.enabled = data.enabled
+            settings.thresholds = thresholds
+            await db.commit()
+            await db.refresh(settings)
+            return {"status_code": 200, "settings": _settings_response(settings)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Failed to update rate limit alert settings", error=str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to update alert settings: {e}")

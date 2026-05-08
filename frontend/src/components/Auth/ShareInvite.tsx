@@ -64,7 +64,7 @@ export default function ShareInvite() {
   }, [inviteAction, inviteToken, isLoggedIn, location.pathname, location.search, navigate, token]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-24">
+    <div className="min-h-[100svh] flex items-center justify-start sm:justify-center px-4 pt-24 pb-12 sm:py-24">
       <motion.div
         initial={{ opacity: 0, y: 20, filter: 'blur(6px)' }}
         animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}

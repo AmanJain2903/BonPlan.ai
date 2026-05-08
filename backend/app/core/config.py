@@ -16,13 +16,18 @@ load_dotenv()
 
 class Settings(BaseSettings):
 
+    LOCAL_DEVELOPMENT: bool = False
+
     # Deployment settings
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
     AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+    # Services settings
+    KEEPALIVE_INTERVAL_SECONDS: int = 600 # 10 minutes
+
     # Logging settings
-    LOG_ROOT: str = os.getenv("LOG_ROOT", "backend/logs")
+    LOG_ROOT: str = "backend/logs"
 
     # Project settings
     PROJECT_NAME: str = "BonPlan.ai"
@@ -91,10 +96,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY")
 
     # Email settings
-    SENDER_EMAIL: str = os.getenv("SENDER_EMAIL")
-    GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD")
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY")
 
     # Fallbacks
-    FALLBACK_IMAGE: str = os.getenv("FALLBACK_IMAGE", "https://images.unsplash.com/photo-1488085061387-422e29b40080?q=80&w=3131&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
+    FALLBACK_IMAGE: str = "https://images.unsplash.com/photo-1488085061387-422e29b40080?q=80&w=3131&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
 
 settings = Settings()

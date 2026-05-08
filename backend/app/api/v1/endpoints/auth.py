@@ -7,6 +7,7 @@ This file contains the authentication endpoints for the v1 version of the API.
 
 import asyncio
 import bcrypt
+import html
 import jwt
 import re
 
@@ -24,7 +25,7 @@ from app.core.config import settings
 from app.database.database import Session
 from app.database.models.usersTable import User
 from app.database.schemas.preferences import TripPreferencesSchema
-from app.utils.emailVerification import send_email
+from app.utils.emailVerification import bonplan_inline_images, render_email_layout, send_email
 
 from app.logging import get_api_logger
 
@@ -98,15 +99,20 @@ async def _send_verification_email_for_user(email: str, db: AsyncSession) -> Non
     token = jwt.encode(tokenPayload, settings.SECRET_KEY, algorithm="HS256")
     verificationLink = f"{settings.FRONTEND_URL}/verify-email?token={token}"
     subject = "BonPlan.ai - Verify your email address"
-    htmlContent = f"""
-    <p>Hello {user.first_name},</p>
-    <p>Thank you for registering with BonPlan.ai. Please click the link below to verify your email address.</p>
-    <a href="{verificationLink}">{verificationLink}</a>
-    <p>If you did not request this verification, please ignore this email.</p>
-    <p>Thank you,</p>
-    <p>The BonPlan.ai Team</p>
-    """
-    await send_email(email, subject, htmlContent)
+    htmlContent = render_email_layout(
+        title="Verify your email address",
+        preheader="Confirm your BonPlan.ai account email.",
+        eyebrow="Account security",
+        body_html=f"""
+        <p style="margin:0 0 14px;">Hello {html.escape(user.first_name or "there")},</p>
+        <p style="margin:0 0 16px;">Thank you for registering with BonPlan.ai. Verify your email address to finish setting up your account.</p>
+        <p style="margin:0 0 18px;color:rgba(214,216,218,0.82);">This link expires in 15 minutes. If you did not request this verification, you can ignore this email.</p>
+        """,
+        cta_label="Verify Email",
+        cta_url=verificationLink,
+        footer_html="BonPlan.ai account emails are sent from noreply-auth@bonplanai.com.",
+    )
+    await send_email(email, subject, htmlContent, inline_images=bonplan_inline_images())
 
 
 """
@@ -199,11 +205,12 @@ async def local_register(first_name: str, last_name: str, email: str, password: 
             raise HTTPException(status_code=400, detail="User already exists. Please log in with Google.")
 
         phone_json = {'country_code': code if code else None, 'number': phone if phone else None}
-        isPhoneNumberUnique = (await db.execute(
-            select(User).where(User.phone == phone_json)
-        )).scalar_one_or_none()
-        if isPhoneNumberUnique:
-            raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
+        if phone_json['country_code'] and phone_json['number']:
+            isPhoneNumberUnique = (await db.execute(
+                select(User).where(User.phone == phone_json)
+            )).scalar_one_or_none()
+            if isPhoneNumberUnique:
+                raise HTTPException(status_code=400, detail="Phone number already in use. Please use a different phone number.")
 
         try:
             password_hash = await _hash_password(password)
@@ -346,17 +353,21 @@ async def forgot_password(email: str):
         token = jwt.encode(tokenPayload, settings.SECRET_KEY, algorithm="HS256")
         resetLink = f"{settings.FRONTEND_URL}/reset-password?token={token}"
         subject = "BonPlan.ai - Reset your password"
-        htmlContent = f"""
-        <p>Hello {user.first_name},</p>
-        <p>We received a request to reset your password. Click the link below to set a new password.</p>
-        <a href="{resetLink}">{resetLink}</a>
-        <p>This link will expire in 15 minutes.</p>
-        <p>If you did not request this, please ignore this email.</p>
-        <p>Thank you,</p>
-        <p>The BonPlan.ai Team</p>
-        """
+        htmlContent = render_email_layout(
+            title="Reset your password",
+            preheader="Use this secure link to reset your BonPlan.ai password.",
+            eyebrow="Account security",
+            body_html=f"""
+            <p style="margin:0 0 14px;">Hello {html.escape(user.first_name or "there")},</p>
+            <p style="margin:0 0 16px;">We received a request to reset your password. Use the button below to set a new password.</p>
+            <p style="margin:0 0 18px;color:rgba(214,216,218,0.82);">This link expires in 15 minutes. If you did not request this, you can ignore this email.</p>
+            """,
+            cta_label="Reset Password",
+            cta_url=resetLink,
+            footer_html="BonPlan.ai account emails are sent from noreply-auth@bonplanai.com.",
+        )
         try:
-            await send_email(email, subject, htmlContent)
+            await send_email(email, subject, htmlContent, inline_images=bonplan_inline_images())
         except Exception as e:
             logger.error("Failed to send password reset email", error=str(e))
             raise HTTPException(status_code=500, detail="Failed to send reset email. Please try again later.")

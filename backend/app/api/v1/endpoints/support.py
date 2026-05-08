@@ -1,6 +1,7 @@
 # backend/app/api/v1/endpoints/support.py
 
 from typing import Optional
+import html as html_lib
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -13,7 +14,7 @@ from app.database.models.faqTable import FAQ
 from app.database.models.supportTicketsTable import SupportTicket, TicketStatus
 from app.database.models.usersTable import User
 from app.logging import get_api_logger
-from app.utils.emailVerification import send_email
+from app.utils.emailVerification import SUPPORT_EMAIL_ADDRESS, SUPPORT_EMAIL_FROM, bonplan_inline_images, render_email_layout, send_email
 
 logger = get_api_logger("api.support")
 router = APIRouter()
@@ -100,22 +101,27 @@ async def submit_ticket(req: SubmitTicketBody):
         user_name = f"{user.first_name} {user.last_name}"
         user_email = user.email
 
-    admin_email = settings.SENDER_EMAIL
-    html = f"""
-    <html><body style="font-family:sans-serif;color:#333;max-width:600px;margin:0 auto;">
-    <h2 style="color:#1a1a2e;">New Support Ticket</h2>
-    <p><strong>From:</strong> {user_name} (<a href="mailto:{user_email}">{user_email}</a>)</p>
-    <p><strong>Subject:</strong> {req.subject}</p>
-    <hr style="border:none;border-top:1px solid #eee;"/>
-    <div style="background:#f9f9f9;padding:16px;border-radius:8px;margin:16px 0;">
-      <p style="margin:0;white-space:pre-wrap;">{req.body}</p>
-    </div>
-    <hr style="border:none;border-top:1px solid #eee;"/>
-    <p style="font-size:12px;color:#888;">Ticket ID: {ticket_id} — Manage via the Admin Dashboard.</p>
-    </body></html>
-    """
+    admin_email = SUPPORT_EMAIL_ADDRESS
+    safe_subject = html_lib.escape(req.subject)
+    safe_body = html_lib.escape(req.body)
+    safe_user_name = html_lib.escape(user_name.strip() or user_email)
+    safe_user_email = html_lib.escape(user_email)
+    html = render_email_layout(
+        title="New support ticket",
+        preheader=f"New ticket from {safe_user_name}: {safe_subject}",
+        eyebrow="Support",
+        body_html=f"""
+        <p style="margin:0 0 12px;"><strong style="color:#ffffff;">From:</strong> {safe_user_name} ({safe_user_email})</p>
+        <p style="margin:0 0 18px;"><strong style="color:#ffffff;">Subject:</strong> {safe_subject}</p>
+        <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);padding:16px;border-radius:12px;margin:16px 0;">
+          <p style="margin:0;white-space:pre-wrap;">{safe_body}</p>
+        </div>
+        <p style="font-size:13px;color:rgba(197,198,199,0.72);margin:0;">Ticket ID: {html_lib.escape(ticket_id)}. Manage this from the Admin Dashboard.</p>
+        """,
+        footer_html="Support notifications are sent from support@bonplanai.com.",
+    )
     try:
-        await send_email(to_email=admin_email, subject=f"[Support] {req.subject}", body=html)
+        await send_email(to_email=admin_email, subject=f"[Support] {req.subject}", body=html, from_email=SUPPORT_EMAIL_FROM, inline_images=bonplan_inline_images())
     except Exception:
         logger.warning("Admin email notification failed", ticket_id=ticket_id)
 
@@ -254,18 +260,20 @@ async def admin_update_ticket_status(ticket_id: str, req: UpdateTicketStatusBody
         user_email = ticket.user_email
 
     if req.status == TicketStatus.RESOLVED and old_status != TicketStatus.RESOLVED:
-        html = f"""
-        <html><body style="font-family:sans-serif;color:#333;max-width:600px;margin:0 auto;">
-        <h2 style="color:#1a1a2e;">Your support ticket has been resolved</h2>
-        <p>Hello,</p>
-        <p>Your support ticket <strong>"{subject}"</strong> has been marked as <strong>resolved</strong> by our team.</p>
-        <p>If you need further assistance, please don't hesitate to reach out again via the BonPlan.ai support page.</p>
-        <br/>
-        <p>Best,<br/>BonPlan.ai Team</p>
-        </body></html>
-        """
+        safe_subject = html_lib.escape(subject)
+        html = render_email_layout(
+            title="Your support ticket is resolved",
+            preheader=f"Your ticket {safe_subject} has been resolved.",
+            eyebrow="Support",
+            body_html=f"""
+            <p style="margin:0 0 14px;">Hello,</p>
+            <p style="margin:0 0 16px;">Your support ticket <strong style="color:#ffffff;">{safe_subject}</strong> has been marked as resolved by our team.</p>
+            <p style="margin:0 0 18px;">If you need more help, reach out again from the BonPlan.ai support page or reply to this email.</p>
+            """,
+            footer_html="Support emails are sent from support@bonplanai.com.",
+        )
         try:
-            await send_email(to_email=user_email, subject=f"[Resolved] {subject}", body=html)
+            await send_email(to_email=user_email, subject=f"[Resolved] {subject}", body=html, from_email=SUPPORT_EMAIL_FROM, inline_images=bonplan_inline_images())
         except Exception:
             logger.warning("Resolution email failed", ticket_id=ticket_id)
 
@@ -286,18 +294,20 @@ async def admin_acknowledge_ticket(ticket_id: str, token: str):
         subject = ticket.subject
         user_email = ticket.user_email
 
-    html = f"""
-    <html><body style="font-family:sans-serif;color:#333;max-width:600px;margin:0 auto;">
-    <h2 style="color:#1a1a2e;">We received your support request</h2>
-    <p>Hello,</p>
-    <p>Thanks for reaching out. We've received your ticket regarding <strong>"{subject}"</strong> and our team is on it.</p>
-    <p>We'll get back to you as soon as possible. In the meantime, feel free to check our FAQ section on the support page for quick answers.</p>
-    <br/>
-    <p>Best,<br/>BonPlan.ai Team</p>
-    </body></html>
-    """
+    safe_subject = html_lib.escape(subject)
+    html = render_email_layout(
+        title="We received your support request",
+        preheader=f"We received your ticket about {safe_subject}.",
+        eyebrow="Support",
+        body_html=f"""
+        <p style="margin:0 0 14px;">Hello,</p>
+        <p style="margin:0 0 16px;">Thanks for reaching out. We received your ticket regarding <strong style="color:#ffffff;">{safe_subject}</strong> and our team is on it.</p>
+        <p style="margin:0 0 18px;">We will get back to you as soon as possible.</p>
+        """,
+        footer_html="Support emails are sent from support@bonplanai.com.",
+    )
     try:
-        await send_email(to_email=user_email, subject=f"[Received] {subject}", body=html)
+        await send_email(to_email=user_email, subject=f"[Received] {subject}", body=html, from_email=SUPPORT_EMAIL_FROM, inline_images=bonplan_inline_images())
     except Exception as e:
         logger.error("Acknowledge email failed", ticket_id=ticket_id, error=str(e))
         raise HTTPException(status_code=500, detail="Failed to send acknowledgement email.")
@@ -315,23 +325,24 @@ async def admin_reply_to_ticket(ticket_id: str, req: ReplyToTicketBody):
         subject = ticket.subject
         user_email = ticket.user_email
 
-    html = f"""
-    <html><body style="font-family:sans-serif;color:#333;max-width:600px;margin:0 auto;">
-    <h2 style="color:#1a1a2e;">Reply to your support ticket</h2>
-    <p>Hello,</p>
-    <p>Regarding your ticket <strong>"{subject}"</strong>:</p>
-    <hr style="border:none;border-top:1px solid #eee;"/>
-    <div style="background:#f9f9f9;padding:16px;border-radius:8px;margin:16px 0;">
-      <p style="margin:0;white-space:pre-wrap;">{req.message}</p>
-    </div>
-    <hr style="border:none;border-top:1px solid #eee;"/>
-    <p>If you have more questions, visit the support page or reply to this email.</p>
-    <br/>
-    <p>Best,<br/>BonPlan.ai Team</p>
-    </body></html>
-    """
+    safe_subject = html_lib.escape(subject)
+    safe_message = html_lib.escape(req.message)
+    html = render_email_layout(
+        title="Reply to your support ticket",
+        preheader=f"BonPlan.ai support replied to {safe_subject}.",
+        eyebrow="Support",
+        body_html=f"""
+        <p style="margin:0 0 14px;">Hello,</p>
+        <p style="margin:0 0 16px;">Regarding your ticket <strong style="color:#ffffff;">{safe_subject}</strong>:</p>
+        <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);padding:16px;border-radius:12px;margin:16px 0;">
+          <p style="margin:0;white-space:pre-wrap;">{safe_message}</p>
+        </div>
+        <p style="margin:0 0 18px;">If you have more questions, visit the support page or reply to this email.</p>
+        """,
+        footer_html="Support emails are sent from support@bonplanai.com.",
+    )
     try:
-        await send_email(to_email=user_email, subject=f"Re: {subject}", body=html)
+        await send_email(to_email=user_email, subject=f"Re: {subject}", body=html, from_email=SUPPORT_EMAIL_FROM, inline_images=bonplan_inline_images())
     except Exception as e:
         logger.error("Reply email failed", ticket_id=ticket_id, error=str(e))
         raise HTTPException(status_code=500, detail="Failed to send reply email.")

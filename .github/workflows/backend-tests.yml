@@ -23,8 +23,7 @@ jobs:
       GOOGLE_MAPS_API_KEY: test-google-maps
       SERPER_API_KEY: test-serper
       RAPID_API_KEY: test-rapid
-      SENDER_EMAIL: support@example.test
-      GMAIL_APP_PASSWORD: test-password
+      RESEND_API_KEY: test-resend
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
       POSTGRES_SERVER: 127.0.0.1
@@ -41,7 +40,9 @@ jobs:
         with:
           python-version: "3.13.3"
           cache: pip
-          cache-dependency-path: backend/requirements-test.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-test.txt
 
       - name: Install backend test dependencies
         run: |

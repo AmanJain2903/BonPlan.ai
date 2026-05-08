@@ -17,15 +17,22 @@ from app.agent.api.router import router
 from app.agent.core.runtime import agent_runtime_context
 from app.core.config import settings
 from app.logging import get_app_logger
+from app.services.keepalive import keepalive_task
 from app.utils.http import close_http_client
+import asyncio
 
 logger = get_app_logger("ai")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    keepalive_task_obj = None
     logger.info("Agent lifespan starting", agent=settings.AGENT_NAME, version=settings.AGENT_VERSION)
     try:
+        # Start the keepalive task
+        keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.BACKEND_URL}/api/v1/sync/telemetry", "backend", settings.KEEPALIVE_INTERVAL_SECONDS))
+        logger.info("Keepalive task scheduled")
+
         async with agent_runtime_context():
             logger.info("Agent runtime context entered")
             yield
@@ -34,6 +41,8 @@ async def lifespan(app: FastAPI):
         raise
     finally:
         logger.info("Agent lifespan shutting down")
+        if keepalive_task_obj:
+            keepalive_task_obj.cancel()
         await close_http_client()
         logger.info("Agent lifespan shutdown complete")
 
