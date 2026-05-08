@@ -14,26 +14,6 @@ import os
 # Load environment variables
 load_dotenv()
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _normalize_litellm_model_name(value: str) -> str:
-    value = value.strip()
-    if "/" in value:
-        return value
-    if value.startswith(("gemini-", "gemma-")):
-        return f"gemini/{value}"
-    return value
-
-
-def _litellm_model(env_name: str, default: str) -> str:
-    return _normalize_litellm_model_name(os.getenv(env_name, default))
-
-
 class Settings(BaseSettings):
 
     # Deployment settings
@@ -66,7 +46,7 @@ class Settings(BaseSettings):
 
     # Redis Rate Limiter settings
     REDIS_RATE_LIMIT_PREFIX: str = "rl"
-    RATE_LIMITER_MODE: str = "lenient" # "lenient" (default) — allow the call, log the failure. "strict" — treat as rate-limited (raise). In staging and production, set to "strict".
+    RATE_LIMITER_MODE: str = "strict" # "lenient" (default) — allow the call, log the failure. "strict" — treat as rate-limited (raise). In staging and production, set to "strict".
     RATE_LIMITER_CONFIG_TTL_SECONDS: int = "60"
     RATE_LIMITER_RESET_TZ: str = "America/Los_Angeles"
 
@@ -100,17 +80,6 @@ class Settings(BaseSettings):
     # Gemini Model Settings for Editor Agent
     EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
     EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
-
-    @field_validator(
-        "SERPER_CONTENT_PARSER_MODEL",
-        "CONVERSATION_AGENT_MODEL",
-        "PLANNER_AGENT_MODEL",
-        "CONTEXT_PRUNING_MODEL",
-        mode="before",
-    )
-    @classmethod
-    def _normalize_model_env(cls, value: str) -> str:
-        return _normalize_litellm_model_name(str(value or ""))
 
     # Serper Web Search API key
     SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")
