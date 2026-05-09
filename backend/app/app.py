@@ -19,7 +19,6 @@ from app.services.rate_limiter.rate_limiter import get_rate_limiter
 from app.services.rate_limiter.usage_cleanup import usage_cleanup_task
 from app.services.trip_lifecycle import trip_lifecycle_task
 from app.services.trip_status_emailer import trip_status_email_task
-from app.services.keepalive import keepalive_task
 from app.utils.http import close_http_client
 import asyncio
 
@@ -31,7 +30,6 @@ async def lifespan(app: FastAPI):
     cleanup_task = None
     lifecycle_task = None
     trip_email_task = None
-    keepalive_task_obj = None
     logger.info("Lifespan starting", project=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -72,14 +70,6 @@ async def lifespan(app: FastAPI):
     trip_email_task = asyncio.create_task(trip_status_email_task())
     logger.info("Trip status email task scheduled")
 
-    # Start the keepalive task
-    keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.AGENT_URL}/agent/api/v1/sync/telemetry", "agent", settings.KEEPALIVE_INTERVAL_SECONDS))
-    logger.info("Keepalive task scheduled for agent")
-
-    # Start the keepalive task
-    keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.MCP_URL}/health", "mcp", settings.KEEPALIVE_INTERVAL_SECONDS))
-    logger.info("Keepalive task scheduled for MCP")
-
     try:
         yield
     finally:
@@ -90,8 +80,6 @@ async def lifespan(app: FastAPI):
             lifecycle_task.cancel()
         if trip_email_task:
             trip_email_task.cancel()
-        if keepalive_task_obj:
-            keepalive_task_obj.cancel()
         await close_http_client()
         await close_redis()
         await engine.dispose()
