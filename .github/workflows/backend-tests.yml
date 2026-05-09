@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   backend-tests:
@@ -35,10 +35,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Enforce LOCAL_DEVELOPMENT false in CI workspace
+      - name: Fail if LOCAL_DEVELOPMENT is set to True
         run: |
-          sed -i.bak 's/^\(\s*LOCAL_DEVELOPMENT:\s*bool\s*=\s*\)True\b/\1False/' app/core/config.py
-          rm -f app/core/config.py.bak
+          if grep -Eq '^\s*LOCAL_DEVELOPMENT:\s*bool\s*=\s*True\b' app/core/config.py; then
+            echo "CI check failed: backend/app/core/config.py must not set LOCAL_DEVELOPMENT to True."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -69,16 +71,3 @@ jobs:
           name: backend-pytest
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
-
-      - name: Commit enforced config back to main
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          if git diff --quiet -- app/core/config.py; then
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/core/config.py
-          git commit -m "Enforce LOCAL_DEVELOPMENT=false in config"
-          git push
