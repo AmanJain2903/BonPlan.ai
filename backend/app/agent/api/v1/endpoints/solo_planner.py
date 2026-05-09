@@ -45,6 +45,25 @@ router = APIRouter()
 # response generator unwinds from a client disconnect.
 _pending_finalize_tasks: set[asyncio.Task] = set()
 
+# Render free instances typically run a single worker process, so an
+# in-memory guard is enough to prevent two clients from generating the
+# same trip at the same time.
+_active_generations: set[str] = set()
+_active_generations_lock = asyncio.Lock()
+
+
+async def _claim_generation(trip_id: str) -> bool:
+    async with _active_generations_lock:
+        if trip_id in _active_generations:
+            return False
+        _active_generations.add(trip_id)
+        return True
+
+
+async def _release_generation(trip_id: str) -> None:
+    async with _active_generations_lock:
+        _active_generations.discard(trip_id)
+
 
 async def _apply_lock_updates(trip_id: str, updates: list) -> None:
     """Patch is_locked on already-saved events without touching other fields."""
@@ -195,6 +214,12 @@ async def generate_solo_plan(request: Request, id: str):
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid token.")
 
+    if not await _claim_generation(id):
+        raise HTTPException(
+            status_code=409,
+            detail="This trip is already generating. Wait for the current run to finish.",
+        )
+
     # 2. Body
     try:
         body = await request.json()
@@ -314,6 +339,7 @@ async def generate_solo_plan(request: Request, id: str):
                 "smart_anchors": _smart_anchors,
             }
     except HTTPException:
+        await _release_generation(id)
         raise
     except Exception as e:
         logger.error("Failed to generate solo plan", trip_id=id, error=str(e))
@@ -335,6 +361,7 @@ async def generate_solo_plan(request: Request, id: str):
                 await db.commit()
         except Exception:
             pass
+        await _release_generation(id)
         raise HTTPException(
             status_code=500, detail=f"Failed to assemble Trip data: {e}"
         )
@@ -516,6 +543,8 @@ async def generate_solo_plan(request: Request, id: str):
                 # Do NOT re-raise here; the outer except already handled
                 # the original exception. The finally's job is just to
                 # guarantee finalize was scheduled.
+            finally:
+                await _release_generation(str(id))
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
