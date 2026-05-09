@@ -181,7 +181,7 @@ export default function BoardingPassCard({ plan, variant = 'personal', onDelete 
     <>
       {/* ── Boarding Pass Card ─────────────────────────────────────── */}
       <div
-        className="flex-shrink-0 w-[min(360px,calc(100vw-32px))] sm:w-[700px] min-h-[320px] sm:min-h-[340px] snap-center group/card relative rounded-2xl border border-white/[0.07] bg-carbon/30 hover:bg-carbon/60 transition-[background-color,border-color,box-shadow] duration-[400ms] cursor-pointer overflow-hidden hover:border-cyan/35 hover:shadow-[0_0_50px_rgba(102,252,241,0.15)]"
+        className="flex-shrink-0 w-[min(360px,calc(100dvw-32px))] sm:w-[700px] min-h-[320px] sm:min-h-[340px] snap-center group/card relative rounded-2xl border border-white/[0.07] bg-carbon/30 hover:bg-carbon/60 transition-[background-color,border-color,box-shadow] duration-[400ms] cursor-pointer overflow-hidden hover:border-cyan/35 hover:shadow-[0_0_50px_rgba(102,252,241,0.15)]"
         onClick={() => navigate(`/plan/${plan.planning_type}/${plan.id}`)}
       >
         {/* Background rotating image — lighter overlay so image shows through */}

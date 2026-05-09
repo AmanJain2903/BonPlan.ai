@@ -131,7 +131,7 @@ export default function DraftCard({ plan, onDelete }: DraftCardProps) {
   return (
     <>
       <div
-        className="flex-shrink-0 w-[min(300px,calc(100vw-32px))] sm:w-[500px] min-h-[230px] sm:min-h-[240px] snap-center group/card relative rounded-2xl border border-white/[0.07] bg-carbon/30 hover:bg-carbon/60 transition-[background-color,border-color,box-shadow] duration-[400ms] cursor-pointer overflow-hidden hover:border-cyan/35 hover:shadow-[0_0_50px_rgba(102,252,241,0.15)]"
+        className="flex-shrink-0 w-[min(300px,calc(100dvw-32px))] sm:w-[500px] min-h-[230px] sm:min-h-[240px] snap-center group/card relative rounded-2xl border border-white/[0.07] bg-carbon/30 hover:bg-carbon/60 transition-[background-color,border-color,box-shadow] duration-[400ms] cursor-pointer overflow-hidden hover:border-cyan/35 hover:shadow-[0_0_50px_rgba(102,252,241,0.15)]"
         onClick={() => navigate(`/plan/${plan.planning_type}/${plan.id}`)}
       >
         {/* Background rotating image */}

@@ -10,6 +10,14 @@ export default function ScrollManager() {
     }
   }, []);
 
+  useEffect(() => {
+    if (location.pathname.includes('/privacy') || location.pathname.includes('/terms')) {
+      sessionStorage.removeItem('force-scroll-top');
+      sessionStorage.removeItem(`scroll-pos-${location.pathname}`);
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [location.pathname]);
+
   // Save scroll position
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -29,6 +37,12 @@ export default function ScrollManager() {
 
   // Restore position
   useEffect(() => {
+    const resetHorizontalScroll = () => {
+      window.scrollTo({ left: 0, top: window.scrollY, behavior: 'auto' });
+      document.documentElement.scrollLeft = 0;
+      document.body.scrollLeft = 0;
+    };
+
     const forceTop = sessionStorage.getItem('force-scroll-top');
     if (forceTop) {
       sessionStorage.removeItem('force-scroll-top');
@@ -38,16 +52,21 @@ export default function ScrollManager() {
     const savedPos = forceTop ? null : sessionStorage.getItem(`scroll-pos-${location.pathname}`);
     const targetY = savedPos !== null ? parseInt(savedPos, 10) : 0;
 
-    window.scrollTo(0, targetY);
+    window.scrollTo({ left: 0, top: targetY, behavior: 'auto' });
+    resetHorizontalScroll();
 
     // For scroll-to-top, the immediate call always succeeds
-    if (targetY <= 0) return;
+    if (targetY <= 0) {
+      const rafId = requestAnimationFrame(resetHorizontalScroll);
+      return () => cancelAnimationFrame(rafId);
+    }
 
     // For non-zero targets, retry until the browser can actually scroll there.
     // Covers AnimatePresence exit delays + lazy content loading.
     let attempts = 0;
     const intervalId = setInterval(() => {
-      window.scrollTo(0, targetY);
+      window.scrollTo({ left: 0, top: targetY, behavior: 'auto' });
+      resetHorizontalScroll();
       attempts++;
       const reached = Math.abs(window.scrollY - targetY) <= 5;
       if (reached || attempts >= 20) {
@@ -55,7 +74,11 @@ export default function ScrollManager() {
       }
     }, 100);
 
-    return () => clearInterval(intervalId);
+    const rafId = requestAnimationFrame(resetHorizontalScroll);
+    return () => {
+      clearInterval(intervalId);
+      cancelAnimationFrame(rafId);
+    };
   }, [location.pathname]);
 
   return null;
