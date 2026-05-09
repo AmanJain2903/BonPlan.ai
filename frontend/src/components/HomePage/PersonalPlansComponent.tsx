@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 import { Plan } from '../../apis/plan';
@@ -13,48 +13,50 @@ interface PersonalPlansComponentProps {
 
 export default function PersonalPlansComponent({ plans, variant = 'personal', onDelete }: PersonalPlansComponentProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
+    const trackRef = useRef<HTMLDivElement>(null);
     const cardsRef = useRef<(HTMLDivElement | null)[]>([]);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
     const [canScrollRight, setCanScrollRight] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
-    const [trackPadding, setTrackPadding] = useState('24px');
-    const [isOverflowing, setIsOverflowing] = useState(true);
+    const [trackPadding, setTrackPadding] = useState('0px');
+    const [isOverflowing, setIsOverflowing] = useState(false);
 
     const personalPlans = usePersonalPlans(plans);
     const sharedPlans = useSharedPlans(plans);
     const visiblePlans = variant === 'shared' ? sharedPlans : personalPlans;
     const isShared = variant === 'shared';
 
-    // Boarding pass cards are wider: 700px sm / 360px mobile
-    const CARD_SM = 700;
-    const CARD_MOB = 360;
-    const GAP = 24;
-
-    useEffect(() => {
+    useLayoutEffect(() => {
         const handleLayoutEngine = () => {
-            if (typeof window === 'undefined') return;
-            const w = window.innerWidth;
-            const isMob = w < 1240;
+            const container = scrollRef.current;
+            const track = trackRef.current;
+            const firstCard = cardsRef.current[0];
 
-            const cardWidth = w >= 640 ? CARD_SM : CARD_MOB;
-            const cardsCount = visiblePlans.length;
-
-            const innerTrackWidth = (cardsCount * cardWidth) + (Math.max(0, cardsCount - 1) * GAP) + 1;
-            const capacity = isMob ? w : 1240;
-
-            setIsOverflowing(innerTrackWidth > capacity);
-
-            if (isMob) {
-                const halfCard = w >= 640 ? CARD_SM / 2 : CARD_MOB / 2;
-                setTrackPadding(`calc(50vw - ${halfCard}px)`);
-            } else {
-                setTrackPadding('24px');
+            if (!container || !track || !firstCard) {
+                setIsOverflowing(false);
+                setTrackPadding('0px');
+                return;
             }
+
+            const trackStyle = window.getComputedStyle(track);
+            const gap = parseFloat(trackStyle.columnGap || trackStyle.gap || '0') || 0;
+            const cardWidth = firstCard.offsetWidth;
+            const cardsCount = visiblePlans.length;
+            const containerWidth = container.clientWidth;
+            const innerTrackWidth = (cardsCount * cardWidth) + (Math.max(0, cardsCount - 1) * gap);
+            const overflowing = innerTrackWidth > containerWidth + 1;
+
+            setIsOverflowing(overflowing);
+            setTrackPadding(overflowing ? `${Math.max((containerWidth - cardWidth) / 2, 0)}px` : '0px');
         };
 
         handleLayoutEngine();
+        const rafId = window.requestAnimationFrame(handleLayoutEngine);
         window.addEventListener('resize', handleLayoutEngine);
-        return () => window.removeEventListener('resize', handleLayoutEngine);
+        return () => {
+            window.cancelAnimationFrame(rafId);
+            window.removeEventListener('resize', handleLayoutEngine);
+        };
     }, [visiblePlans.length]);
 
     useEffect(() => {
@@ -110,11 +112,15 @@ export default function PersonalPlansComponent({ plans, variant = 'personal', on
     if (!visiblePlans || visiblePlans.length === 0) return null;
 
     const scroll = (direction: 'left' | 'right') => {
-        if (scrollRef.current) {
-            const cardWidth = window.innerWidth >= 640 ? CARD_SM : CARD_MOB;
-            const scrollAmount = (direction === 'left' ? -1 : 1) * (cardWidth + GAP);
-            scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-        }
+        const container = scrollRef.current;
+        const firstCard = cardsRef.current[0];
+        const track = trackRef.current;
+        if (!container || !firstCard || !track) return;
+
+        const trackStyle = window.getComputedStyle(track);
+        const gap = parseFloat(trackStyle.columnGap || trackStyle.gap || '0') || 0;
+        const scrollAmount = (direction === 'left' ? -1 : 1) * (firstCard.offsetWidth + gap);
+        container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     };
 
     const getMaskStyle = () => {
@@ -189,6 +195,7 @@ export default function PersonalPlansComponent({ plans, variant = 'personal', on
                             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                         >
                             <div
+                                ref={trackRef}
                                 className={`flex gap-6 w-max min-w-full transition-[padding] duration-300 ${!isOverflowing ? 'justify-center' : ''} mt-16`}
                                 style={isOverflowing ? { paddingLeft: trackPadding } : {}}
                             >
