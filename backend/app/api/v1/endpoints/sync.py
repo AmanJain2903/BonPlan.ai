@@ -11,7 +11,7 @@ from app.core.config import settings
 
 router = APIRouter()
 
-@router.get("/telemetry")
+@router.api_route("/telemetry")
 async def sync_telemetry():
     """
     Endpoint for the agent service to ping, mimicking a telemetry sync.
