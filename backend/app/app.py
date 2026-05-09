@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
     logger.info("Keepalive task scheduled for agent")
 
     # Start the keepalive task
-    keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.MCP_URL}/api/v1/sync/mcp", "mcp", settings.KEEPALIVE_INTERVAL_SECONDS))
+    keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.MCP_URL}/health", "mcp", settings.KEEPALIVE_INTERVAL_SECONDS))
     logger.info("Keepalive task scheduled for MCP")
 
     try:
@@ -106,7 +106,8 @@ app = FastAPI(
 
 # Allow React (Port 5173) to talk to Python
 origins = [
-    settings.FRONTEND_URL
+    settings.FRONTEND_URL,
+    settings.AGENT_URL
 ]
 
 app.add_middleware(

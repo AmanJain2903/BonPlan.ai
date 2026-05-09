@@ -12,9 +12,34 @@ Important operational note:
 
 from app.agent.mcp_server.main import mcp
 from app.core.config import settings
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
+
+origins = [
+    settings.FRONTEND_URL,
+    settings.AGENT_URL,
+    settings.BACKEND_URL
+]
 
 app = mcp.http_app(
     path=settings.MCP_SSE_PATH,
     transport="sse",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+@app.route("/health")
+async def health_check(request: Request):
+    """
+    Explicit health check for Render to prevent spin-down.
+    """
+    return JSONResponse(content={"status": "ok", "service": "bonplan-mcp-sse"})
