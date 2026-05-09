@@ -34,7 +34,7 @@ function AutoResizeTextarea({
         target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
       }}
       placeholder={placeholder}
-      className="w-full bg-transparent border-none text-white text-sm focus:outline-none focus:ring-0 py-1 resize-none overflow-y-auto scrollbar-hide"
+      className="w-full bg-transparent border-none text-white text-base sm:text-sm focus:outline-none focus:ring-0 py-1 resize-none overflow-y-auto scrollbar-hide"
       rows={1}
       style={{ minHeight: '44px', maxHeight: '120px' }}
     />

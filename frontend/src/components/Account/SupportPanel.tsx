@@ -61,7 +61,7 @@ export default function SupportPanel() {
   };
 
   const inputBase =
-    'w-full rounded-xl border px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all duration-200 border-white/10 bg-white/[0.03] focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20';
+    'w-full rounded-xl border px-4 py-2.5 text-base sm:text-sm text-white placeholder-white/20 outline-none transition-all duration-200 border-white/10 bg-white/[0.03] focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20';
 
   return (
     <div className="max-w-7xl space-y-6">
@@ -221,7 +221,7 @@ export default function SupportPanel() {
                   value={faqSearch}
                   onChange={(e) => { setFaqSearch(e.target.value); setOpenFaq(null); }}
                   placeholder="Search FAQs…"
-                  className="w-full rounded-xl border border-white/[0.06] bg-white/[0.02] pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all"
+                  className="w-full rounded-xl border border-white/[0.06] bg-white/[0.02] pl-10 pr-4 py-2.5 text-base sm:text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all"
                 />
               </div>
 

@@ -438,7 +438,7 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       placeholder="name@example.com"
-                      className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20"
+                      className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-base sm:text-sm text-white placeholder-white/25 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20"
                       required
                     />
                     <button

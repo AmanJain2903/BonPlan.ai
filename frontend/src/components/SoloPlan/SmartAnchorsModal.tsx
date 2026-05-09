@@ -71,7 +71,7 @@ const TextInput = ({ value, onChange, placeholder }: { value: string; onChange: 
     value={value}
     onChange={e => onChange(e.target.value)}
     placeholder={placeholder}
-    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 placeholder-white/20 transition-all"
+    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-base sm:text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 placeholder-white/20 transition-all"
   />
 );
 
@@ -85,7 +85,7 @@ const NumberInput = ({ value, onChange, placeholder }: { value: number | string;
       value={value === '' || value === undefined ? '' : value}
       onChange={e => onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
       placeholder={placeholder ?? '0.00'}
-      className="w-full rounded-lg border border-white/10 bg-white/[0.03] pl-7 pr-3 py-2 text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 placeholder-white/20 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      className="w-full rounded-lg border border-white/10 bg-white/[0.03] pl-7 pr-3 py-2 text-base sm:text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 placeholder-white/20 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
     />
   </div>
 );
@@ -194,7 +194,7 @@ function AnchorDatePicker({ value, onChange, minDate, maxDate, tz }: {
             setOpen(false);
           }}
           disabled={disabledMatcher}
-          className="theme-cyan text-white text-sm m-0"
+          className="theme-cyan text-white text-base sm:text-sm m-0"
           modifiersClassNames={{
             selected: 'bg-cyan text-midnight font-bold rounded-lg hover:bg-cyan/90 hover:text-midnight',
             today: 'text-cyan font-bold',
@@ -217,7 +217,7 @@ function AnchorDatePicker({ value, onChange, minDate, maxDate, tz }: {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-left transition-all cursor-pointer ${
+        className={`w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-base sm:text-sm text-left transition-all cursor-pointer ${
           open
             ? 'border-cyan/40 ring-1 ring-cyan/20 bg-white/[0.05]'
             : 'border-white/10 bg-white/[0.03] hover:border-white/20'
@@ -236,7 +236,7 @@ const TimeInput = ({ value, onChange }: { value: string; onChange: (v: string) =
     type="time"
     value={value}
     onChange={e => onChange(e.target.value)}
-    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all [color-scheme:dark]"
+    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-base sm:text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all [color-scheme:dark]"
   />
 );
 
@@ -498,7 +498,7 @@ function TimingSection({ anchor, onChange }: { anchor: SmartAnchor; onChange: (a
         <select
           value={anchor.duration_minutes ?? 60}
           onChange={e => setDuration(Number(e.target.value))}
-          className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all cursor-pointer"
+          className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-base sm:text-sm text-white outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all cursor-pointer"
         >
           {DURATION_OPTIONS.map(m => (
             <option key={m} value={m} className="bg-[#0a0d12]">{formatDuration(m)}</option>

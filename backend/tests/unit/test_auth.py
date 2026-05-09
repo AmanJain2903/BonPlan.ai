@@ -5,8 +5,11 @@ from uuid import uuid4
 import jwt
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.endpoints import auth
+from app import app as backend_app
 from app.core.config import settings
 from tests.conftest import FakeSessionFactory
 
@@ -155,6 +158,76 @@ def test_google_login_existing_google_user(monkeypatch, user_factory):
     assert result["status_code"] == 200
     assert user.is_new_user is False
     assert factory.commit_count == 1
+
+
+def test_google_redirect_returns_frontend_callback_location(monkeypatch):
+    monkeypatch.setattr(
+        auth,
+        "_verify_google_credential",
+        lambda credential: asyncio.sleep(0, result=("aman@example.test", "Aman", "Tester")),
+    )
+    client = TestClient(backend_app.app)
+
+    response = client.post(
+        "/api/v1/auth/google/redirect",
+        data={"credential": "google-token", "g_csrf_token": "csrf-token"},
+        cookies={"g_csrf_token": "csrf-token"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(f"{settings.FRONTEND_URL}/auth/google/callback#exchange_token=")
+
+
+def test_complete_google_login_existing_google_user(monkeypatch, user_factory):
+    user = user_factory(auth_provider="google", is_new_user=True)
+    factory = FakeSessionFactory(user)
+    monkeypatch.setattr(auth, "Session", factory)
+    exchange_token = auth._create_google_auth_exchange_token(user.email, "Aman", "Tester")
+
+    result = run(auth.complete_google_login(exchange_token))
+
+    assert result["status_code"] == 200
+    assert result["email"] == user.email
+    assert user.is_new_user is False
+    assert factory.commit_count == 1
+
+
+def test_google_login_recovers_from_duplicate_insert_race(monkeypatch, user_factory):
+    user = user_factory(auth_provider="google", is_new_user=True)
+
+    class RaceSessionFactory(FakeSessionFactory):
+        def __init__(self):
+            super().__init__(None, user)
+
+        async def _commit_with_race(self):
+            if self.commit_count == 0:
+                self.commit_count += 1
+                raise IntegrityError("insert", {}, Exception("duplicate key"))
+            self.commit_count += 1
+            self.commits.append(datetime.now(timezone.utc))
+
+    factory = RaceSessionFactory()
+    monkeypatch.setattr(auth, "Session", factory)
+
+    async def commit_with_race():
+        await factory._commit_with_race()
+
+    # Patch the bound method used by sessions created from this factory.
+    original_call = factory.__call__
+
+    def session_with_race():
+        session = original_call()
+        session.commit = commit_with_race
+        return session
+
+    monkeypatch.setattr(auth, "Session", session_with_race)
+
+    result = run(auth._login_or_register_google_user(user.email, "Aman", "Tester"))
+
+    assert result["status_code"] == 200
+    assert result["email"] == user.email
+    assert user.is_new_user is False
 
 
 def test_delete_user_removes_mock_user(monkeypatch, user_factory, jwt_token):

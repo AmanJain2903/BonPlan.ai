@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import uuid
 from typing import Any, Dict
 
 from app.agent.llm import litellm_types as types
@@ -70,6 +71,30 @@ def _truncate_tool_output(text: str, cap: int = 8000) -> str:
     if len(text) <= cap:
         return text
     return text[:cap] + f"\n…[truncated, {len(text) - cap} chars dropped]"
+
+
+async def _execute_conversational_tool(fc: types.FunctionCall) -> types.Part:
+    call_id = fc.id or f"call_{uuid.uuid4().hex}"
+    tool_name = fc.name
+    args = dict(fc.args or {})
+
+    emit({"type": "tool_call", "tool_name": tool_name, "args": args, "call_id": call_id})
+
+    if tool_name.startswith("add_") or tool_name == "add_itinerary_event":
+        result = {"error": "Itinerary mutation tools are disabled in conversational mode."}
+    else:
+        try:
+            mcp_result = await runtime.mcp_session.call_tool(tool_name, args)
+            output = "".join(c.text for c in mcp_result.content if hasattr(c, "text")) or "Task completed."
+            result = {"output": _truncate_tool_output(output)}
+        except Exception as exc:
+            result = {"error": str(exc)}
+
+    return types.Part.from_function_response(
+        name=tool_name,
+        response=result,
+        tool_call_id=call_id,
+    )
 
 
 async def conversational_node(state: EditorState) -> Dict[str, Any]:
@@ -196,35 +221,7 @@ async def conversational_node(state: EditorState) -> Dict[str, Any]:
 
         tool_responses = []
         for fc in tool_calls:
-            if fc.name.startswith("add_") or fc.name == "add_itinerary_event":
-                tool_responses.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response={"error": "Itinerary mutation tools are disabled in conversational mode."},
-                        tool_call_id=fc.id,
-                    )
-                )
-                continue
-
-            try:
-                mcp_result = await runtime.mcp_session.call_tool(fc.name, dict(fc.args or {}))
-                output = "".join(c.text for c in mcp_result.content if hasattr(c, "text")) or "Task completed."
-                output = _truncate_tool_output(output)
-                tool_responses.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response={"output": output},
-                        tool_call_id=fc.id,
-                    )
-                )
-            except Exception as exc:
-                tool_responses.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response={"error": str(exc)},
-                        tool_call_id=fc.id,
-                    )
-                )
+            tool_responses.append(await _execute_conversational_tool(fc))
 
         current_message = tool_responses
 

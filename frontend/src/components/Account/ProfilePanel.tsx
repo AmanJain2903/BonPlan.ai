@@ -111,7 +111,7 @@ export default function ProfilePanel() {
 
   const initials = `${form.firstName?.[0] ?? ''}${form.lastName?.[0] ?? ''}`.toUpperCase();
 
-  const inputBase = 'w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all duration-200';
+  const inputBase = 'w-full rounded-xl border px-4 py-2.5 text-base sm:text-sm outline-none transition-all duration-200';
   const inputEditable = `${inputBase} border-white/10 bg-white/[0.03] text-white placeholder-white/20 focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20`;
   const inputReadonly = `${inputBase} border-transparent bg-transparent text-white/60 cursor-default px-0`;
 

@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { api } from '../../api';
-import { useAuth } from '../../context/AuthContext';
-import { GOOGLE_CLIENT_ID } from '../../apis/config';
-import WelcomePreferencesModal from './WelcomePreferencesModal';
-import { useTrip } from '../../context/TripContext';
+import { useLocation } from 'react-router-dom';
+import { API_BASE, GOOGLE_CLIENT_ID } from '../../apis/config';
+import { consumeGoogleAuthError, storeGoogleAuthState } from './googleAuthStorage';
 
 declare global {
   interface Window {
@@ -13,8 +10,10 @@ declare global {
         id: {
           initialize: (config: {
             client_id: string;
-            callback: (response: { credential: string }) => void;
-            auto_select?: boolean;
+            callback?: (response: { credential: string }) => void;
+            login_uri?: string;
+            ux_mode?: 'popup' | 'redirect';
+            click_listener?: () => void;
           }) => void;
           renderButton: (
             parent: HTMLElement,
@@ -41,73 +40,30 @@ type Props = {
 
 export default function GoogleSignInButton({ text = 'continue_with', onError, onLoading }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { login } = useAuth();
-  const { trip, resetTrip } = useTrip();
-  const navigate = useNavigate();
   const location = useLocation();
   const [ready, setReady] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
+    const pendingError = consumeGoogleAuthError();
+    if (pendingError) {
+      onError?.(pendingError);
+    }
+
     const render = () => {
       if (!window.google || !containerRef.current) return;
 
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
-        callback: async (response: { credential: string }) => {
+        ux_mode: 'redirect',
+        login_uri: `${API_BASE}/api/v1/auth/google/redirect`,
+        click_listener: () => {
           onLoading?.(true);
           onError?.('');
-          try {
-            const res = await api.auth.googleLogin(response.credential);
-            if (res.token) {
-              const isAdmin = res.is_admin ?? false;
-              login(res.token, true, {
-                firstName: res.first_name ?? '',
-                lastName: res.last_name ?? '',
-                email: res.email ?? '',
-                authProvider: 'google',
-                preferences: res.preferences,
-                isAdmin,
-              });
-
-              const from = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
-              const fromPath = from?.pathname;
-              const fromSearch = from?.search || '';
-              const isInviteRedirect = fromPath === '/share-invite';
-              const next =
-                fromPath && fromPath.startsWith('/admin')
-                  ? (isAdmin ? `${fromPath}${fromSearch}` : '/')
-                  : (fromPath && fromPath !== '/login' && fromPath !== '/register' ? `${fromPath}${fromSearch}` : '/');
-
-              const submitDraft = (location.state as any)?.submitDraft;
-              
-              if (submitDraft && trip.planningStyle && trip.tripData) {
-                try {
-                  const draftRes = await api.plan.draftPlan(res.token, {
-                    planningStyle: trip.planningStyle,
-                    routingStyle: trip.routingStyle,
-                    tripData: trip.tripData,
-                  });
-                  resetTrip();
-                  navigate(`/plan/${trip.planningStyle}/${draftRes.trip_id}`, { replace: true });
-                } catch (err) {
-                  navigate(next, { replace: true });
-                }
-              } else if (res.is_new_user && !isInviteRedirect) {
-                setShowWelcome(true);
-              } else {
-                navigate(next);
-              }
-            }
-          } catch (err: unknown) {
-            const detail =
-              err && typeof err === 'object' && 'response' in err
-                ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-                : undefined;
-            onError?.(detail || 'Google sign-in failed. Please try again.');
-          } finally {
-            onLoading?.(false);
-          }
+          storeGoogleAuthState({
+            sourcePath: location.pathname,
+            routeState: (location.state as { from?: { pathname?: string; search?: string }; submitDraft?: boolean } | null) ?? null,
+            createdAt: Date.now(),
+          });
         },
       });
 
@@ -133,29 +89,21 @@ export default function GoogleSignInButton({ text = 'continue_with', onError, on
       }, 100);
       return () => clearInterval(interval);
     }
-  }, []);
+  }, [location.pathname, location.state, onError, onLoading, text]);
 
   return (
-    <>
-      <div className="w-full">
-        <div
-          ref={containerRef}
-          className={`w-full flex items-center justify-center rounded-xl overflow-hidden transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
-          style={{ minHeight: 44 }}
-        />
-        {!ready && (
-          <div className="w-full flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/40">
-            <span className="h-4 w-4 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
-            Loading Google Sign-In…
-          </div>
-        )}
-      </div>
-
-      <WelcomePreferencesModal
-        open={showWelcome}
-        onSetup={() => { setShowWelcome(false); navigate('/account/preferences?from=welcome'); }}
-        onSkip={() => { setShowWelcome(false); navigate('/'); }}
+    <div className="w-full">
+      <div
+        ref={containerRef}
+        className={`w-full flex items-center justify-center rounded-xl overflow-hidden transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
+        style={{ minHeight: 44 }}
       />
-    </>
+      {!ready && (
+        <div className="w-full flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/40">
+          <span className="h-4 w-4 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
+          Loading Google Sign-In…
+        </div>
+      )}
+    </div>
   );
 }
