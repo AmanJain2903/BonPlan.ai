@@ -42,9 +42,16 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "bonplan_db")
 
+    POSTGRES_URL: str = os.getenv("POSTGRES_URL", "postgresql+asyncpg://bonplan_admin:secure_password@localhost:5432/bonplan_db")
+
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        if self.LOCAL_DEVELOPMENT:
+            return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        else:
+            if "asyncpg" not in self.POSTGRES_URL:
+                return "postgresql+asyncpg://" + self.POSTGRES_URL.split("://")[1]
+            return self.POSTGRES_URL
 
     # Redis settings
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
