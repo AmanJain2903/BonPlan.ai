@@ -14,6 +14,7 @@ from app.core.config import settings
 engine_kwargs = {
     "echo": False,
     "future": True,
+    "echo_pool": "debug",
 }
 
 if settings.LOCAL_DEVELOPMENT:
