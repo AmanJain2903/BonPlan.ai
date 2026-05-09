@@ -52,7 +52,7 @@ Real trips have fixed commitments, transit buffers, weather, opening hours, budg
 | Migrations | Alembic |
 | PDF export | Jinja2, WeasyPrint |
 | Auth | JWT, bcrypt, Google OAuth |
-| Email | Gmail SMTP app password flow |
+| Email | Resend API |
 | Code graph | graphify |
 
 ## Repository Structure 🗂️
@@ -259,7 +259,6 @@ FRONTEND_URL=http://localhost:5173
 
 PROJECT_VERSION=v1.0.0
 AGENT_VERSION=v1.0.0
-LOG_ROOT=backend/logs
 
 POSTGRES_USER=bonplan_admin
 POSTGRES_PASSWORD=secure_password
@@ -279,10 +278,7 @@ SERPER_API_KEY=replace_me
 RAPID_API_KEY=replace_me
 
 SECRET_KEY=replace_me_with_a_long_random_value
-SENDER_EMAIL=replace_me
-GMAIL_APP_PASSWORD=replace_me
-
-FALLBACK_IMAGE=https://images.unsplash.com/photo-1488085061387-422e29b40080
+RESEND_API_KEY=replace_me
 ```
 
 The model settings can also be overridden through env vars if needed:
@@ -305,7 +301,6 @@ VITE_AGENT_URL=http://localhost:8001
 VITE_GOOGLE_CLIENT_ID=replace_me
 VITE_GOOGLE_MAPS_API_KEY=replace_me
 VITE_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
-VITE_FALLBACK_IMAGE=https://images.unsplash.com/photo-1488085061387-422e29b40080
 ```
 
 ### Database Setup 🗄️
@@ -531,6 +526,14 @@ Admin users can manage SKU limits and inspect usage through:
 /admin/usage
 ```
 
+Global SKU alert caps are configured from `/admin/skus`. When any SKU crosses a configured cap for its active period, BonPlan.ai sends system alerts from `noreply-system@bonplanai.com` to admin inbox aliases in the format `admin-{firstName}@bonplanai.com`.
+
+Trip lifecycle emails are tracked per trip so they do not over-send:
+
+- Draft reminders from `noreply-trips@bonplanai.com` start after 24 hours and then use 36-hour, 48-hour, and continuing +12-hour intervals.
+- Current and completed trip emails are sent exactly once per trip.
+- Trip lifecycle emails include an unsubscribe link that disables future trip status emails for that user.
+
 ## Logging 📜
 
 The backend uses structured application loggers and writes logs under:
@@ -539,7 +542,7 @@ The backend uses structured application loggers and writes logs under:
 backend/logs
 ```
 
-`LOG_ROOT` can be changed through the backend environment.
+`LOG_ROOT` can be changed through the backend environment. This is for logging locally.
 
 ## Graphify Workflow 🕸️
 

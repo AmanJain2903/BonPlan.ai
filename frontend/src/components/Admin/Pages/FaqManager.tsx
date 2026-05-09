@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, HelpCircle, Eye, EyeOff, Menu, Search } from 'lucide-react';
+import { Plus, Trash2, Edit2, HelpCircle, Eye, EyeOff, Search } from 'lucide-react';
 import { cn } from '../../../utils/tailwind';
 import { api, type FAQ } from '../../../apis/admin';
 import { useAuth } from '../../../context/AuthContext';
-import { useOutletContext } from 'react-router-dom';
 
 type FormData = {
   question: string;
@@ -16,7 +15,6 @@ type FormData = {
 const emptyForm = (): FormData => ({ question: '', answer: '', order: 0, is_published: true });
 
 export default function FaqManager() {
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>();
   const { token } = useAuth();
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [search, setSearch] = useState('');
@@ -28,7 +26,7 @@ export default function FaqManager() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token) return;
     try {
       setLoading(true);
@@ -38,9 +36,14 @@ export default function FaqManager() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const openCreate = () => {
     setEditingFaq(null);
@@ -98,18 +101,10 @@ export default function FaqManager() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            className="md:hidden flex-shrink-0 p-2 rounded-lg hover:bg-white/[0.06] cursor-pointer"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5 text-white/60" />
-          </button>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <HelpCircle className="h-5 w-5 text-cyan flex-shrink-0" />
-            <h1 className="text-xl font-bold text-white truncate">FAQ Manager</h1>
-          </div>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">FAQ Manager</h1>
+          <p className="mt-1 text-sm text-white/40">Manage public help content shown across support surfaces.</p>
         </div>
         <button
           onClick={openCreate}

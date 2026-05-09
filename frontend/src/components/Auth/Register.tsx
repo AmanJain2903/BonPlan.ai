@@ -90,7 +90,7 @@ export default function Register() {
     'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all duration-200';
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10 sm:py-16">
+    <div className="min-h-[100svh] flex items-center justify-start sm:justify-center px-4 pt-24 pb-10 sm:py-16">
       <div className="pointer-events-none fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-cyan/[0.03] blur-[120px]" />
 
       <motion.div

@@ -1,14 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useOutletContext } from 'react-router-dom';
-import { Plus, Trash2, Edit2, Server, Globe, AlertCircle, Search, Menu } from 'lucide-react';
+import { Plus, Trash2, Edit2, Server, Globe, AlertCircle, Search, Bell, Save } from 'lucide-react';
 import { cn } from '../../../utils/tailwind';
 import { api } from '../../../api/index';
 import { useAuth } from '../../../context/AuthContext';
 
 export default function SkuManager() {
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>();
   const { token } = useAuth();
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,6 +14,10 @@ export default function SkuManager() {
   const [editingSku, setEditingSku] = useState<any>(null);
   const [deletingSku, setDeletingSku] = useState<{ sku_id: string, sku: string }>({ sku_id: '', sku: '' });
   const [search, setSearch] = useState('');
+  const [alertSettings, setAlertSettings] = useState({ enabled: true, thresholds: [80, 90, 100] });
+  const [alertThresholdInput, setAlertThresholdInput] = useState('80, 90, 100');
+  const [alertSaving, setAlertSaving] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     sku: '', service: '', provider: '', description: '', limit: 1000, period: 'monthly', scope: 'global',
@@ -30,6 +32,9 @@ export default function SkuManager() {
       if (!token) return;
       const data = await api.admin.fetchConfigs(token);
       setConfigs(data);
+      const settings = await api.admin.getAlertSettings(token);
+      setAlertSettings({ enabled: settings.enabled, thresholds: settings.thresholds });
+      setAlertThresholdInput(settings.thresholds.join(', '));
     } catch (err) {
       // Do nothing
     } finally {
@@ -92,6 +97,33 @@ export default function SkuManager() {
     }
   };
 
+  const parseAlertThresholds = () => {
+    const values = alertThresholdInput
+      .split(',')
+      .map(value => Number.parseInt(value.trim(), 10))
+      .filter(value => Number.isFinite(value));
+    const unique = Array.from(new Set(values)).filter(value => value >= 1 && value <= 100).sort((a, b) => a - b);
+    if (unique.length === 0) throw new Error('Enter at least one percentage between 1 and 100.');
+    return unique;
+  };
+
+  const saveAlertSettings = async () => {
+    if (!token) return;
+    setAlertSaving(true);
+    setAlertMessage('');
+    try {
+      const thresholds = parseAlertThresholds();
+      const saved = await api.admin.updateAlertSettings(token, { enabled: alertSettings.enabled, thresholds });
+      setAlertSettings({ enabled: saved.enabled, thresholds: saved.thresholds });
+      setAlertThresholdInput(saved.thresholds.join(', '));
+      setAlertMessage('Alert settings saved.');
+    } catch (err) {
+      setAlertMessage('Enter valid percentages from 1 to 100.');
+    } finally {
+      setAlertSaving(false);
+    }
+  };
+
   const toggleExpand = (id: string) => {
     setExpandedCards(prev => {
       const next = new Set(prev);
@@ -140,13 +172,8 @@ export default function SkuManager() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden text-white/70 hover:text-white transition-colors">
-              <Menu className="h-6 w-6" />
-            </button>
-            <h1 className="text-2xl font-bold tracking-tight text-white">SKU Management</h1>
-          </div>
-          <p className="text-sm text-white/40 mt-1 sm:ml-9">Configure rate limit thresholds for API usage.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">SKU Management</h1>
+          <p className="text-sm text-white/40 mt-1">Configure rate limit thresholds for API usage.</p>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
           <div className="relative w-full sm:w-64">
@@ -176,9 +203,57 @@ export default function SkuManager() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan border-t-transparent"></div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <AnimatePresence>
-            {filteredConfigs.map((config) => (
+        <>
+          <div className="rounded-2xl border border-white/10 bg-midnight/40 backdrop-blur-xl p-5 shadow-xl">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan/20 bg-cyan/10">
+                  <Bell className="h-5 w-5 text-cyan" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-white">Global Usage Alerts</h2>
+                  <p className="mt-1 text-sm text-white/40">Send system emails to admins when any SKU crosses these usage caps.</p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={alertSettings.enabled}
+                    onChange={e => setAlertSettings({ ...alertSettings, enabled: e.target.checked })}
+                    className="h-4 w-4 accent-cyan"
+                  />
+                  Enabled
+                </label>
+                <div className="min-w-0 sm:w-64">
+                  <label className="mb-1 block text-xs font-medium text-white/50">Alert caps (%)</label>
+                  <input
+                    type="text"
+                    value={alertThresholdInput}
+                    onChange={e => setAlertThresholdInput(e.target.value)}
+                    placeholder="80, 90, 100"
+                    className="w-full rounded-lg border border-white/10 bg-transparent px-3 py-2 text-sm text-white outline-none transition-all focus:border-cyan focus:ring-1 focus:ring-cyan"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={saveAlertSettings}
+                  disabled={alertSaving}
+                  className="inline-flex items-center justify-center rounded-lg bg-cyan px-4 py-2 text-sm font-semibold text-midnight transition-all hover:shadow-[0_0_20px_rgba(102,252,241,0.35)] disabled:opacity-50"
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {alertSaving ? 'Saving...' : 'Save Alerts'}
+                </button>
+              </div>
+            </div>
+            {alertMessage && (
+              <p className={`mt-3 text-xs ${alertMessage.includes('saved') ? 'text-cyan/80' : 'text-red-400/80'}`}>{alertMessage}</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <AnimatePresence>
+              {filteredConfigs.map((config) => (
               <motion.div
                 key={config.id}
                 layout
@@ -242,15 +317,16 @@ export default function SkuManager() {
                   <span className="text-white/30">Resets:</span>{' '}
                   <span className="text-white/60">{formatResetAnchor(config)}</span>
                 </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {filteredConfigs.length === 0 && (
-            <div className="col-span-full py-12 text-center text-sm text-white/40">
-              No matching SKUs found.
-            </div>
-          )}
-        </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {filteredConfigs.length === 0 && (
+              <div className="col-span-full py-12 text-center text-sm text-white/40">
+                No matching SKUs found.
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {createPortal(

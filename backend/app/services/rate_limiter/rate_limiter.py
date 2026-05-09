@@ -434,6 +434,22 @@ class RateLimiter:
                     current=current,
                 )
             )
+            if config.limit > 0:
+                bucket = _period_bucket_label(config.period, period_start)
+                from app.services.rate_limiter.limit_alerts import maybe_send_rate_limit_alert
+
+                asyncio.create_task(
+                    maybe_send_rate_limit_alert(
+                        sku_id=config.sku_id,
+                        sku=sku_normalized,
+                        usage=current,
+                        limit=config.limit,
+                        scope=config.scope.value,
+                        period=config.period.value,
+                        period_bucket=bucket,
+                        user_id=effective_user_id,
+                    )
+                )
 
         if not allowed and raise_on_limit:
             raise RateLimitExceeded(

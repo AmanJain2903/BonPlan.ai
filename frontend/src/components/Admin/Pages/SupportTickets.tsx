@@ -1,15 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Ticket, CheckCircle, Clock, Send, ChevronDown, ChevronUp, Menu, MailCheck, Search } from 'lucide-react';
+import { Ticket, CheckCircle, Clock, Send, ChevronDown, ChevronUp, MailCheck, Search } from 'lucide-react';
 import { cn } from '../../../utils/tailwind';
 import { api, type SupportTicket } from '../../../apis/admin';
 import { useAuth } from '../../../context/AuthContext';
-import { useOutletContext } from 'react-router-dom';
 
 type FilterStatus = 'ALL' | 'OPEN' | 'RESOLVED';
 
 export default function SupportTickets() {
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>();
   const { token } = useAuth();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [search, setSearch] = useState('');
@@ -24,7 +22,7 @@ export default function SupportTickets() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token) return;
     try {
       setLoading(true);
@@ -35,9 +33,14 @@ export default function SupportTickets() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, token]);
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   useEffect(() => {
     if (!successMsg) return;
@@ -111,18 +114,10 @@ export default function SupportTickets() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            className="md:hidden p-2 rounded-lg hover:bg-white/[0.06] cursor-pointer"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5 text-white/60" />
-          </button>
-          <div className="flex items-center gap-2.5">
-            <Ticket className="h-5 w-5 text-cyan" />
-            <h1 className="text-xl font-bold text-white">Support Tickets</h1>
-          </div>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Support Tickets</h1>
+          <p className="mt-1 text-sm text-white/40">Review, acknowledge, resolve, and reply to user support requests.</p>
         </div>
 
         {/* Filter tabs */}

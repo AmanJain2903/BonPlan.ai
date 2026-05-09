@@ -1,30 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Shield, Activity, ArrowLeft, HelpCircle, Ticket } from 'lucide-react';
+import { LayoutDashboard, ArrowLeft } from 'lucide-react';
 import { cn } from '../../utils/tailwind';
+import { adminSections } from './adminNav';
 
 interface AdminSidebarProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }
-
-type NavItem = { name: string; href: string; icon: React.ElementType };
-
-const sections: { label: string; items: NavItem[] }[] = [
-  {
-    label: 'Rate Limiting',
-    items: [
-      { name: 'SKU Management', href: '/admin/skus', icon: Shield },
-      { name: 'Usage Viewer', href: '/admin/usage', icon: Activity },
-    ],
-  },
-  {
-    label: 'Support',
-    items: [
-      { name: 'FAQ Manager', href: '/admin/faq', icon: HelpCircle },
-      { name: 'Support Tickets', href: '/admin/tickets', icon: Ticket },
-    ],
-  },
-];
 
 export default function AdminSidebar({ sidebarOpen, setSidebarOpen }: AdminSidebarProps) {
   return (
@@ -40,7 +22,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }: AdminSideb
       </div>
 
       <div className="px-4 py-6 flex-1 overflow-y-auto space-y-6">
-        {sections.map((section) => (
+        {adminSections.map((section) => (
           <div key={section.label}>
             <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3 px-2">
               {section.label}
