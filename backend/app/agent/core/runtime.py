@@ -3,11 +3,11 @@
 """
 Shared long-lived runtime state for the agent.
 
-Objects here are expensive to build (LLM client config, MCP subprocess + session,
-JSON-schema conversion for tool declarations) and should exist for the
-entire process lifetime. They are populated by the FastAPI lifespan in
-`app/ai.py` on startup and torn down on shutdown. For standalone scripts
-(e.g. `test_planner.py`) use `agent_runtime_context()` below.
+Objects here are expensive to build (LLM client config, remote MCP session,
+JSON-schema conversion for tool declarations) and should exist for the entire
+process lifetime. They are populated by the FastAPI lifespan in `app/ai.py` on
+startup and torn down on shutdown. For standalone scripts (e.g.
+`test_planner.py`) use `agent_runtime_context()` below.
 
 Per-request code should import `runtime` and use its attributes directly
 instead of re-initializing these resources.
@@ -20,12 +20,11 @@ Concurrency notes:
 """
 
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from typing import Any, List, Optional
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 from app.core.config import settings
 from app.logging import get_agent_logger
@@ -182,12 +181,12 @@ async def _mcp_health_ping(session: ClientSession) -> None:
 @asynccontextmanager
 async def agent_runtime_context():
     """
-    Async context manager that starts the MCP subprocess + LiteLLM client,
-    populates the shared `runtime` singleton, and tears everything down on
-    exit. `stdio_client` and `ClientSession` use anyio task groups internally
-    that must enter and exit in the same task — this helper is that single
-    owner task. Used by both the FastAPI lifespan (`app/ai.py`) and by
-    standalone scripts (e.g. `test_planner.py`).
+    Async context manager that opens the long-lived remote MCP SSE session +
+    LiteLLM client, populates the shared `runtime` singleton, and tears
+    everything down on exit. `sse_client` and `ClientSession` use anyio task
+    groups internally that must enter and exit in the same task — this helper
+    is that single owner task. Used by both the FastAPI lifespan (`app/ai.py`)
+    and by standalone scripts (e.g. `test_planner.py`).
     """
 
     try:
@@ -205,13 +204,11 @@ async def agent_runtime_context():
         runtime.pruning_client = None
         log.info("Pruning client unavailable, will fall back to drop-oldest behavior and handoff-note extraction will not be available", error=str(e))
 
-    server_params = StdioServerParameters(
-        command="python",
-        args=["-m", "app.agent.mcp_server.main"],
-        env=os.environ.copy(),
-    )
-
-    async with stdio_client(server_params) as (read, write):
+    async with sse_client(
+        settings.MCP_URL + settings.MCP_SSE_PATH,
+        timeout=10,
+        sse_read_timeout=max(_MCP_HEALTH_INTERVAL_SECONDS * 3, 90),
+    ) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             mcp_response = await session.list_tools()
@@ -264,15 +261,16 @@ async def agent_runtime_context():
             runtime.editor_graph = build_editor_graph(checkpointer=checkpointer)
 
             log.info(
-                f"MCP Session initialized with {len(mcp_response.tools)} "
-                f"MCP tools + per-type event tools (research/day/finalizer blocks) — agent is ready.",
+                f"Remote MCP session initialized from {settings.MCP_URL} and path {settings.MCP_SSE_PATH} with "
+                f"{len(mcp_response.tools)} MCP tools + per-type event tools "
+                f"(research/day/finalizer blocks) — agent is ready.",
                 flush=True,
             )
 
             try:
                 yield runtime
             finally:
-                log.info("Tearing down MCP session and LiteLLM client.")
+                log.info("Tearing down remote MCP session and LiteLLM client.")
                 health_task.cancel()
                 try:
                     await health_task
@@ -291,3 +289,4 @@ async def agent_runtime_context():
                 runtime.checkpointer = None
                 runtime.model_client = None
                 runtime.pruning_client = None
+                runtime.mcp_healthy = False

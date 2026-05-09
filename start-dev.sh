@@ -290,6 +290,7 @@ start_servers() {
 
     warn_if_port_is_busy "8000" "API backend"
     warn_if_port_is_busy "8001" "Agent backend"
+    warn_if_port_is_busy "8002" "MCP backend"
     warn_if_port_is_busy "5173" "Frontend"
 
     local backend_dir_quoted
@@ -305,16 +306,21 @@ start_servers() {
     local agent_command
     agent_command="cd $backend_dir_quoted && source $venv_activate_quoted && echo '[BonPlan.ai] Agent backend: http://localhost:8001' && python -m uvicorn app.ai:app --host 0.0.0.0 --port 8001 --reload"
 
+    local mcp_command
+    mcp_command="cd $backend_dir_quoted && source $venv_activate_quoted && echo '[BonPlan.ai] MCP backend: http://localhost:8002${MCP_SSE_PATH:-/mcp/sse}' && python -m uvicorn app.mcp:app --host 0.0.0.0 --port 8002 --reload"
+
     local frontend_command
     frontend_command="cd $frontend_dir_quoted && echo '[BonPlan.ai] Frontend: Vite dev server' && npm run dev"
 
     open_terminal "BonPlan API Backend" "$api_command"
     open_terminal "BonPlan Agent Backend" "$agent_command"
+    open_terminal "BonPlan MCP Backend" "$mcp_command"
     open_terminal "BonPlan Frontend" "$frontend_command"
 
     printf "\nStarted Terminal windows for:\n"
     printf "  API backend:   http://localhost:8000\n"
     printf "  Agent backend: http://localhost:8001\n"
+    printf "  MCP backend:   http://localhost:8002%s\n" "${MCP_SSE_PATH:-/mcp/sse}"
     printf "  Frontend:      usually http://localhost:5173\n"
     printf "  Redis:         redis://localhost:6379/0\n"
     printf "\nLeave those Terminal windows open while developing. Stop each server with Ctrl-C.\n"

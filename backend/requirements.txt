@@ -16,6 +16,7 @@ timezonefinder==6.0.0
 PyJWT==2.11.0
 fastmcp==3.1.0
 mcp==1.26.0
+httpx-sse==0.4.3
 ddgs==9.13.0
 fake-useragent==2.2.0
 litellm[google]==1.83.14

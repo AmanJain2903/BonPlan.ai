@@ -1,8 +1,12 @@
-import asyncio
+from contextlib import asynccontextmanager
+from typing import Callable
+
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
+from app.core.config import settings
 from app.logging import get_mcp_logger
+from app.utils.http import close_http_client
 
 logger = get_mcp_logger("main")
 
@@ -61,211 +65,65 @@ from app.agent.mcp_server.tools.currency import get_supported_currencies
 from app.agent.mcp_server.tools.currency import convert_currency_to_USD
 
 
-# This name will be visible to the LLM/Agent
-mcp = FastMCP("BonPlan_MCP_Server")
+@asynccontextmanager
+async def mcp_lifespan(_server):
+    logger.info("MCP service starting", service=settings.MCP_NAME, version=settings.MCP_VERSION)
+    try:
+        yield
+    finally:
+        await close_http_client()
+        logger.info("MCP service shutdown complete")
 
-# Timezone Tools
-get_current_timestamp_tool = Tool.from_function(
-    get_current_timestamp,
-    name="get_current_timestamp"
-)
-mcp.add_tool(get_current_timestamp_tool)
 
-convert_utc_string_to_timestamp_tool = Tool.from_function(
-    convert_utc_string_to_timestamp,
-    name="convert_utc_string_to_timestamp"
-)
-mcp.add_tool(convert_utc_string_to_timestamp_tool)
+_TOOL_REGISTRY: list[tuple[str, Callable[..., object]]] = [
+    ("get_current_timestamp", get_current_timestamp),
+    ("convert_utc_string_to_timestamp", convert_utc_string_to_timestamp),
+    ("convert_timestamp_to_utc_string", convert_timestamp_to_utc_string),
+    ("convert_target_local_time_to_utc", convert_target_local_time_to_utc),
+    ("get_timezone", get_timezone),
+    ("get_current_air_quality", get_current_air_quality),
+    ("get_air_quality_forecast", get_air_quality_forecast),
+    ("get_current_weather", get_current_weather),
+    ("get_daily_forecast", get_daily_forecast),
+    ("get_hourly_forecast", get_hourly_forecast),
+    ("get_coordinates", get_coordinates),
+    ("get_address", get_address),
+    ("get_optimal_route", get_optimal_route),
+    ("search_places", search_places),
+    ("search_places_nearby", search_places_nearby),
+    ("get_place_info", get_place_info),
+    ("get_route", get_route),
+    ("get_route_matrix", get_route_matrix),
+    ("search_web", search_web),
+    ("get_content_from_url", get_content_from_url),
+    ("get_country_code", get_country_code),
+    ("get_airports_and_codes", get_airports_and_codes),
+    ("search_flights", search_flights),
+    ("search_multi_city_flights", search_multi_city_flights),
+    ("get_next_flights", get_next_flights),
+    ("get_flight_booking_details", get_flight_booking_details),
+    ("get_flight_booking_url", get_flight_booking_url),
+    ("search_rental_cars", search_rental_cars),
+    ("search_hotels", search_hotels),
+    ("get_hotel_booking_url", get_hotel_booking_url),
+    ("get_supported_currencies", get_supported_currencies),
+    ("convert_currency_to_USD", convert_currency_to_USD),
+]
 
-convert_timestamp_to_utc_string_tool = Tool.from_function(
-    convert_timestamp_to_utc_string,
-    name="convert_timestamp_to_utc_string"
-)
-mcp.add_tool(convert_timestamp_to_utc_string_tool)  
 
-convert_target_local_time_to_utc_tool = Tool.from_function(
-    convert_target_local_time_to_utc,
-    name="convert_target_local_time_to_utc"
-)
-mcp.add_tool(convert_target_local_time_to_utc_tool)
+def _build_mcp_server() -> FastMCP:
+    server = FastMCP(
+        settings.MCP_NAME,
+        version=settings.MCP_VERSION,
+        lifespan=mcp_lifespan,
+    )
+    for tool_name, fn in _TOOL_REGISTRY:
+        server.add_tool(Tool.from_function(fn, name=tool_name))
+    return server
 
-get_timezone_tool = Tool.from_function(
-    get_timezone,
-    name="get_timezone"
-)
-mcp.add_tool(get_timezone_tool)
 
-# Air Quality Tools
-get_current_air_quality_tool = Tool.from_function(
-    get_current_air_quality,
-    name="get_current_air_quality"
-)
-mcp.add_tool(get_current_air_quality_tool)
-
-get_air_quality_forecast_tool = Tool.from_function(
-    get_air_quality_forecast,
-    name="get_air_quality_forecast"
-)
-mcp.add_tool(get_air_quality_forecast_tool)
-
-# Weather Tools
-get_current_weather_tool = Tool.from_function(
-    get_current_weather,
-    name="get_current_weather"
-)
-mcp.add_tool(get_current_weather_tool)
-
-get_daily_forecast_tool = Tool.from_function(
-    get_daily_forecast,
-    name="get_daily_forecast"
-)
-mcp.add_tool(get_daily_forecast_tool)
-
-get_hourly_forecast_tool = Tool.from_function(
-    get_hourly_forecast,
-    name="get_hourly_forecast"
-)
-mcp.add_tool(get_hourly_forecast_tool)
-
-# Geocoding Tools
-get_coordinates_tool = Tool.from_function(
-    get_coordinates,
-    name="get_coordinates"
-)
-mcp.add_tool(get_coordinates_tool)
-
-get_address_tool = Tool.from_function(
-    get_address,
-    name="get_address"
-)
-mcp.add_tool(get_address_tool)
-
-get_optimal_route_tool = Tool.from_function(
-    get_optimal_route,
-    name="get_optimal_route"
-)
-mcp.add_tool(get_optimal_route_tool)
-
-# Places Tools
-search_places_tool = Tool.from_function(
-    search_places,
-    name="search_places"
-)
-mcp.add_tool(search_places_tool)
-
-search_places_nearby_tool = Tool.from_function(
-    search_places_nearby,
-    name="search_places_nearby"
-)
-mcp.add_tool(search_places_nearby_tool)
-
-get_place_info_tool = Tool.from_function(
-    get_place_info,
-    name="get_place_info"
-)
-mcp.add_tool(get_place_info_tool)
-
-# Routes Tools
-get_route_tool = Tool.from_function(
-    get_route,
-    name="get_route"
-)
-mcp.add_tool(get_route_tool)
-
-get_route_matrix_tool = Tool.from_function(
-    get_route_matrix,
-    name="get_route_matrix"
-)
-mcp.add_tool(get_route_matrix_tool)
-
-# Web Search Tools
-search_web_tool = Tool.from_function(
-    search_web,
-    name="search_web"
-)
-mcp.add_tool(search_web_tool)
-
-get_content_from_url_tool = Tool.from_function(
-    get_content_from_url,
-    name="get_content_from_url"
-)
-mcp.add_tool(get_content_from_url_tool)
-
-# Flights Tools
-get_country_code_tool = Tool.from_function(
-    get_country_code,
-    name="get_country_code"
-)
-mcp.add_tool(get_country_code_tool)
-
-get_airports_and_codes_tool = Tool.from_function(
-    get_airports_and_codes,
-    name="get_airports_and_codes"
-)
-mcp.add_tool(get_airports_and_codes_tool)
-
-search_flights_tool = Tool.from_function(
-    search_flights,
-    name="search_flights"
-)
-mcp.add_tool(search_flights_tool)
-
-search_multi_city_flights_tool = Tool.from_function(
-    search_multi_city_flights,
-    name="search_multi_city_flights"
-)
-mcp.add_tool(search_multi_city_flights_tool)
-
-get_next_flights_tool = Tool.from_function(
-    get_next_flights,
-    name="get_next_flights"
-)
-mcp.add_tool(get_next_flights_tool)
-
-get_flight_booking_details_tool = Tool.from_function(
-    get_flight_booking_details,
-    name="get_flight_booking_details"
-)
-mcp.add_tool(get_flight_booking_details_tool)
-
-get_flight_booking_url_tool = Tool.from_function(
-    get_flight_booking_url,
-    name="get_flight_booking_url"
-)
-mcp.add_tool(get_flight_booking_url_tool)
-
-# Ground Transportation Tools
-search_rental_cars_tool = Tool.from_function(
-    search_rental_cars,
-    name="search_rental_cars"
-)
-mcp.add_tool(search_rental_cars_tool)
-
-# Accommodations Tools
-search_hotels_tool = Tool.from_function(
-    search_hotels,
-    name="search_hotels"
-)
-mcp.add_tool(search_hotels_tool)
-
-get_hotel_booking_url_tool = Tool.from_function(
-    get_hotel_booking_url,
-    name="get_hotel_booking_url"
-)
-mcp.add_tool(get_hotel_booking_url_tool)
-
-# Currency Tools
-get_supported_currencies_tool = Tool.from_function(
-    get_supported_currencies,
-    name="get_supported_currencies"
-)
-mcp.add_tool(get_supported_currencies_tool)
-
-convert_currency_to_USD_tool = Tool.from_function(
-    convert_currency_to_USD,
-    name="convert_currency_to_USD"
-)
-mcp.add_tool(convert_currency_to_USD_tool)
+# This name is visible to the agent during MCP initialization.
+mcp = _build_mcp_server()
 
 
 if __name__ == "__main__":
