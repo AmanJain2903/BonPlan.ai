@@ -6,13 +6,9 @@ day_number to every log line — useful for tracing a trip's execution across
 LangGraph nodes — while also serving as the single logging entry point for
 every component in the backend.
 
-In local development, each logger writes JSON-line records to its own
-daily-rotated file under $BONPLAN_LOG_DIR (default: backend/logs/), inside a
-subfolder named for the component. In non-local environments, records are
-buffered and streamed to Grafana Loki using the Grafana credentials configured
-in app.core.config.
-
-The folder layout for local files mirrors the call sites:
+Each logger writes JSON-line records to its own daily-rotated file under
+$BONPLAN_LOG_DIR (default: backend/logs/), inside a subfolder named for the
+component. The folder layout mirrors the call sites:
 
     logs/
       app/<YYYY-MM-DD>.log               ← AppLogger        (app.py / ai.py boot)
@@ -26,24 +22,19 @@ The folder layout for local files mirrors the call sites:
       utils/<YYYY-MM-DD>.log             ← UtilsLogger      (helpers, http client)
 
 Records are also nothing-on-stdout by design: stdout is reserved for the SSE
-streaming response. Stderr mirrors every emit for platform-native log capture
-and as a fallback if Loki delivery fails.
+streaming response. The file is the durable sink; tail it for live runs.
 """
 
 from __future__ import annotations
 
-import atexit
+import asyncio
 import json
 import os
-import queue
 import sys
 import threading
-import time
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, TextIO
-
-import httpx
 
 from app.core.config import settings
 
@@ -76,15 +67,6 @@ _LOG_ROOT = (
 _log_handles: dict[str, tuple[TextIO, str]] = {}
 _log_handles_lock = threading.Lock()
 
-_LOKI_BATCH_SIZE = 100
-_LOKI_BATCH_INTERVAL_SECONDS = 1.0
-_LOKI_HTTP_TIMEOUT_SECONDS = 5.0
-_LOKI_QUEUE_MAX_SIZE = 10_000
-
-_loki_sender: Optional["LokiSender"] = None
-_loki_sender_lock = threading.Lock()
-_warnings_emitted: set[str] = set()
-
 def _get_log_file(logs_subdir: str) -> Optional[TextIO]:
     """Return today's append-mode file handle for `logs_subdir`, rotating on UTC date."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -116,171 +98,6 @@ def log_file_path(logs_subdir: str) -> str:
     """Return the current day's log file path for the given subdir (tests/tooling)."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return os.path.join(_LOG_ROOT, logs_subdir, f"{today}.log")
-
-
-def _warn_once(key: str, message: str) -> None:
-    with _loki_sender_lock:
-        if key in _warnings_emitted:
-            return
-        _warnings_emitted.add(key)
-    try:
-        print(message, file=sys.stderr, flush=True)
-    except Exception:
-        pass
-
-
-def _normalize_loki_url(url: str) -> str:
-    """Accept either a Loki base URL or the full push endpoint."""
-    clean = url.rstrip("/")
-    if clean.endswith("/loki/api/v1/push"):
-        return clean
-    return f"{clean}/loki/api/v1/push"
-
-
-def _environment_name() -> str:
-    return "local" if settings.LOCAL_DEVELOPMENT else "production"
-
-
-def _write_local_record(logs_subdir: str, line: str) -> None:
-    f = _get_log_file(logs_subdir)
-    if f is not None:
-        try:
-            f.write(line + "\n")
-            f.flush()
-        except Exception:
-            # Never let a logging failure take down the request.
-            pass
-
-
-def _build_loki_labels(record: dict[str, Any], logs_subdir: str) -> dict[str, str]:
-    return {
-        "service": "bonplan-backend",
-        "project": settings.PROJECT_NAME,
-        "environment": record["environment"],
-        "component": logs_subdir.replace(os.sep, "_"),
-        "logger": str(record["logger"]),
-        "level": str(record["level"]).lower(),
-    }
-
-
-class LokiSender:
-    """Background Loki shipper that keeps HTTP I/O off the request path."""
-
-    def __init__(self, url: str, username: Optional[str], token: Optional[str]) -> None:
-        headers = {"Content-Type": "application/json"}
-        auth: Any = None
-        if username and token:
-            auth = (username, token)
-        elif token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        self._url = _normalize_loki_url(url)
-        self._client = httpx.Client(timeout=_LOKI_HTTP_TIMEOUT_SECONDS, headers=headers, auth=auth)
-        self._queue: queue.Queue[tuple[dict[str, str], str, str]] = queue.Queue(maxsize=_LOKI_QUEUE_MAX_SIZE)
-        self._stop_event = threading.Event()
-        self._worker = threading.Thread(target=self._run, name="bonplan-loki", daemon=True)
-        self._last_error_ts = 0.0
-        self._worker.start()
-
-    def emit(self, record: dict[str, Any], logs_subdir: str) -> None:
-        line = json.dumps(record, default=str)
-        item = (_build_loki_labels(record, logs_subdir), str(time.time_ns()), line)
-        try:
-            self._queue.put_nowait(item)
-        except queue.Full:
-            self._warn_rate_limited("Loki queue is full; dropping log records.")
-
-    def shutdown(self, timeout_seconds: float = 5.0) -> None:
-        self._stop_event.set()
-        self._worker.join(timeout_seconds)
-        if self._worker.is_alive():
-            self._warn_rate_limited("Loki worker did not stop cleanly before timeout.")
-        try:
-            self._client.close()
-        except Exception:
-            pass
-
-    def _run(self) -> None:
-        pending: list[tuple[dict[str, str], str, str]] = []
-        next_flush_at = time.monotonic() + _LOKI_BATCH_INTERVAL_SECONDS
-        while not self._stop_event.is_set() or not self._queue.empty() or pending:
-            timeout = max(0.0, next_flush_at - time.monotonic())
-            try:
-                pending.append(self._queue.get(timeout=timeout))
-            except queue.Empty:
-                pass
-
-            should_flush = False
-            if pending and len(pending) >= _LOKI_BATCH_SIZE:
-                should_flush = True
-            elif pending and time.monotonic() >= next_flush_at:
-                should_flush = True
-
-            if should_flush:
-                self._flush(pending)
-                pending = []
-                next_flush_at = time.monotonic() + _LOKI_BATCH_INTERVAL_SECONDS
-
-        if pending:
-            self._flush(pending)
-
-    def _flush(self, items: list[tuple[dict[str, str], str, str]]) -> None:
-        streams: dict[str, dict[str, Any]] = {}
-        for labels, ts_ns, line in items:
-            key = json.dumps(labels, sort_keys=True, separators=(",", ":"))
-            stream = streams.setdefault(key, {"stream": labels, "values": []})
-            stream["values"].append([ts_ns, line])
-
-        try:
-            response = self._client.post(self._url, json={"streams": list(streams.values())})
-            response.raise_for_status()
-        except Exception as exc:
-            self._warn_rate_limited(f"Loki push failed: {exc}")
-
-    def _warn_rate_limited(self, message: str) -> None:
-        now = time.monotonic()
-        if now - self._last_error_ts < 30:
-            return
-        self._last_error_ts = now
-        try:
-            print(f"[logging] {message}", file=sys.stderr, flush=True)
-        except Exception:
-            pass
-
-
-def _get_loki_sender() -> Optional[LokiSender]:
-    if settings.LOCAL_DEVELOPMENT:
-        return None
-
-    if not settings.GRAFANA_LOKI_URL:
-        _warn_once(
-            "missing-loki-url",
-            "[logging] GRAFANA_LOKI_URL is not configured; production Loki logging is disabled.",
-        )
-        return None
-
-    global _loki_sender
-    if _loki_sender is not None:
-        return _loki_sender
-
-    with _loki_sender_lock:
-        if _loki_sender is not None:
-            return _loki_sender
-        _loki_sender = LokiSender(
-            url=settings.GRAFANA_LOKI_URL,
-            username=settings.GRAFANA_LOKI_USER,
-            token=settings.GRAFANA_LOKI_TOKEN,
-        )
-        return _loki_sender
-
-
-def shutdown_logging(timeout_seconds: float = 5.0) -> None:
-    global _loki_sender
-    with _loki_sender_lock:
-        sender = _loki_sender
-        _loki_sender = None
-    if sender is not None:
-        sender.shutdown(timeout_seconds=timeout_seconds)
 
 
 # ── Context API ──────────────────────────────────────────────────────────────
@@ -320,8 +137,6 @@ class BonPlanLogger:
         record: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "level": level,
-            "environment": _environment_name(),
-            "component": self.logs_subdir,
             "logger": self._name,
             "msg": message,
         }
@@ -345,12 +160,14 @@ class BonPlanLogger:
         except Exception:
             pass
         if settings.LOCAL_DEVELOPMENT:
-            _write_local_record(self.logs_subdir, line)
-            return
-
-        sender = _get_loki_sender()
-        if sender is not None:
-            sender.emit(record, self.logs_subdir)
+            f = _get_log_file(self.logs_subdir)
+            if f is not None:
+                try:
+                    f.write(line + "\n")
+                    f.flush()
+                except Exception:
+                    # Never let a logging failure take down the request.
+                    pass
 
     def info(self, message: str, **extra: Any) -> None:
         self._emit("INFO", message, **extra)
@@ -458,6 +275,3 @@ def get_mcp_logger(name: str) -> MCPLogger:
 
 def get_utils_logger(name: str) -> UtilsLogger:
     return UtilsLogger(name)
-
-
-atexit.register(shutdown_logging)

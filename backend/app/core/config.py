@@ -29,11 +29,6 @@ class Settings(BaseSettings):
     # Logging settings
     LOG_ROOT: str = "backend/logs"
 
-    # Grafana Loki logging settings
-    GRAFANA_LOKI_URL: str | None = os.getenv("GRAFANA_LOKI_URL")
-    GRAFANA_LOKI_USER: str | None = os.getenv("GRAFANA_LOKI_USER")
-    GRAFANA_LOKI_TOKEN: str | None = os.getenv("GRAFANA_LOKI_TOKEN")
-
     # Project settings
     PROJECT_NAME: str = "BonPlan.ai"
     AGENT_NAME: str = "BonPlan.ai - Agent"
