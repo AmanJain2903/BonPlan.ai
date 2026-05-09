@@ -20,8 +20,8 @@ Concurrency notes:
 """
 
 import asyncio
-from contextlib import asynccontextmanager
-from typing import Any, List, Optional
+from contextlib import AsyncExitStack, asynccontextmanager
+from typing import Any, AsyncIterator, List, Optional, Tuple
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
@@ -179,6 +179,83 @@ async def _mcp_health_ping(session: ClientSession) -> None:
 
 
 @asynccontextmanager
+async def _open_remote_mcp_session() -> AsyncIterator[Tuple[ClientSession, Any]]:
+    """Open, initialize, and yield the long-lived MCP SSE session."""
+    async with sse_client(
+        settings.MCP_URL + settings.MCP_SSE_PATH,
+        timeout=settings.MCP_CONNECT_TIMEOUT_SECONDS,
+        sse_read_timeout=max(_MCP_HEALTH_INTERVAL_SECONDS * 3, 90),
+    ) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            mcp_response = await session.list_tools()
+            yield session, mcp_response
+
+
+@asynccontextmanager
+async def _open_remote_mcp_session_with_retry() -> AsyncIterator[Tuple[ClientSession, Any]]:
+    """
+    Retry the initial MCP connection + handshake with exponential backoff.
+
+    This protects agent startup from transient ordering issues where the MCP
+    service deploys more slowly than the agent service.
+    """
+    max_wait_seconds = max(0.0, settings.MCP_STARTUP_MAX_WAIT_SECONDS)
+    delay_seconds = max(0.1, settings.MCP_STARTUP_INITIAL_BACKOFF_SECONDS)
+    max_backoff_seconds = max(delay_seconds, settings.MCP_STARTUP_MAX_BACKOFF_SECONDS)
+    deadline = asyncio.get_running_loop().time() + max_wait_seconds
+    attempt = 1
+
+    while True:
+        stack = AsyncExitStack()
+        try:
+            session_and_response = await stack.enter_async_context(_open_remote_mcp_session())
+        except Exception as e:
+            await stack.aclose()
+            now = asyncio.get_running_loop().time()
+            remaining_seconds = max(0.0, deadline - now)
+            if remaining_seconds <= 0:
+                log.error(
+                    "Failed to connect to MCP before startup retry budget expired",
+                    attempts=attempt,
+                    max_wait_seconds=max_wait_seconds,
+                    mcp_url=settings.MCP_URL,
+                    mcp_sse_path=settings.MCP_SSE_PATH,
+                    error=str(e),
+                )
+                raise
+
+            sleep_seconds = min(delay_seconds, remaining_seconds)
+            log.warning(
+                "MCP startup connection attempt failed; retrying",
+                attempt=attempt,
+                retry_in_seconds=round(sleep_seconds, 2),
+                remaining_startup_wait_seconds=round(remaining_seconds, 2),
+                mcp_url=settings.MCP_URL,
+                mcp_sse_path=settings.MCP_SSE_PATH,
+                error=str(e),
+            )
+            await asyncio.sleep(sleep_seconds)
+            delay_seconds = min(delay_seconds * 2, max_backoff_seconds)
+            attempt += 1
+            continue
+
+        if attempt > 1:
+            log.info(
+                "Connected to MCP after startup retries",
+                attempt=attempt,
+                mcp_url=settings.MCP_URL,
+                mcp_sse_path=settings.MCP_SSE_PATH,
+            )
+
+        try:
+            yield session_and_response
+        finally:
+            await stack.aclose()
+        return
+
+
+@asynccontextmanager
 async def agent_runtime_context():
     """
     Async context manager that opens the long-lived remote MCP SSE session +
@@ -204,89 +281,82 @@ async def agent_runtime_context():
         runtime.pruning_client = None
         log.info("Pruning client unavailable, will fall back to drop-oldest behavior and handoff-note extraction will not be available", error=str(e))
 
-    async with sse_client(
-        settings.MCP_URL + settings.MCP_SSE_PATH,
-        timeout=10,
-        sse_read_timeout=max(_MCP_HEALTH_INTERVAL_SECONDS * 3, 90),
-    ) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            mcp_response = await session.list_tools()
+    async with _open_remote_mcp_session_with_retry() as (session, mcp_response):
 
-            mcp_decls = [convert_mcp_to_llm_tool(t) for t in mcp_response.tools]
+        mcp_decls = [convert_mcp_to_llm_tool(t) for t in mcp_response.tools]
 
-            # Legacy full block (keeps monolithic add_itinerary_event for any
-            # caller that hasn't migrated yet — e.g. tests).
-            llm_tools = list(mcp_decls) + [ADD_EVENT_TOOL]
+        # Legacy full block (keeps monolithic add_itinerary_event for any
+        # caller that hasn't migrated yet — e.g. tests).
+        llm_tools = list(mcp_decls) + [ADD_EVENT_TOOL]
 
-            runtime.mcp_session = session
-            runtime.llm_tools = llm_tools
-            runtime.planner_tool_block = types.Tool(function_declarations=llm_tools)
-            runtime.mcp_healthy = True
+        runtime.mcp_session = session
+        runtime.llm_tools = llm_tools
+        runtime.planner_tool_block = types.Tool(function_declarations=llm_tools)
+        runtime.mcp_healthy = True
 
-            research_mcp_decls = _filter_mcp_decls(mcp_decls, _RESEARCH_MCP_TOOLS)
-            day_mcp_decls = _filter_mcp_decls(mcp_decls, _DAY_MCP_TOOLS)
-            finalizer_mcp_decls = _filter_mcp_decls(mcp_decls, _FINALIZER_MCP_TOOLS)
-            editor_mcp_decls = list(mcp_decls)
+        research_mcp_decls = _filter_mcp_decls(mcp_decls, _RESEARCH_MCP_TOOLS)
+        day_mcp_decls = _filter_mcp_decls(mcp_decls, _DAY_MCP_TOOLS)
+        finalizer_mcp_decls = _filter_mcp_decls(mcp_decls, _FINALIZER_MCP_TOOLS)
+        editor_mcp_decls = list(mcp_decls)
 
-            runtime.research_tool_block = build_phase_tool_block(
-                research_mcp_decls, RESEARCH_EVENT_TOOL_NAMES
-            )
-            runtime.day_tool_block = build_phase_tool_block(
-                day_mcp_decls, DAY_EVENT_TOOL_NAMES
-            )
-            runtime.day_tool_block_collaborative = build_phase_tool_block(
-                day_mcp_decls, DAY_EVENT_TOOL_NAMES, ask_user_question_tool=ASK_USER_QUESTION_TOOL
-            )
-            runtime.finalizer_tool_block = build_phase_tool_block(
-                finalizer_mcp_decls, FINALIZER_EVENT_TOOL_NAMES
-            )
-            runtime.editor_tool_block = types.Tool(function_declarations=editor_mcp_decls)
+        runtime.research_tool_block = build_phase_tool_block(
+            research_mcp_decls, RESEARCH_EVENT_TOOL_NAMES
+        )
+        runtime.day_tool_block = build_phase_tool_block(
+            day_mcp_decls, DAY_EVENT_TOOL_NAMES
+        )
+        runtime.day_tool_block_collaborative = build_phase_tool_block(
+            day_mcp_decls, DAY_EVENT_TOOL_NAMES, ask_user_question_tool=ASK_USER_QUESTION_TOOL
+        )
+        runtime.finalizer_tool_block = build_phase_tool_block(
+            finalizer_mcp_decls, FINALIZER_EVENT_TOOL_NAMES
+        )
+        runtime.editor_tool_block = types.Tool(function_declarations=editor_mcp_decls)
 
-            health_task = asyncio.create_task(_mcp_health_ping(session))
+        health_task = asyncio.create_task(_mcp_health_ping(session))
 
-            # In-memory checkpointer is sufficient today — resume is rebuilt
-            # from the DB on every call via current_trip_itinerary, so durable
-            # LangGraph checkpoints would only duplicate state. When
-            # collaborative / editing modes land (which need mid-graph
-            # interrupts across HTTP requests) we can re-introduce
-            # AsyncPostgresSaver here.
-            from langgraph.checkpoint.memory import MemorySaver
-            checkpointer = MemorySaver()
-            runtime.checkpointer = checkpointer
+        # In-memory checkpointer is sufficient today — resume is rebuilt
+        # from the DB on every call via current_trip_itinerary, so durable
+        # LangGraph checkpoints would only duplicate state. When
+        # collaborative / editing modes land (which need mid-graph
+        # interrupts across HTTP requests) we can re-introduce
+        # AsyncPostgresSaver here.
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
+        runtime.checkpointer = checkpointer
 
-            from app.agent.langgraph_runtime.graph import build_planner_graph, build_editor_graph
-            # Build the compiled graph once, with the resolved checkpointer.
-            runtime.planner_graph = build_planner_graph(checkpointer=checkpointer)
-            runtime.editor_graph = build_editor_graph(checkpointer=checkpointer)
+        from app.agent.langgraph_runtime.graph import build_planner_graph, build_editor_graph
+        # Build the compiled graph once, with the resolved checkpointer.
+        runtime.planner_graph = build_planner_graph(checkpointer=checkpointer)
+        runtime.editor_graph = build_editor_graph(checkpointer=checkpointer)
 
-            log.info(
-                f"Remote MCP session initialized from {settings.MCP_URL} and path {settings.MCP_SSE_PATH} with "
-                f"{len(mcp_response.tools)} MCP tools + per-type event tools "
-                f"(research/day/finalizer blocks) — agent is ready.",
-                flush=True,
-            )
+        log.info(
+            f"Remote MCP session initialized from {settings.MCP_URL} and path {settings.MCP_SSE_PATH} with "
+            f"{len(mcp_response.tools)} MCP tools + per-type event tools "
+            f"(research/day/finalizer blocks) — agent is ready.",
+            flush=True,
+        )
 
+        try:
+            yield runtime
+        finally:
+            log.info("Tearing down remote MCP session and LiteLLM client.")
+            health_task.cancel()
             try:
-                yield runtime
-            finally:
-                log.info("Tearing down remote MCP session and LiteLLM client.")
-                health_task.cancel()
-                try:
-                    await health_task
-                except BaseException:
-                    pass
-                runtime.mcp_session = None
-                runtime.llm_tools = None
-                runtime.planner_tool_block = None
-                runtime.research_tool_block = None
-                runtime.day_tool_block = None
-                runtime.day_tool_block_collaborative = None
-                runtime.finalizer_tool_block = None
-                runtime.editor_tool_block = None
-                runtime.planner_graph = None
-                runtime.editor_graph = None
-                runtime.checkpointer = None
-                runtime.model_client = None
-                runtime.pruning_client = None
-                runtime.mcp_healthy = False
+                await health_task
+            except BaseException:
+                pass
+            runtime.mcp_session = None
+            runtime.llm_tools = None
+            runtime.planner_tool_block = None
+            runtime.research_tool_block = None
+            runtime.day_tool_block = None
+            runtime.day_tool_block_collaborative = None
+            runtime.finalizer_tool_block = None
+            runtime.editor_tool_block = None
+            runtime.planner_graph = None
+            runtime.editor_graph = None
+            runtime.checkpointer = None
+            runtime.model_client = None
+            runtime.pruning_client = None
+            runtime.mcp_healthy = False

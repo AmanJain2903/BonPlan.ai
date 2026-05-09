@@ -695,16 +695,6 @@ async def run_chat_loop(
 
             tool_responses = []
             for call_id, fc, result in gathered:
-                # Question tool: the user-facing chunk is the `question` chunk;
-                # the formatted answer is internal-only and would leak the
-                # injection-safety wrapper to the UI.
-                if not _is_event_tool(fc.name) and not _is_question_tool(fc.name):
-                    emit({
-                        "type": "tool_response",
-                        "tool_name": fc.name,
-                        "response": result,
-                        "call_id": call_id,
-                    })
                 tool_responses.append(
                     types.Part.from_function_response(
                         name=fc.name,

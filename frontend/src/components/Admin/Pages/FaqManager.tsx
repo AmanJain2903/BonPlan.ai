@@ -96,7 +96,7 @@ export default function FaqManager() {
     );
   }, [faqs, search]);
 
-  const inputBase = 'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all';
+  const inputBase = 'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-base sm:text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all';
 
   return (
     <div>
@@ -122,7 +122,7 @@ export default function FaqManager() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search question or answer…"
-          className="w-full rounded-xl border border-white/10 bg-white/[0.03] pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.03] pl-10 pr-4 py-2.5 text-base sm:text-sm text-white placeholder-white/20 outline-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 transition-all"
         />
       </div>
 

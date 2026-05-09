@@ -113,7 +113,7 @@ const CustomInterestInput = ({ onAdd }: { onAdd: (val: string) => void }) => {
           }
         }}
         placeholder="Add custom..."
-        className="bg-transparent text-xs font-semibold text-white/80 outline-none w-24 placeholder:text-white/30"
+        className="bg-transparent text-base sm:text-xs font-semibold text-white/80 outline-none w-24 placeholder:text-white/30"
       />
       <button
         type="button"
@@ -198,7 +198,7 @@ const TravelSelect = ({ label, value, options, onChange, zIdx = 50, fieldKey }: 
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white hover:border-white/20 transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-base sm:text-sm text-white hover:border-white/20 transition-colors cursor-pointer"
       >
         <span className="flex items-center gap-2.5">
           {selected.icon && <selected.icon size={15} className="text-cyan/70" />}
@@ -306,7 +306,7 @@ const CreatableMultiSelect = ({ selected, onChange, suggestions }: {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={selected.length === 0 ? 'Type & press Enter to add...' : ''}
-            className="flex-1 min-w-[120px] bg-transparent text-sm text-white outline-none placeholder-white/25 shrink-0"
+            className="flex-1 min-w-[120px] bg-transparent text-base sm:text-sm text-white outline-none placeholder-white/25 shrink-0"
           />
         </div>
       </div>
@@ -374,7 +374,7 @@ const RoutineRow = ({
           onChange={e => set({ name: e.target.value })}
           placeholder="Routine name (e.g. Morning Gym)"
           maxLength={60}
-          className="flex-1 bg-transparent border-none text-sm font-semibold text-white outline-none placeholder-white/30"
+          className="flex-1 bg-transparent border-none text-base sm:text-sm font-semibold text-white outline-none placeholder-white/30"
         />
         <button
           type="button"
@@ -434,7 +434,7 @@ const RoutineRow = ({
             type="time"
             value={routine.start_time}
             onChange={e => set({ start_time: e.target.value })}
-            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-white outline-none focus:border-cyan/40 transition-all [color-scheme:dark]"
+            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-base sm:text-sm text-white outline-none focus:border-cyan/40 transition-all [color-scheme:dark]"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -447,7 +447,7 @@ const RoutineRow = ({
               max={480}
               step={5}
               onChange={e => set({ duration_minutes: Math.max(5, Math.min(480, parseInt(e.target.value) || 5)) })}
-              className="w-14 bg-transparent text-sm text-white outline-none"
+              className="w-14 bg-transparent text-base sm:text-sm text-white outline-none"
             />
             <span className="text-xs text-white/40">min</span>
           </div>
@@ -778,7 +778,7 @@ export default function PreferencesPanel() {
             onChange={(e) => updateOtherPref('additional_notes', e.target.value)}
             placeholder="e.g. We always need a crib for the toddler, or prefer very quiet hotels..."
             rows={3}
-            className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none resize-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 placeholder-white/25 transition-all"
+            className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-base sm:text-sm text-white outline-none resize-none focus:border-cyan/40 focus:ring-1 focus:ring-cyan/20 placeholder-white/25 transition-all"
           />
         </div>
       </Section>

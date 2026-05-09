@@ -388,7 +388,7 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
             onKeyDown={onKeyDown}
             autoComplete="off"
             spellCheck={false}
-            className="w-full rounded-xl border border-white/10 bg-white/[0.03] pl-10 pr-10 py-3 text-sm text-white/90 placeholder:text-white/35 outline-none transition-colors focus:border-cyan/40 focus:shadow-[0_0_0_1px_rgba(102,252,241,0.2)]"
+            className="w-full rounded-xl border border-white/10 bg-white/[0.03] pl-10 pr-10 py-3 text-base sm:text-sm text-white/90 placeholder:text-white/35 outline-none transition-colors focus:border-cyan/40 focus:shadow-[0_0_0_1px_rgba(102,252,241,0.2)]"
           />
           {showSpinner && (
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-cyan/70">
@@ -421,7 +421,7 @@ const PlacesAutocomplete = forwardRef<PlacesAutocompleteHandle, PlacesAutocomple
                       selectSuggestion(s);
                     }}
                     onMouseEnter={() => setActiveIdx(idx)}
-                    className={`cursor-pointer px-4 py-2.5 text-sm transition-colors ${idx === activeIdx
+                    className={`cursor-pointer px-4 py-2.5 text-base sm:text-sm transition-colors ${idx === activeIdx
                       ? 'bg-white/[0.06] text-white'
                       : 'text-white/70 hover:bg-white/[0.04]'
                       }`}

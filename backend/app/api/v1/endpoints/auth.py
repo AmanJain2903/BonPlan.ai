@@ -10,10 +10,12 @@ import bcrypt
 import html
 import jwt
 import re
+from urllib.parse import quote
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import HTTPException, APIRouter
+from fastapi import HTTPException, APIRouter, Form, Request
+from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from pydantic import BaseModel
@@ -32,6 +34,8 @@ from app.logging import get_api_logger
 logger = get_api_logger("api.auth")
 
 router = APIRouter()
+GOOGLE_AUTH_EXCHANGE_PURPOSE = "google_auth_exchange"
+GOOGLE_AUTH_EXCHANGE_TTL = timedelta(minutes=5)
 
 
 class UpdateProfileRequest(BaseModel):
@@ -66,6 +70,64 @@ def is_valid_password(password):
 
 def makeFirstLetterCapital(string):
     return string.capitalize()
+
+
+def _create_user_session_token(user_id) -> str:
+    token_payload = {
+        "user_id": str(user_id),
+        "exp": datetime.now(timezone.utc) + timedelta(days=7)
+    }
+    return jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
+
+
+def _build_auth_response(user: User, is_new_user: bool, status_code: int, message: str) -> dict:
+    prefs = user.preferences or TripPreferencesSchema().model_dump()
+    jwt_token = _create_user_session_token(user.id)
+    return {
+        "message": message,
+        "status_code": status_code,
+        "token": jwt_token,
+        "token_type": "Bearer",
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+        "preferences": prefs,
+        "is_new_user": is_new_user,
+        "is_admin": user.is_admin,
+    }
+
+
+def _create_google_auth_exchange_token(email: str, first_name: str, last_name: str) -> str:
+    payload = {
+        "purpose": GOOGLE_AUTH_EXCHANGE_PURPOSE,
+        "email": email,
+        "first_name": first_name,
+        "last_name": last_name,
+        "exp": datetime.now(timezone.utc) + GOOGLE_AUTH_EXCHANGE_TTL,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+
+
+def _decode_google_auth_exchange_token(exchange_token: str) -> dict:
+    try:
+        payload = jwt.decode(exchange_token, settings.SECRET_KEY, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Google sign-in expired. Please try again.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid Google sign-in request.")
+
+    if payload.get("purpose") != GOOGLE_AUTH_EXCHANGE_PURPOSE:
+        raise HTTPException(status_code=400, detail="Invalid Google sign-in request.")
+
+    return payload
+
+
+def _google_auth_callback_url(*, exchange_token: str | None = None, error: str | None = None) -> str:
+    base = f"{settings.FRONTEND_URL}/auth/google/callback"
+    if exchange_token:
+        return f"{base}#exchange_token={quote(exchange_token, safe='')}"
+    encoded_error = quote(error or "Google sign-in failed. Please try again.", safe="")
+    return f"{base}#error={encoded_error}"
 
 
 async def _hash_password(password: str) -> str:
@@ -115,11 +177,7 @@ async def _send_verification_email_for_user(email: str, db: AsyncSession) -> Non
     await send_email(email, subject, htmlContent, inline_images=bonplan_inline_images())
 
 
-"""
-Google authentication endpoint
-"""
-@router.post("/google", response_model=dict)
-async def google_login(token: str):
+async def _verify_google_credential(token: str) -> tuple[str, str, str]:
     if not token:
         raise HTTPException(status_code=400, detail="Token is required.")
 
@@ -142,6 +200,10 @@ async def google_login(token: str):
     if not first_name:
         raise HTTPException(status_code=400, detail="Google account has no first name.")
 
+    return email, first_name, last_name
+
+
+async def _login_or_register_google_user(email: str, first_name: str, last_name: str) -> dict:
     async with Session() as db:
         existingUser = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
         if existingUser and existingUser.auth_provider == "local":
@@ -149,13 +211,7 @@ async def google_login(token: str):
         elif existingUser and existingUser.auth_provider == "google":
             existingUser.is_new_user = False
             await db.commit()
-            token_payload = {
-                "user_id": str(existingUser.id),
-                "exp": datetime.now(timezone.utc) + timedelta(days=7)
-            }
-            jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-            prefs = existingUser.preferences or TripPreferencesSchema().model_dump()
-            return {"message": "Login successful", "status_code": 200, "token": jwtToken, "token_type": "Bearer", "first_name": existingUser.first_name, "last_name": existingUser.last_name, "email": existingUser.email, "preferences": prefs, "is_new_user": existingUser.is_new_user, "is_admin": existingUser.is_admin}
+            return _build_auth_response(existingUser, False, 200, "Login successful")
         else:
             try:
                 newUser = User(
@@ -170,16 +226,72 @@ async def google_login(token: str):
                 db.add(newUser)
                 await db.commit()
                 await db.refresh(newUser)
-                token_payload = {
-                    "user_id": str(newUser.id),
-                    "exp": datetime.now(timezone.utc) + timedelta(days=7)
-                }
-                jwtToken = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-                return {"message": "Registration successful.", "status_code": 201, "token": jwtToken, "token_type": "Bearer", "first_name": newUser.first_name, "last_name": newUser.last_name, "email": newUser.email, "preferences": newUser.preferences, "is_new_user": True, "is_admin": newUser.is_admin}
+                return _build_auth_response(newUser, True, 201, "Registration successful.")
+            except IntegrityError:
+                await db.rollback()
+                existingUser = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+                if existingUser and existingUser.auth_provider == "google":
+                    existingUser.is_new_user = False
+                    await db.commit()
+                    return _build_auth_response(existingUser, False, 200, "Login successful")
+                if existingUser and existingUser.auth_provider == "local":
+                    raise HTTPException(status_code=400, detail="An account with this email already exists. Please log in with your password.")
+                raise HTTPException(status_code=500, detail="Failed to create Google user.")
             except Exception as e:
                 logger.error("Failed to create/login a google user", error=str(e))
                 await db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
+
+
+"""
+Google authentication endpoint
+"""
+@router.post("/google", response_model=dict)
+async def google_login(token: str):
+    email, first_name, last_name = await _verify_google_credential(token)
+    return await _login_or_register_google_user(email, first_name, last_name)
+
+
+@router.post("/google/redirect")
+async def google_login_redirect(
+    request: Request,
+    credential: str = Form(...),
+    g_csrf_token: str = Form(...),
+):
+    csrf_cookie = request.cookies.get("g_csrf_token")
+    if not csrf_cookie:
+        return RedirectResponse(
+            _google_auth_callback_url(error="Google sign-in request is missing a CSRF cookie."),
+            status_code=303,
+        )
+    if csrf_cookie != g_csrf_token:
+        return RedirectResponse(
+            _google_auth_callback_url(error="Google sign-in request failed CSRF validation."),
+            status_code=303,
+        )
+
+    try:
+        email, first_name, last_name = await _verify_google_credential(credential)
+        exchange_token = _create_google_auth_exchange_token(email, first_name, last_name)
+        return RedirectResponse(_google_auth_callback_url(exchange_token=exchange_token), status_code=303)
+    except HTTPException as exc:
+        return RedirectResponse(_google_auth_callback_url(error=str(exc.detail)), status_code=303)
+    except Exception as exc:
+        logger.error("Unexpected Google redirect login failure", error=str(exc))
+        return RedirectResponse(
+            _google_auth_callback_url(error="Google sign-in failed. Please try again."),
+            status_code=303,
+        )
+
+
+@router.post("/google/complete", response_model=dict)
+async def complete_google_login(exchange_token: str):
+    payload = _decode_google_auth_exchange_token(exchange_token)
+    return await _login_or_register_google_user(
+        payload["email"],
+        payload["first_name"],
+        payload.get("last_name", ""),
+    )
 
 
 """

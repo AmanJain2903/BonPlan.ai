@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
     MCP_URL: str = os.getenv("MCP_URL", "http://localhost:8002")
     MCP_SSE_PATH: str = os.getenv("MCP_SSE_PATH", "/mcp/sse")
+    MCP_CONNECT_TIMEOUT_SECONDS: float = os.getenv("MCP_CONNECT_TIMEOUT_SECONDS", "10") # 10 seconds
+    MCP_STARTUP_MAX_WAIT_SECONDS: float = os.getenv("MCP_STARTUP_MAX_WAIT_SECONDS", "300") # 5 minutes
+    MCP_STARTUP_INITIAL_BACKOFF_SECONDS: float = os.getenv("MCP_STARTUP_INITIAL_BACKOFF_SECONDS", "1") # 1 second
+    MCP_STARTUP_MAX_BACKOFF_SECONDS: float = os.getenv("MCP_STARTUP_MAX_BACKOFF_SECONDS", "30") # 30 seconds
     
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 

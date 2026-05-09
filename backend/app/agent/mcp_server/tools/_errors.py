@@ -3,9 +3,9 @@
 """
 Uniform error envelope for MCP tools.
 
-The agent runtime forwards `tool_response` chunks verbatim into the next
-model turn, so the `fix_hint` text is what the model reads and reacts to
-when deciding how to retry. Keep hints concrete and action-oriented —
+The agent runtime forwards MCP tool results into the next model turn, so the
+`fix_hint` text is what the model reads and reacts to when deciding how to
+retry. Keep hints concrete and action-oriented —
 they should tell the model exactly which parameters to change, not just
 what went wrong.
 

@@ -11,6 +11,7 @@ import Footer from './components/HomePage/Footer';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import VerifyEmail from './components/Auth/VerifyEmail';
+import GoogleAuthCallback from './components/Auth/GoogleAuthCallback';
 import ForgotPassword from './components/Auth/ForgotPassword';
 import ResetPassword from './components/Auth/ResetPassword';
 import ShareInvite from './components/Auth/ShareInvite';
@@ -107,6 +108,7 @@ function AnimatedRoutes() {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/share-invite" element={<ShareInvite />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

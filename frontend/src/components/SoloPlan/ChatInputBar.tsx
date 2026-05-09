@@ -416,7 +416,7 @@ export default function ChatInputBar({
                 }}
                 disabled={!isEditingMode}
                 placeholder="Want to make edits?"
-                className="w-full bg-transparent border-none text-white text-sm focus:outline-none focus:ring-0 py-2.5 resize-none overflow-y-auto scrollbar-hide disabled:opacity-30 disabled:cursor-not-allowed placeholder:text-white/40"
+                className="w-full bg-transparent border-none text-white text-base sm:text-sm focus:outline-none focus:ring-0 py-2.5 resize-none overflow-y-auto scrollbar-hide disabled:opacity-30 disabled:cursor-not-allowed placeholder:text-white/40"
                 rows={1}
                 style={{ minHeight: `${SINGLE_LINE_INPUT_HEIGHT}px`, maxHeight: '120px' }}
               />

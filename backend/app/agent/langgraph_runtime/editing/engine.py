@@ -193,8 +193,6 @@ async def _execute_editor_tool(fc: types.FunctionCall, allowed_tool_names: set[s
             }
         except Exception as exc:
             result = {"error": str(exc)}
-        emit({"type": "tool_response", "tool_name": tool_name, "response": result, "call_id": call_id})
-
     return types.Part.from_function_response(
         name=tool_name,
         response=result,
@@ -925,18 +923,18 @@ def _search_query_for_event(
 async def _search_place(query: str) -> Optional[dict[str, Any]]:
     if runtime.mcp_session is None or not query.strip():
         return None
+    args = {
+        "query": query,
+        "include_dining_options": False,
+        "include_amenities": False,
+        "max_results": 5,
+        "place_index": 0,
+    }
+    call_id = str(uuid.uuid4())
+    emit({"type": "tool_call", "tool_name": "search_places", "args": args, "call_id": call_id})
     try:
         result = await asyncio.wait_for(
-            runtime.mcp_session.call_tool(
-                "search_places",
-                {
-                    "query": query,
-                    "include_dining_options": False,
-                    "include_amenities": False,
-                    "max_results": 5,
-                    "place_index": 0,
-                },
-            ),
+            runtime.mcp_session.call_tool("search_places", args),
             timeout=20,
         )
         text = "".join(c.text for c in result.content if hasattr(c, "text"))
@@ -1053,17 +1051,8 @@ async def _search_place_nearby(
         text = "".join(c.text for c in result.content if hasattr(c, "text"))
         data = json.loads(text) if text else {}
         place = data.get("place")
-        compact = {
-            "place": {
-                "name": place.get("name"),
-                "type": place.get("type"),
-                "location": place.get("location"),
-            }
-        } if isinstance(place, dict) else data
-        emit({"type": "tool_response", "tool_name": "search_places_nearby", "response": {"output": compact}, "call_id": call_id})
         return place if isinstance(place, dict) else None
     except Exception as exc:
-        emit({"type": "tool_response", "tool_name": "search_places_nearby", "response": {"error": str(exc)}, "call_id": call_id})
         log.info("Nearby place enrichment failed; trying text search fallback", error=str(exc))
         return None
 
@@ -1172,19 +1161,8 @@ async def _route_between(
         text = "".join(c.text for c in result.content if hasattr(c, "text"))
         payload = json.loads(text) if text else {}
         route = (payload.get("routes") or [None])[0]
-        compact_response = {}
-        if isinstance(route, dict):
-            compact_response = {
-                "distanceMeters": route.get("distanceMeters"),
-                "durationWithTrafficSeconds": route.get("durationWithTrafficSeconds"),
-                "durationWithoutTrafficSeconds": route.get("durationWithoutTrafficSeconds"),
-                "mapsUrl": route.get("mapsUrl"),
-                "warnings": route.get("warnings") or [],
-            }
-        emit({"type": "tool_response", "tool_name": "get_route", "response": {"output": compact_response or payload}, "call_id": call_id})
         return route if isinstance(route, dict) else None
     except Exception as exc:
-        emit({"type": "tool_response", "tool_name": "get_route", "response": {"error": str(exc)}, "call_id": call_id})
         log.info("Route enrichment failed for edit commute; using coordinate fallback", error=str(exc))
         return None
 

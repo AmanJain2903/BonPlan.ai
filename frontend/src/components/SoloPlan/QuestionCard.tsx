@@ -117,7 +117,7 @@ export default function QuestionCard({ pendingQuestion, disabled, onSubmit }: Qu
   // this so they look identical. The only difference is the input pill
   // contains a textarea instead of a button label.
   const pillBase =
-    'w-full px-4 py-2.5 rounded-full text-sm font-semibold tracking-wide transition-all border text-left';
+    'w-full px-4 py-2.5 rounded-full text-base sm:text-sm font-semibold tracking-wide transition-all border text-left';
   const pillIdle =
     'bg-white/[0.04] border-white/10 text-white/70 hover:text-white hover:border-cyan/40';
   const pillActive =
@@ -196,7 +196,7 @@ export default function QuestionCard({ pendingQuestion, disabled, onSubmit }: Qu
               placeholder="Type in your answer…"
               disabled={disabled || submitting}
               rows={1}
-              className="w-full bg-transparent border-none focus:outline-none focus:ring-0 resize-none scrollbar-hide text-sm font-semibold tracking-wide placeholder:text-white/40 placeholder:font-semibold"
+              className="w-full bg-transparent border-none focus:outline-none focus:ring-0 resize-none scrollbar-hide text-base sm:text-sm font-semibold tracking-wide placeholder:text-white/40 placeholder:font-semibold"
               style={{ minHeight: '20px', maxHeight: '96px', color: 'inherit' }}
             />
           </div>

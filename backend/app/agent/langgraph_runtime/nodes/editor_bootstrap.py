@@ -177,20 +177,6 @@ async def editor_bootstrap_node(state: EditorState) -> Dict[str, Any]:
         current_events,
     )
 
-    emit(
-        {
-            "type": "tool_response",
-            "tool_name": "load_itinerary",
-            "response": {
-                "status": "success",
-                "events_count": len(current_events),
-                "attached_resolved": len(resolved_attached),
-                "snapshot_cursor": int(itinerary.snapshot_cursor or 0),
-            },
-            "call_id": call_id,
-        }
-    )
-
     log.info(
         "Editor bootstrap complete",
         trip_id=str(trip_id),

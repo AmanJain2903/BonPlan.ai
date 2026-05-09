@@ -98,6 +98,15 @@ export const api = {
     return data;
   },
 
+  completeGoogleLogin: async (exchangeToken: string): Promise<GoogleLoginResponse> => {
+    const { data } = await axios.post<GoogleLoginResponse>(
+      `${API_BASE}/api/v1/auth/google/complete`,
+      null,
+      { params: { exchange_token: exchangeToken } },
+    );
+    return data;
+  },
+
   register: async (
     first_name: string,
     last_name: string,

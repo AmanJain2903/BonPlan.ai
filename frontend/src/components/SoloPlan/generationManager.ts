@@ -256,6 +256,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         activeThinkingBubble: turn.activeThinkingBubble + (chunk.content || ''),
+        activeToolIndicator: null,
         activePruningChunk: null,
       }));
       break;
@@ -271,18 +272,6 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       });
       break;
 
-    case 'tool_response':
-      session.turns = updateLastBotTurn(session.turns, (turn) => ({
-        ...turn,
-        ...flushThinking(turn),
-        activeToolIndicator:
-          turn.activeToolIndicator && turn.activeToolIndicator.call_id === chunk.call_id
-            ? null
-            : turn.activeToolIndicator,
-        activePruningChunk: null,
-      }));
-      break;
-
     case 'pruning':
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
@@ -293,6 +282,10 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       break;
 
     case 'day_end': {
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        activeToolIndicator: null,
+      }));
       const completedDay = chunk.day_number;
       session.itineraryState = {
         ...session.itineraryState,
@@ -304,6 +297,10 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
     }
 
     case 'events_removed':
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        activeToolIndicator: null,
+      }));
       session.itineraryState = removeEventsFromItinerary(
         session.itineraryState,
         chunk.day_number,
@@ -315,6 +312,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         ...flushThinking(turn),
+        activeToolIndicator: null,
         activePruningChunk: null,
       }));
       session.itineraryState = processEventIntoItinerary(session.itineraryState, chunk.data);
@@ -345,6 +343,7 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       session.turns = updateLastBotTurn(session.turns, (turn) => ({
         ...turn,
         ...flushThinking(turn),
+        activeToolIndicator: null,
         activePruningChunk: null,
         systemLog: { type: 'system', content: chunk.content, error: chunk.error },
       }));
@@ -363,13 +362,19 @@ function handleSSEChunk(session: GenerationSession, chunk: any): void {
       break;
 
     case 'conversation_end':
-    case 'intent':
-    case 'structural_change':
     case 'edit_status':
     case 'edit_clarification':
     case 'edit_rejected':
     case 'edit_commit':
     case 'edit_end':
+      session.turns = updateLastBotTurn(session.turns, (turn) => ({
+        ...turn,
+        activeToolIndicator: null,
+      }));
+      return;
+
+    case 'intent':
+    case 'structural_change':
       return;
 
     default:
