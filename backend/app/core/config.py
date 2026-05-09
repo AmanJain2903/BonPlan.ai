@@ -26,9 +26,6 @@ class Settings(BaseSettings):
     
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
-    # Services settings
-    KEEPALIVE_INTERVAL_SECONDS: int = 600 # 10 minutes
-
     # Logging settings
     LOG_ROOT: str = "backend/logs"
 
