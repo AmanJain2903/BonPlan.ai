@@ -40,7 +40,7 @@ def test_non_local_logging_streams_structured_record_to_loki(monkeypatch):
     assert record["msg"] == "Request completed"
     assert record["logger"] == "tests.api"
     assert record["level"] == "INFO"
-    assert record["environment"] == "remote"
+    assert record["environment"] == "production"
     assert record["component"] == "api"
     assert record["request_id"] == "req-123"
     assert record["status_code"] == 200
