@@ -21,8 +21,12 @@ async def keepalive_task(target_url: str, service_name: str, interval_seconds: i
             await asyncio.sleep(interval_seconds)
             client = get_http_client()
             logger.info("Syncing telemetry...", target_service=service_name, target_url=target_url)
-            
-            response = await client.get(target_url, timeout=15.0)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            response = await client.get(target_url, headers=headers, timeout=15.0)
             if response.status_code == 200:
                 logger.debug("Telemetry sync successful", target_service=service_name)
             else:
