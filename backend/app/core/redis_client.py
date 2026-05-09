@@ -13,7 +13,6 @@ Connection rules:
 - `close_redis()` is idempotent and safe to call from FastAPI lifespan.
 - The client decodes responses to str by default, except when a command
   needs raw bytes — Redis auto-handles that.
-  
 """
 
 from __future__ import annotations
