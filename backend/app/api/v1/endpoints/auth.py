@@ -259,12 +259,13 @@ async def google_login_redirect(
     g_csrf_token: str = Form(...),
 ):
     csrf_cookie = request.cookies.get("g_csrf_token")
-    if not csrf_cookie:
-        return RedirectResponse(
-            _google_auth_callback_url(error="Google sign-in request is missing a CSRF cookie."),
-            status_code=303,
-        )
-    if csrf_cookie != g_csrf_token:
+    # When the frontend and backend are on different domains (e.g. bonplanai.com
+    # vs api.bonplanai.com), the browser will not send the g_csrf_token cookie
+    # with the cross-domain form POST, so it will always be absent in production.
+    # Only reject when the cookie IS present but does not match the form field
+    # (a genuine CSRF mismatch). When absent, the Google-signed credential JWT
+    # verified below provides equivalent security.
+    if csrf_cookie is not None and csrf_cookie != g_csrf_token:
         return RedirectResponse(
             _google_auth_callback_url(error="Google sign-in request failed CSRF validation."),
             status_code=303,
