@@ -23,3 +23,17 @@ async def sync_telemetry():
         "timestamp": time.time(),
         "platform": platform.platform()
     }
+
+
+@router.get("/mcp")
+async def sync_mcp():
+    """
+    Endpoint for the backend service to ping, mimicking a MCP sync.
+    """
+    return {
+        "status": "ok",
+        "service": "mcp",
+        "version": settings.MCP_VERSION,
+        "timestamp": time.time(),
+        "platform": platform.platform()
+    }

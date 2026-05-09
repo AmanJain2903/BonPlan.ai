@@ -74,7 +74,11 @@ async def lifespan(app: FastAPI):
 
     # Start the keepalive task
     keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.AGENT_URL}/agent/api/v1/sync/telemetry", "agent", settings.KEEPALIVE_INTERVAL_SECONDS))
-    logger.info("Keepalive task scheduled")
+    logger.info("Keepalive task scheduled for agent")
+
+    # Start the keepalive task
+    keepalive_task_obj = asyncio.create_task(keepalive_task(f"{settings.MCP_URL}/api/v1/sync/mcp", "mcp", settings.KEEPALIVE_INTERVAL_SECONDS))
+    logger.info("Keepalive task scheduled for MCP")
 
     try:
         yield

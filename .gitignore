@@ -50,3 +50,6 @@ caveman
 # Test Results
 backend/app/agent/dumps/
 backend/app/agent/test/results/
+
+# Vector Bridge
+bonplan-log-bridge/
