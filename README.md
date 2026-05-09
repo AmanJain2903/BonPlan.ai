@@ -99,13 +99,14 @@ Real trips have fixed commitments, transit buffers, weather, opening hours, budg
 
 ## Runtime Architecture ⚙️
 
-BonPlan runs as four local services during development:
+BonPlan runs as five local services during development:
 
 | Service | Default URL | Purpose |
 | --- | --- | --- |
 | Frontend | `http://localhost:5173` | React/Vite application |
 | API backend | `http://localhost:8000` | Auth, trips, sharing, places, admin, support, PDFs |
 | Agent backend | `http://localhost:8001` | Planner generation, itinerary editor chat, agent cache |
+| MCP backend | `http://localhost:8002/mcp/sse` | Remote tool server used by the agent over SSE |
 | Redis | `redis://localhost:6379/0` | Rate-limit counters and runtime cache support |
 
 PostgreSQL is also required for normal backend operation. The backend stores users, trips, itineraries, snapshots, collaboration Q&A, support tickets, API cache rows, place photo cache rows, rate-limit configs, and usage records.
@@ -127,6 +128,12 @@ FastAPI documentation is available when the servers are running:
 ```text
 http://localhost:8000/docs
 http://localhost:8001/docs
+```
+
+The dedicated MCP service is exposed over SSE at:
+
+```text
+http://localhost:8002/mcp/sse
 ```
 
 ## Main Application Areas 🧭
@@ -255,10 +262,12 @@ The backend reads settings from `backend/app/core/config.py`. A local backend en
 ```bash
 BACKEND_URL=http://localhost:8000
 AGENT_URL=http://localhost:8001
+MCP_URL=http://localhost:8002
 FRONTEND_URL=http://localhost:5173
 
 PROJECT_VERSION=v1.0.0
 AGENT_VERSION=v1.0.0
+MCP_VERSION=v1.0.0
 
 POSTGRES_USER=bonplan_admin
 POSTGRES_PASSWORD=secure_password
@@ -389,6 +398,14 @@ source .bonplan/bin/activate
 python -m uvicorn app.ai:app --host 0.0.0.0 --port 8001 --reload
 ```
 
+Start the MCP backend:
+
+```bash
+cd backend
+source .bonplan/bin/activate
+python -m uvicorn app.mcp:app --host 0.0.0.0 --port 8002 --reload
+```
+
 Start the frontend:
 
 ```bash
@@ -429,6 +446,7 @@ python -m pytest app/agent/test
 alembic upgrade head
 python -m uvicorn app.app:app --port 8000 --reload
 python -m uvicorn app.ai:app --port 8001 --reload
+python -m uvicorn app.mcp:app --port 8002 --reload
 ```
 
 ## Testing 🧪

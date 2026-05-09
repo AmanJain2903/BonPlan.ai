@@ -16,11 +16,14 @@ load_dotenv()
 
 class Settings(BaseSettings):
 
-    LOCAL_DEVELOPMENT: bool = False
+    LOCAL_DEVELOPMENT: bool = os.getenv("LOCAL_DEVELOPMENT", "false").lower() == "true"
 
     # Deployment settings
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
     AGENT_URL: str = os.getenv("AGENT_URL", "http://localhost:8001")
+    MCP_URL: str = os.getenv("MCP_URL", "http://localhost:8002")
+    MCP_SSE_PATH: str = os.getenv("MCP_SSE_PATH", "/mcp/sse")
+    
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     # Services settings
@@ -32,8 +35,10 @@ class Settings(BaseSettings):
     # Project settings
     PROJECT_NAME: str = "BonPlan.ai"
     AGENT_NAME: str = "BonPlan.ai - Agent"
+    MCP_NAME: str = "BonPlan.ai - MCP"
     PROJECT_VERSION: str = os.getenv("PROJECT_VERSION", "v1.0.0") # Version is not set in environment for production build. Set fallback for the production build. Local and Staging uses the Environment Variable.
     AGENT_VERSION: str = os.getenv("AGENT_VERSION", "v1.0.0") # Version is not set in environment for production build. Set fallback for the production build. Local and Staging uses the Environment Variable.
+    MCP_VERSION: str = os.getenv("MCP_VERSION", "v1.0.0")
 
     # PostgreSQL settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "bonplan_admin")

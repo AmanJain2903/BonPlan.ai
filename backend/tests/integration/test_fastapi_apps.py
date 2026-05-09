@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app import ai as agent_app
 from app import app as backend_app
+from app import mcp as mcp_app
 from app.api.v1.endpoints import utils
 
 
@@ -58,3 +59,9 @@ def test_agent_app_has_expected_routes_registered():
 
     assert "/agent/api/v1/chat/{trip_id}" in paths
     assert "/agent/api/v1/solo-planner/generate/solo/{id}" in paths
+
+
+def test_mcp_app_has_expected_sse_route_registered():
+    paths = {route.path for route in mcp_app.app.routes}
+
+    assert "/mcp/sse" in paths

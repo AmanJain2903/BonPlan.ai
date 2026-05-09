@@ -3,9 +3,9 @@
 """
 Main application for the agent.
 
-Owns the long-lived MCP subprocess + ClientSession and the LiteLLM client for
-the entire process lifetime via FastAPI's lifespan. Per-request code should
-read these from `app.agent.runtime.runtime` rather than re-creating them.
+Owns the long-lived remote MCP SSE session and the LiteLLM client for the
+entire process lifetime via FastAPI's lifespan. Per-request code should read
+these from `app.agent.runtime.runtime` rather than re-creating them.
 """
 
 from contextlib import asynccontextmanager
