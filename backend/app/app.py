@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.redis_client import close_redis, ping_redis
 from app.database.database import Base, engine
 from app.database import models  # noqa: F401 - ensure models are registered with Base
-from app.logging import get_app_logger
+from app.logging import get_app_logger, shutdown_logging
 from app.services.rate_limiter.rate_limiter import get_rate_limiter
 from app.services.rate_limiter.usage_cleanup import usage_cleanup_task
 from app.services.trip_lifecycle import trip_lifecycle_task
@@ -92,6 +92,7 @@ async def lifespan(app: FastAPI):
         await close_redis()
         await engine.dispose()
         logger.info("Lifespan shutdown complete")
+        shutdown_logging()
 
 
 app = FastAPI(

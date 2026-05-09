@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agent.api.router import router
 from app.agent.core.runtime import agent_runtime_context
 from app.core.config import settings
-from app.logging import get_app_logger
+from app.logging import get_app_logger, shutdown_logging
 from app.services.keepalive import keepalive_task
 from app.utils.http import close_http_client
 import asyncio
@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
             keepalive_task_obj.cancel()
         await close_http_client()
         logger.info("Agent lifespan shutdown complete")
+        shutdown_logging()
 
 
 app = FastAPI(
