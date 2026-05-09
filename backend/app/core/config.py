@@ -16,7 +16,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
 
-    LOCAL_DEVELOPMENT: bool = True
+    LOCAL_DEVELOPMENT: bool = False
 
     # Deployment settings
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
