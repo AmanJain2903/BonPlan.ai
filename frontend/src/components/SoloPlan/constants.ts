@@ -350,8 +350,12 @@ export function replayEvents(itinerary: TripItinerary): ItineraryState {
       dayMap.set(dayNum, day);
     }
 
-    day.title = event.day_title || day.title;
-    day.date = event.date || day.date;
+    if (event.day_title && typeof event.day_title === 'string' && !['end', 'start'].includes(event.day_title.toLowerCase().trim())) {
+      day.title = event.day_title;
+    }
+    if (!day.date && event.date && typeof event.date === 'string' && !['end', 'start'].includes(event.date.toLowerCase().trim())) {
+      day.date = event.date;
+    }
 
     // Editing uses stable event_id + event_sort_key so insertions/moves do not
     // require legacy event_number renumbering. Older generation events fall

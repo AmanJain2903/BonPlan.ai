@@ -47,8 +47,7 @@ app = FastAPI(
 
 # Allow React (Port 5173) to talk to Python
 origins = [
-    settings.FRONTEND_URL,
-    settings.BACKEND_URL
+    settings.FRONTEND_URL
 ]
 
 app.add_middleware(
