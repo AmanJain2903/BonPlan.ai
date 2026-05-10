@@ -50,8 +50,12 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
         "trip_input": trip_input,
     }
 
+    use_fast_model = bool(state.get("use_fast_model", False))
+    _editor_model, _ = settings.get_editor_agent_model(use_fast_model)
+    _editor_sku = resolve_llm_model_sku(_editor_model)
+
     try:
-        await get_rate_limiter().consume(EDITOR_MODEL_SKU)
+        await get_rate_limiter().consume(_editor_sku)
     except RateLimitExceeded:
         return {"is_structural_change": False, "structural_reason": ""}
 
@@ -59,7 +63,7 @@ async def structural_classifier_node(state: EditorState) -> Dict[str, Any]:
         if runtime.model_client is None:
             raise RuntimeError("LLM client not ready")
         resp = await runtime.model_client.aio.models.generate_content(
-            model=settings.EDITOR_AGENT_MODEL,
+            model=_editor_model,
             contents=[json.dumps(prompt_body, default=str)],
             config=types.GenerateContentConfig(
                 system_instruction=STRUCTURAL_SYSTEM_PROMPT,

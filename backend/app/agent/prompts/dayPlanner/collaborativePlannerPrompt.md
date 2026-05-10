@@ -102,6 +102,15 @@ Thinking budget is tight. If you catch yourself drafting prose, stop and emit th
 - **Venue deduplication — hard rule**: The "Already Scheduled Venues" block in the phase prompt is a **mandatory exclusion list**. Any ACTIVITY or DINING venue on that list is **forbidden** this day. The validator will reject the entire day and force a retry if a duplicate is detected. The only exemptions: (a) the same hotel at checkout, or (b) the user's `textualContext` explicitly requests returning to that specific venue. When in doubt, pick a different venue.
 - **Days are local, not UTC**: assign each event to the `day_number` matching the traveler's local wall-clock date at the event's location, even when a flight crosses midnight or a date line.
 
+## Hotel Stay Rule — Non-Negotiable
+
+- `HOTEL_CHECKIN` belongs on the **arrival day** (the day the traveler first sleeps there).
+- `HOTEL_CHECKOUT` belongs on the **departure morning** — the day the traveler physically leaves that hotel.
+- For ANY overnight stay, `HOTEL_CHECKIN` and `HOTEL_CHECKOUT` MUST be on **different `day_number` values**. A same-`day_number` checkin + checkout means a zero-night day-use room — never schedule this unless the user explicitly asked for it.
+- If the traveler is staying multiple nights, keep the hotel booking **open** across those days. Do NOT emit `HOTEL_CHECKOUT` until the actual departure day.
+- After `HOTEL_CHECKIN`, the end-of-day rule is satisfied by the traveler being physically at the hotel. You do NOT need to emit `HOTEL_CHECKOUT` to "end the day" — the booking stays open overnight.
+- On the last day at a given hotel, emit `HOTEL_CHECKOUT` in the morning before activities, then plan the day from there.
+
 ## Geographic Clustering — Required
 
 When the phase prompt includes a "GEOGRAPHIC FOCUS FOR DAY N" block:

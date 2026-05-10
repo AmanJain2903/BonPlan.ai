@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { api, Plan, TripItinerary, SmartAnchor, ItinerarySnapshot } from '../../apis/plan';
-import { Bot, Minimize2, ArrowLeftRight, MessageSquare, X as XIcon } from 'lucide-react';
+import { Bot, Minimize2, ArrowLeftRight, MessageSquare, X as XIcon, Zap, Info } from 'lucide-react';
 
 import { EASE_OUT_EXPO, replayEvents } from './constants';
 import {
@@ -61,6 +61,11 @@ export default function SoloPlanView() {
   const [loading, setLoading] = useState(true);
 
   const [chatMode, setChatMode] = useState<ChatMode>('autonomous');
+  const [useFastModel, setUseFastModel] = useState<boolean>(() => {
+    try { return localStorage.getItem('bonplan_fast_mode') === 'true'; } catch { return false; }
+  });
+  const [showFastInfo, setShowFastInfo] = useState(false);
+  const fastInfoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [contextMessage, setContextMessage] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<AttachedEventRef[]>([]);
@@ -428,12 +433,22 @@ export default function SoloPlanView() {
       chatInput: inputText,
       mode: chatMode === 'collaborative' ? 'collaborative' : 'autonomous',
       initialItineraryState: currentItineraryState,
+      useFastModel,
     });
-  }, [plan, tripId, contextMessage, chatMode, itineraryState]);
+  }, [plan, tripId, contextMessage, chatMode, itineraryState, useFastModel]);
 
   const toggleMode = useCallback(() => {
     if (isSessionActive) return;
     setChatMode((prev) => (prev === 'collaborative' ? 'autonomous' : 'collaborative'));
+  }, [isSessionActive]);
+
+  const toggleFastModel = useCallback(() => {
+    if (isSessionActive) return;
+    setUseFastModel((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('bonplan_fast_mode', String(next)); } catch { /* noop */ }
+      return next;
+    });
   }, [isSessionActive]);
 
   const stopPlanner = useCallback(() => {
@@ -488,10 +503,11 @@ export default function SoloPlanView() {
       baseEventsHash: itineraryState.eventsHash ?? tripItinerary?.events_hash,
       forceReloadItinerary: false,
       appendUserTurn: true,
+      useFastModel,
     });
     setChatInput('');
     setSelectedEvents([]);
-  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, tripItinerary, user?.preferences, selectedEvents]);
+  }, [chatInput, tripId, plan, chatMode, turns, itineraryState, tripItinerary, user?.preferences, selectedEvents, useFastModel]);
 
   // Loading spinner
   if (loading) {
@@ -764,9 +780,31 @@ export default function SoloPlanView() {
                           )}
                         </div>
                       </div>
+                      {/* Fast mode toggle — desktop (hover tooltip) */}
+                      <div className="ml-auto relative group flex items-center gap-1.5">
+                        <button
+                          onClick={toggleFastModel}
+                          disabled={isSessionActive}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
+                            useFastModel
+                              ? 'bg-cyan/15 text-cyan border border-cyan/40 shadow-[0_0_8px_rgba(102,252,241,0.25)]'
+                              : 'bg-white/5 text-white/50 border border-white/20 hover:text-cyan/70 hover:border-cyan/30 hover:bg-cyan/5'
+                          } ${isSessionActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                          title={useFastModel ? 'Fast mode on — click to disable' : 'Enable fast mode'}
+                        >
+                          <Zap className={`w-2.5 h-2.5 ${useFastModel ? 'animate-pulse' : ''}`} />
+                          Fast
+                        </button>
+                        {/* Hover tooltip — positioned below the button inside the chat panel */}
+                        <div className="pointer-events-none absolute top-full right-0 mt-2 w-48 rounded-xl bg-[#0d1117] border border-white/10 p-3 text-left opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 shadow-2xl">
+                          <p className="text-[13px] font-bold text-cyan mb-0.5">4x Faster</p>
+                          <p className="text-[11px] text-white/70 mb-1.5">Speed Optimized Model</p>
+                          <p className="text-[9px] text-white/35 leading-relaxed">We do not claim this model to be as reliable as the standard model.</p>
+                        </div>
+                      </div>
                       <button
                         onClick={() => setIsChatMinimized(true)}
-                        className="ml-auto p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all"
+                        className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all"
                         title="Minimize Chat"
                       >
                         <Minimize2 className="w-4 h-4" />
@@ -864,6 +902,32 @@ export default function SoloPlanView() {
                         </div>
                       </div>
                     </div>
+                    {/* Fast mode toggle — mobile */}
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <button
+                        onClick={toggleFastModel}
+                        disabled={isSessionActive}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
+                          useFastModel
+                            ? 'bg-cyan/15 text-cyan border border-cyan/40 shadow-[0_0_8px_rgba(102,252,241,0.25)]'
+                            : 'bg-white/5 text-white/50 border border-white/20'
+                        } ${isSessionActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <Zap className={`w-2.5 h-2.5 ${useFastModel ? 'animate-pulse' : ''}`} />
+                        Fast
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (fastInfoTimerRef.current) clearTimeout(fastInfoTimerRef.current);
+                          setShowFastInfo(true);
+                          fastInfoTimerRef.current = setTimeout(() => setShowFastInfo(false), 3000);
+                        }}
+                        className="p-1 rounded-md text-white/40 hover:text-white/70 transition-all"
+                        title="About fast mode"
+                      >
+                        <Info className="w-3 h-3" />
+                      </button>
+                    </div>
                     <button
                       onClick={() => setIsMobileChatOpen(false)}
                       className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all"
@@ -871,6 +935,42 @@ export default function SoloPlanView() {
                       <XIcon className="w-4 h-4" />
                     </button>
                   </div>
+
+                  {/* Mobile fast-info modal — absolute within drawer so it respects overflow-hidden */}
+                  <AnimatePresence>
+                    {showFastInfo && (
+                      <>
+                        {/* Backdrop — closes on outside click */}
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute inset-0 z-[58]"
+                          onClick={() => {
+                            if (fastInfoTimerRef.current) clearTimeout(fastInfoTimerRef.current);
+                            setShowFastInfo(false);
+                          }}
+                        />
+                        {/* Card — positioned below the header, near the i button */}
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                          transition={{ duration: 0.18 }}
+                          className="absolute top-[56px] right-3 z-[59] w-52 rounded-2xl bg-[#0d1117] border border-white/10 p-4 shadow-2xl text-left"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <Zap className="w-4 h-4 text-cyan shrink-0" />
+                            <p className="text-[15px] font-bold text-cyan">4x Faster</p>
+                          </div>
+                          <p className="text-[12px] text-white/70 mb-2">Speed Optimised Model</p>
+                          <p className="text-[10px] text-white/35 leading-relaxed">We do not claim this model is as reliable as the standard model.</p>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
 
                   <MessageCanvas
                     scrollPositionRef={scrollPositionRef}

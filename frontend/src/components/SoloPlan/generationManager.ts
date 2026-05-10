@@ -542,6 +542,7 @@ class GenerationManager {
         baseSnapshotCursor: options.baseSnapshotCursor,
         baseEventsHash: options.baseEventsHash,
         forceReloadItinerary: !!options.forceReloadItinerary,
+        useFastModel: !!options.useFastModel,
       },
     };
 
@@ -592,13 +593,14 @@ class GenerationManager {
               base_snapshot_cursor: options.baseSnapshotCursor,
               base_events_hash: options.baseEventsHash,
               force_reload_itinerary: !!options.forceReloadItinerary,
+              use_fast_model: !!options.useFastModel,
             },
             controller.signal,
           )
         : await api.generateSoloPlan(
             token,
             tripId,
-            { chatInput: options.chatInput, mode: options.mode },
+            { chatInput: options.chatInput, mode: options.mode, use_fast_model: !!options.useFastModel },
             controller.signal,
           );
 

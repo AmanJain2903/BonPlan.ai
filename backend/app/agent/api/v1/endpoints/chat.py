@@ -68,6 +68,7 @@ async def chat_with_itinerary(request: Request, trip_id: str):
     base_snapshot_cursor = body.get("base_snapshot_cursor")
     base_events_hash = body.get("base_events_hash")
     force_reload_itinerary = bool(body.get("force_reload_itinerary", False))
+    use_fast_model = bool(body.get("use_fast_model", False))
 
     if not isinstance(message, str) or not message.strip():
         raise HTTPException(status_code=400, detail="`message` is required.")
@@ -112,6 +113,7 @@ async def chat_with_itinerary(request: Request, trip_id: str):
                 base_events_hash=base_events_hash,
                 force_reload_itinerary=force_reload_itinerary,
                 cancellation_callback=request.is_disconnected,
+                use_fast_model=use_fast_model,
             )
             while True:
                 chunk = await asyncio.wait_for(gen.__anext__(), timeout=120)

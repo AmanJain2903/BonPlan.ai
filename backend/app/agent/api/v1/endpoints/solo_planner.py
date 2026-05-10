@@ -225,9 +225,11 @@ async def generate_solo_plan(request: Request, id: str):
         body = await request.json()
         chat_input = body.get("chatInput", "")
         mode = body.get("mode", "autonomous")
+        use_fast_model = bool(body.get("use_fast_model", False))
     except Exception:
         chat_input = ""
         mode = "autonomous"
+        use_fast_model = False
 
     # 3. RBAC + flip statuses to GENERATING + assemble payload
     current_trip_itinerary: Optional[list] = None
@@ -439,6 +441,7 @@ async def generate_solo_plan(request: Request, id: str):
                 cancellation_callback=request.is_disconnected,
                 collab_seed_answer=_collab_seed_answer,
                 collab_qa_pairs=_collab_qa_pairs,
+                use_fast_model=use_fast_model,
             )
 
             # Outer timeout: each `anext()` bounded by `sse_timeout_seconds`.

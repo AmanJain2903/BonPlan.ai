@@ -114,6 +114,8 @@ async def run_chat_loop(
     require_end: bool = True,         # finalizer: True (END mandatory); day planner: False
     trip_id: Optional[str] = None,    # required for collaborative mode (ask_user_question)
     user_id: Optional[str] = None,   # required for Q&A persistence
+    model: Optional[str] = None,      # override model; defaults to PLANNER_AGENT_MODEL
+    context_window: Optional[int] = None,  # override context window for pruning
 ) -> ChatResult:
     """
     Run one phase of the planner chat.
@@ -139,6 +141,9 @@ async def run_chat_loop(
     session = runtime.mcp_session
     config = with_user_facing_output_policy(config)
 
+    _effective_model = model or _MODEL
+    _effective_sku = resolve_llm_model_sku(_effective_model) if model else _MODEL_SKU
+
     async def _is_cancelled() -> bool:
         if cancellation_callback is None:
             return False
@@ -148,7 +153,7 @@ async def run_chat_loop(
             log.warning("Cancellation callback raised", node=node_name, error=str(e))
             return False
 
-    chat = client.aio.chats.create(model=_MODEL, config=config)
+    chat = client.aio.chats.create(model=_effective_model, config=config)
 
     # Baseline Content capturing the initial_message. Used on turn-1
     # MAX_TOKENS/MALFORMED rebuilds where `chat.get_history()` is still empty
@@ -229,14 +234,14 @@ async def run_chat_loop(
 
             # Rate-limit gate.
             try:
-                await get_rate_limiter().consume(_MODEL_SKU)
+                await get_rate_limiter().consume(_effective_sku)
             except RateLimitExceeded as exc:
                 log.error("Planner model quota exhausted", sku=exc.sku, retry_after=exc.retry_after_seconds)
                 emit({"type": "error", "content": f"Planner quota exhausted. Retry after {exc.retry_after_seconds}s."})
                 return ChatResult(
                     emitted_events=list(session_events), last_text=last_text_buffer,
                     success=False, next_event_number=next_event_number,
-                    is_complete=is_complete, error=f"{_MODEL_SKU} quota exhausted",
+                    is_complete=is_complete, error=f"{_effective_sku} quota exhausted",
                 )
 
             try:
@@ -485,7 +490,7 @@ async def run_chat_loop(
                     retry_delay = min(retry_delay * 2, 8)  # ceiling 8s
                     try:
                         chat = client.aio.chats.create(
-                            model=_MODEL, config=config,
+                            model=_effective_model, config=config,
                             history=history_snapshot,
                         )
                         log.info(f"Successfully rebuilt chat", node=node_name, attempt=attempt)
@@ -708,18 +713,18 @@ async def run_chat_loop(
             # ── Token-aware summarizing sliding window ────────────────────────
             try:
                 current_history = list(chat.get_history())
-                if await _needs_pruning(client, current_history, config=config):
+                if await _needs_pruning(client, current_history, config=config, model=_effective_model, ctx_window=context_window):
                     log.info("Pruning history", node=node_name)
                     emit({
                         "type": "pruning",
                         "content": "Refreshing context so planning can continue smoothly.",
                     })
                     pruned, dropped, summary = await _prune_history(
-                        client, current_history, config=config
+                        client, current_history, config=config, model=_effective_model, ctx_window=context_window
                     )
                     if dropped > 0:
                         chat = client.aio.chats.create(
-                            model=_MODEL, config=config, history=pruned
+                            model=_effective_model, config=config, history=pruned
                         )
                         log.info(
                             "History pruned and chat rebuilt",
@@ -808,7 +813,7 @@ async def run_chat_loop(
             })
             try:
                 chat = client.aio.chats.create(
-                    model=_MODEL, config=config,
+                    model=_effective_model, config=config,
                     history=_baseline_history() or history_snapshot,
                 )
                 log.info(f"Rebuilt after MAX_TOKENS", node=node_name)
@@ -859,7 +864,7 @@ async def run_chat_loop(
             })
             try:
                 chat = client.aio.chats.create(
-                    model=_MODEL, config=config,
+                    model=_effective_model, config=config,
                     history=_baseline_history() or history_snapshot,
                 )
                 log.info(f"Rebuilt after MALFORMED", node=node_name)

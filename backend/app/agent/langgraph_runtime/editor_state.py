@@ -40,5 +40,8 @@ class EditorState(TypedDict, total=False):
     # ── Conversation ──────────────────────────────────────────────────────────
     conversation_notes: str
 
+    # ── Model selection ───────────────────────────────────────────────────────
+    use_fast_model: bool                    # True → use FAST_EDITOR_AGENT_MODEL
+
     # ── Control ───────────────────────────────────────────────────────────────
     cancelled: bool

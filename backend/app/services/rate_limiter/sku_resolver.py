@@ -68,11 +68,13 @@ SKU = {
     # LLM models
     "nemotron_3_nano_30b": "nemotron_3_nano_30b",
     "laguna_xs_2": "laguna_xs_2",
+    "laguna_m_1": "laguna_m_1",
 }
 
 LLM_MODEL_TO_SKU = {
     "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": SKU["nemotron_3_nano_30b"],
     "openrouter/poolside/laguna-xs.2:free": SKU["laguna_xs_2"],
+    "openrouter/poolside/laguna-m.1:free": SKU["laguna_m_1"],
 }
 
 

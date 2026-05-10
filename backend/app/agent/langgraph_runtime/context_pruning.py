@@ -230,11 +230,13 @@ async def _needs_pruning(
     client,
     history: list,
     config: Optional[types.GenerateContentConfig] = None,
+    model: Optional[str] = None,
+    ctx_window: Optional[int] = None,
 ) -> bool:
     """Cheap gate: does the current history cross the prune threshold?"""
     if len(history) <= 3:
         return False
-    ctx_window = settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
+    ctx_window = ctx_window or settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
     threshold = int(ctx_window * _PRUNE_THRESHOLD_RATIO)
     static_overhead = await _get_static_overhead(client, config) if config else 0
     local_estimate = _estimate_tokens_from_chars(history) + static_overhead
@@ -249,6 +251,8 @@ async def _prune_history(
     client,
     history: list,
     config: Optional[types.GenerateContentConfig] = None,
+    model: Optional[str] = None,
+    ctx_window: Optional[int] = None,
 ) -> tuple[list, int, str | None]:
     """
     Token-aware sliding-window pruning with recap injection.
@@ -264,7 +268,7 @@ async def _prune_history(
     if len(history) <= 1:
         return history, 0, None
 
-    ctx_window = settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
+    ctx_window = ctx_window or settings.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
     target = int(ctx_window * _PRUNE_TARGET_RATIO)
     static_overhead = await _get_static_overhead(client, config) if config else 0
 

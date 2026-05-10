@@ -61,6 +61,7 @@ async def generate_trip_itinerary(
     cancellation_callback: Optional[Callable[[], Awaitable[bool]]] = None,
     collab_seed_answer: Optional[str] = None,
     collab_qa_pairs: Optional[List] = None,
+    use_fast_model: bool = False,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Thin LangGraph adapter.  All planning logic lives in langgraph_runtime/.
@@ -121,6 +122,7 @@ async def generate_trip_itinerary(
         "cancelled": False,
         "is_complete": False,
         "phase": "bootstrap",
+        "use_fast_model": use_fast_model,
     }
     # Inject persisted collab Q&A when resuming so day planners get the full
     # preference history and the checkpoint doesn't re-ask the seed question.

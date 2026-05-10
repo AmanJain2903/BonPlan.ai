@@ -64,7 +64,7 @@ class Settings(BaseSettings):
 
     # Redis Rate Limiter settings
     REDIS_RATE_LIMIT_PREFIX: str = "rl"
-    RATE_LIMITER_MODE: str = "strict" # "lenient" (default) — allow the call, log the failure. "strict" — treat as rate-limited (raise). In staging and production, set to "strict".
+    RATE_LIMITER_MODE: str = os.getenv("RATE_LIMITER_MODE", "strict") # "lenient" in local development. "strict" in staging and production.
     RATE_LIMITER_CONFIG_TTL_SECONDS: int = "60"
     RATE_LIMITER_RESET_TZ: str = "America/Los_Angeles"
 
@@ -92,12 +92,28 @@ class Settings(BaseSettings):
     CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
 
     # Gemini Model Settings for Planner Agent
-    PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
-    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
+    PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-m.1:free"
+    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+
+    FAST_PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
+    FAST_PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
 
     # Gemini Model Settings for Editor Agent
-    EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
-    EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 131000 # 131K
+    EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-m.1:free"
+    EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+
+    FAST_EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
+    FAST_EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+
+    def get_planner_agent_model(self, use_fast_model: bool = False) -> tuple[str, int]:
+        if use_fast_model:
+            return self.FAST_PLANNER_AGENT_MODEL, self.FAST_PLANNER_AGENT_MODEL_CONTEXT_WINDOW
+        return self.PLANNER_AGENT_MODEL, self.PLANNER_AGENT_MODEL_CONTEXT_WINDOW
+
+    def get_editor_agent_model(self, use_fast_model: bool = False) -> tuple[str, int]:
+        if use_fast_model:
+            return self.FAST_EDITOR_AGENT_MODEL, self.FAST_EDITOR_AGENT_MODEL_CONTEXT_WINDOW
+        return self.EDITOR_AGENT_MODEL, self.EDITOR_AGENT_MODEL_CONTEXT_WINDOW
 
     # Serper Web Search API key
     SERPER_API_KEY: str = os.getenv("SERPER_API_KEY")
