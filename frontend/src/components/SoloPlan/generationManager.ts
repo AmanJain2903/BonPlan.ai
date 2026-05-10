@@ -39,6 +39,12 @@ function isCountableEvent(eventType: string): boolean {
   return ['HOTEL_CHECKIN', 'ACTIVITY', 'DINING', 'OTHER'].includes(eventType);
 }
 
+function isValidDayMeta(value: any): boolean {
+  if (!value || typeof value !== 'string') return false;
+  const lower = value.toLowerCase().trim();
+  return lower !== 'end' && lower !== 'start';
+}
+
 function rebuildDayAfterRemoval(day: ItineraryDay, fromEventNumber: number): ItineraryDay {
   const timestamp = Date.now();
   const events = day.events.filter((event: any) => {
@@ -46,14 +52,13 @@ function rebuildDayAfterRemoval(day: ItineraryDay, fromEventNumber: number): Iti
     return typeof eventNumber !== 'number' || eventNumber < fromEventNumber;
   });
 
-  const latestEventWithDayMeta = [...events]
-    .reverse()
-    .find((event: any) => event?.day_title || event?.date);
+  const latestEventWithValidTitle = [...events].reverse().find((event: any) => isValidDayMeta(event?.day_title));
+  const firstEventWithValidDate = events.find((event: any) => isValidDayMeta(event?.date));
 
   return {
     ...day,
-    title: latestEventWithDayMeta?.day_title || (events.length ? day.title : ''),
-    date: latestEventWithDayMeta?.date || (events.length ? day.date : ''),
+    title: (latestEventWithValidTitle ? latestEventWithValidTitle.day_title : null) || (events.length ? day.title : ''),
+    date: (firstEventWithValidDate ? firstEventWithValidDate.date : null) || (events.length ? day.date : ''),
     events,
     eventsCount: events.reduce(
       (count, event: any) => count + (isCountableEvent(event.event_type) ? 1 : 0),
@@ -137,8 +142,8 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
           if (existingIdx === -1) {
             return {
               ...day,
-              title: targetData.day_title || day.title,
-              date: targetData.date || day.date,
+              title: (isValidDayMeta(targetData.day_title) ? targetData.day_title : null) || day.title,
+              date: day.date || (isValidDayMeta(targetData.date) ? targetData.date : ''),
               events: [...day.events, targetData],
               eventsCount: day.eventsCount + newCountable,
               cost: day.cost + newCost,
@@ -153,8 +158,8 @@ function processEventIntoItinerary(prev: ItineraryState, data: any): ItinerarySt
           nextEvents[existingIdx] = targetData;
           return {
             ...day,
-            title: targetData.day_title || day.title,
-            date: targetData.date || day.date,
+            title: (isValidDayMeta(targetData.day_title) ? targetData.day_title : null) || day.title,
+            date: day.date || (isValidDayMeta(targetData.date) ? targetData.date : ''),
             events: nextEvents,
             eventsCount: day.eventsCount - prevCountable + newCountable,
             cost: day.cost - prevCost + newCost,
