@@ -58,6 +58,13 @@ class Settings(BaseSettings):
             if "asyncpg" not in self.POSTGRES_URL:
                 return "postgresql+asyncpg://" + self.POSTGRES_URL.split("://")[1]
             return self.POSTGRES_URL
+    
+    # Cloudflare R2 settings
+    CLOUDFLARE_R2_PHOTO_CACHE_BASE_URL: str = os.getenv("CLOUDFLARE_R2_PHOTO_CACHE_BASE_URL")
+    CLOUDFLARE_R2__PHOTO_CACHE_BUCKET_NAME: str = os.getenv("CLOUDFLARE_R2_PHOTO_CACHE_BUCKET_NAME")
+    CLOUDFLARE_R2_ENDPOINT_URL: str = os.getenv("CLOUDFLARE_R2_ENDPOINT_URL")
+    CLOUDFLARE_R2_ACCESS_KEY_ID: str = os.getenv("CLOUDFLARE_R2_ACCESS_KEY_ID")
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY: str = os.getenv("CLOUDFLARE_R2_SECRET_ACCESS_KEY")
 
     # Redis settings
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")

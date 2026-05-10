@@ -7,11 +7,18 @@ This file contains the places endpoints for the v1 version of the API.
 Includes a server-side image proxy that downloads Google Places photos once,
 caches them in PostgreSQL, and serves them to the frontend. This prevents
 repeated Google API billing on every browser render.
+
+Local dev: raw bytes stored in Postgres, served via /place-photo proxy endpoint.
+Prod: bytes uploaded to Cloudflare R2, R2 URL stored in Postgres, frontend hits R2 directly.
 """
 
 from datetime import datetime, timedelta, timezone
 
+import asyncio
+import boto3
+
 from fastapi import APIRouter, Query, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -48,6 +55,31 @@ maxWidth = 1080
 # Photo cache TTL: 30 days (max allowed by Google ToS)
 PHOTO_CACHE_TTL_DAYS = 31
 
+R2_PHOTO_BASE_URL = settings.CLOUDFLARE_R2_PHOTO_CACHE_BASE_URL
+
+_r2_client = None
+if not settings.LOCAL_DEVELOPMENT:
+    _r2_client = boto3.client(
+        service_name="s3",
+        endpoint_url=settings.CLOUDFLARE_R2_ENDPOINT_URL,
+        aws_access_key_id=settings.CLOUDFLARE_R2_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+        region_name="auto",
+    )
+
+
+async def _upload_to_r2(resource_name: str, image_bytes: bytes, content_type: str) -> str:
+    file_key = f"photo_cache/{resource_name}.jpg"
+    await asyncio.to_thread(
+        _r2_client.put_object,
+        Bucket=settings.CLOUDFLARE_R2__PHOTO_CACHE_BUCKET_NAME,
+        Key=file_key,
+        Body=image_bytes,
+        ContentType=content_type,
+    )
+    return f"{R2_PHOTO_BASE_URL}/{file_key}"
+
+
 async def _is_bright_enough(image_bytes: bytes, dark_threshold=40, light_threshold=230) -> bool:
     """Checks if an image is within acceptable brightness bounds."""
     try:
@@ -59,18 +91,18 @@ async def _is_bright_enough(image_bytes: bytes, dark_threshold=40, light_thresho
             img = img.resize((10, 10))
             pixels = list(img.getdata())
             luminance_scores = [
-                (0.2126 * r + 0.7152 * g + 0.0722 * b) 
+                (0.2126 * r + 0.7152 * g + 0.0722 * b)
                 for (r, g, b) in pixels
             ]
             avg_luminance = sum(luminance_scores) / len(luminance_scores)
-            
+
             return dark_threshold <= avg_luminance <= light_threshold
     except Exception as e:
         logger.warning("Failed to check image brightness. Returning True", error=str(e))
         return True
 
 async def _build_proxy_url(resource_name: str, db: Session) -> str:
-    """Build a URL that points to our own proxy endpoint instead of Google."""
+    """Build a URL that points to our own proxy endpoint (local) or R2 (prod)."""
     result = (await db.execute(
         select(PlacePhotoCache).where(PlacePhotoCache.resource_name == resource_name)
     )).scalar_one_or_none()
@@ -82,7 +114,12 @@ async def _build_proxy_url(resource_name: str, db: Session) -> str:
             await db.commit()
             result = None
 
+    imageBytes = None
+
     if result:
+        if not settings.LOCAL_DEVELOPMENT:
+            # Prod: R2 URL already stored, brightness validated on write
+            return result.r2_url
         imageBytes = result.image_data
     else:
         if not API_KEY:
@@ -107,30 +144,38 @@ async def _build_proxy_url(resource_name: str, db: Session) -> str:
             return None
         imageBytes = google_resp.content
         content_type = google_resp.headers.get("content-type", "image/jpeg")
+
+        if not await _is_bright_enough(imageBytes):
+            return None
+
         try:
-            new_entry = PlacePhotoCache(
-                resource_name=resource_name,
-                image_data=imageBytes,
-                content_type=content_type,
-            )
-            db.add(new_entry)
-            await db.commit()
+            if settings.LOCAL_DEVELOPMENT:
+                db.add(PlacePhotoCache(resource_name=resource_name, image_data=imageBytes, content_type=content_type))
+                await db.commit()
+            else:
+                r2_url = await _upload_to_r2(resource_name, imageBytes, content_type)
+                db.add(PlacePhotoCache(resource_name=resource_name, r2_url=r2_url, content_type=content_type))
+                await db.commit()
+                return r2_url
         except Exception as e:
             logger.warning("Failed to cache image.", resource_name=resource_name, error=str(e))
             await db.rollback()
+            if not settings.LOCAL_DEVELOPMENT:
+                return None
+
+    # Local dev path: serve via proxy endpoint
     if not imageBytes:
         return None
     if not await _is_bright_enough(imageBytes):
         return None
     return f"{BACKEND_URL}/api/v1/places/place-photo/{resource_name}"
-    
+
+
 @router.get("/place-photo/{resource_name:path}")
 async def get_place_photo(resource_name: str):
     """
-    Image proxy endpoint. Serves a cached photo binary from the database,
-    or fetches it from Google once and caches it for up to 30 days.
-
-    The frontend uses this URL in <img> tags instead of hitting Google directly.
+    Image proxy endpoint. Local dev: serves cached photo binary from Postgres.
+    Prod: redirects to R2 URL (this endpoint should not be called in prod).
     """
     async with Session() as db:
         result = (await db.execute(
@@ -138,28 +183,31 @@ async def get_place_photo(resource_name: str):
         )).scalar_one_or_none()
 
         if result:
-            return Response(
-                content=result.image_data,
-                media_type=result.content_type,
-                headers={
-                    "Cache-Control": f"public, max-age={PHOTO_CACHE_TTL_DAYS * 86400}, immutable",
-                    "X-Photo-Cache": "HIT",
-                    "Access-Control-Allow-Origin": "*",
-                },
-            )
-        else:
-            logger.warning(f"Unable to fetch image for {resource_name}. Returning Fallback Image")
-            with open(_FALLBACK_IMAGE_PATH, "rb") as f:
-                imageBytes = f.read()
-            return Response(
-                content=imageBytes,
-                media_type="image/jpeg",
-                headers={
-                    "Cache-Control": f"public, max-age={PHOTO_CACHE_TTL_DAYS * 86400}, immutable",
-                    "X-Photo-Cache": "MISS",
-                    "Access-Control-Allow-Origin": "*",
-                },
-            )
+            if not settings.LOCAL_DEVELOPMENT and result.r2_url:
+                return RedirectResponse(url=result.r2_url)
+            if result.image_data:
+                return Response(
+                    content=result.image_data,
+                    media_type=result.content_type,
+                    headers={
+                        "Cache-Control": f"public, max-age={PHOTO_CACHE_TTL_DAYS * 86400}, immutable",
+                        "X-Photo-Cache": "HIT",
+                        "Access-Control-Allow-Origin": "*",
+                    },
+                )
+
+        logger.warning(f"Unable to fetch image for {resource_name}. Returning Fallback Image")
+        with open(_FALLBACK_IMAGE_PATH, "rb") as f:
+            imageBytes = f.read()
+        return Response(
+            content=imageBytes,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": f"public, max-age={PHOTO_CACHE_TTL_DAYS * 86400}, immutable",
+                "X-Photo-Cache": "MISS",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
 
 @router.get("/destination-image-by-place-id")
 async def get_destination_image_by_place_id(place_id: str = Query(..., description="Google Place ID"), count: int = Query(5, description="Number of images to return"), min_ratio: float = Query(1.5, description="Minimum ratio of width to height for landscape images")):
