@@ -33,6 +33,8 @@ import FaqManager from './components/Admin/Pages/FaqManager';
 import SupportTickets from './components/Admin/Pages/SupportTickets';
 import PrivacyPolicy from './components/Legal/PrivacyPolicy';
 import TermsOfService from './components/Legal/TermsOfService';
+import PublicTripView from './components/PublicTripView/PublicTripView';
+import SEOHead from './components/shared/SEOHead';
 
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -50,6 +52,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return children;
 }
 
+
+function HomePageSEO() {
+  return (
+    <SEOHead
+      title="AI Travel Planner — Tell us When. We Tell the How."
+      description="BonPlan.ai builds personalized, agent-generated travel itineraries in minutes. From flights to hidden gems, your perfect trip starts here."
+      url="/"
+    />
+  );
+}
 
 function HomePage() {
   const { isLoggedIn } = useAuth();
@@ -87,6 +99,7 @@ function HomePage() {
 
   return (
     <>
+      <HomePageSEO />
       <main className="relative w-full min-h-screen pt-[24px]">
         <Hero plans={plans} isLoadingPlans={isFetchingPlans} />
         {plans.length > 0 && <DraftPlansComponent plans={plans} onDelete={handlePlanDelete} />}
@@ -106,17 +119,18 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/trip/:tripId" element={<PublicTripView />} />
+        <Route path="/login" element={<><SEOHead title="Sign In" description="Sign in to BonPlan.ai and access your AI-generated travel itineraries." url="/login" noIndex /><Login /></>} />
+        <Route path="/register" element={<><SEOHead title="Get Started" description="Create your free BonPlan.ai account and start planning your next trip with AI in minutes." url="/register" noIndex /><Register /></>} />
         <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-        <Route path="/share-invite" element={<ShareInvite />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/account/:section?" element={<AccountLayout />} />
-        <Route path="/draft-plan" element={<PlanSetup />} />
-        <Route path="/plan/solo/:tripId" element={<SoloPlanView />} />
-        <Route path="/plan/squad/:tripId" element={<SquadPlanView />} />
+        <Route path="/verify-email" element={<><SEOHead title="Verify Email" noIndex /><VerifyEmail /></>} />
+        <Route path="/share-invite" element={<><SEOHead title="Trip Invitation" noIndex /><ShareInvite /></>} />
+        <Route path="/forgot-password" element={<><SEOHead title="Reset Password" noIndex /><ForgotPassword /></>} />
+        <Route path="/reset-password" element={<><SEOHead title="Reset Password" noIndex /><ResetPassword /></>} />
+        <Route path="/account/:section?" element={<><SEOHead title="My Account" noIndex /><AccountLayout /></>} />
+        <Route path="/draft-plan" element={<><SEOHead title="Plan a Trip" noIndex /><PlanSetup /></>} />
+        <Route path="/plan/solo/:tripId" element={<><SEOHead title="My Itinerary" noIndex /><SoloPlanView /></>} />
+        <Route path="/plan/squad/:tripId" element={<><SEOHead title="Squad Itinerary" noIndex /><SquadPlanView /></>} />
         <Route
           path="/admin"
           element={(
@@ -132,8 +146,8 @@ function AnimatedRoutes() {
           <Route path="faq" element={<FaqManager />} />
           <Route path="tickets" element={<SupportTickets />} />
         </Route>
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/privacy" element={<><SEOHead title="Privacy Policy" description="Read the BonPlan.ai Privacy Policy to learn how we handle your data." url="/privacy" /><PrivacyPolicy /></>} />
+        <Route path="/terms" element={<><SEOHead title="Terms of Service" description="Review the BonPlan.ai Terms of Service." url="/terms" /><TermsOfService /></>} />
         <Route path="/rate-limits/skus" element={<Navigate to="/admin/skus" replace />} />
         <Route path="/rate-limits/usage" element={<Navigate to="/admin/usage" replace />} />
       </Routes>

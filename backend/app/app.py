@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import router
+from app.api.seo import router as seo_router
 from app.core.config import settings
 from app.core.redis_client import close_redis, ping_redis
 from app.database.database import Base, engine
@@ -108,6 +109,9 @@ app.add_middleware(
     expose_headers=["*"]
 )
 # ----------------------
+
+# SEO endpoints at root (robots.txt, sitemap.xml)
+app.include_router(seo_router)
 
 # Include all our routes
 app.include_router(router, prefix="/api/v1")

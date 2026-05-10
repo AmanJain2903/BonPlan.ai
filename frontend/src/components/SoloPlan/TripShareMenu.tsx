@@ -3,8 +3,10 @@ import {
   Check,
   Copy,
   Download,
+  Globe,
   Link as LinkIcon,
   Loader2,
+  Lock,
   PencilLine,
   Share2,
   Trash2,
@@ -95,6 +97,8 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [createdLink, setCreatedLink] = useState('');
   const [memberToRemove, setMemberToRemove] = useState<TripMemberAccess | null>(null);
+  const [isPublic, setIsPublic] = useState<boolean>(plan.is_public ?? false);
+  const [togglingVisibility, setTogglingVisibility] = useState(false);
 
   const currentRole = plan.role;
   const canInvite = currentRole === 'owner' || currentRole === 'shared_editor';
@@ -257,6 +261,29 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
           ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
           : undefined;
       setFeedback({ type: 'error', text: detail || 'Could not remove access.' });
+    }
+  };
+
+  const handleToggleVisibility = async () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+    setTogglingVisibility(true);
+    const next = !isPublic;
+    try {
+      const res = await api.setVisibility(token, tripId, next);
+      if (res.status_code === 200) {
+        setIsPublic(res.is_public ?? next);
+        setFeedback({
+          type: 'success',
+          text: res.is_public ? 'Itinerary is now public — anyone with the link can view.' : 'Itinerary is now private.',
+        });
+      } else {
+        setFeedback({ type: 'error', text: res.message || 'Could not update visibility.' });
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Could not update visibility.' });
+    } finally {
+      setTogglingVisibility(false);
     }
   };
 
@@ -475,6 +502,53 @@ export default function TripShareMenu({ tripId, plan }: TripShareMenuProps) {
                 >
                   {downloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 </button>
+              </div>
+            )}
+
+            {/* Public visibility toggle — owner only */}
+            {currentRole === 'owner' && (
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <label
+                  htmlFor={`pub-toggle-${tripId}`}
+                  className={`flex items-center justify-between gap-3 cursor-pointer rounded-xl px-3 py-2.5 hover:bg-white/[0.04] transition-colors ${togglingVisibility ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isPublic
+                      ? <Globe className="h-3.5 w-3.5 shrink-0 text-cyan" />
+                      : <Lock className="h-3.5 w-3.5 shrink-0 text-white/35" />}
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-white/80 leading-none">
+                        {isPublic ? 'Public itinerary' : 'Private itinerary'}
+                      </p>
+                      <p className="text-[10px] text-white/35 mt-0.5 leading-none">
+                        {isPublic ? 'Anyone with the link can view' : 'Only invited members'}
+                      </p>
+                    </div>
+                  </div>
+                  {/* native checkbox styled as pill toggle */}
+                  <div className="relative shrink-0 h-5 w-9">
+                    <input
+                      id={`pub-toggle-${tripId}`}
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={isPublic}
+                      onChange={handleToggleVisibility}
+                      disabled={togglingVisibility}
+                    />
+                    <span className="absolute inset-0 rounded-full border border-white/15 bg-white/5 peer-checked:border-cyan peer-checked:bg-cyan/20 transition-colors duration-200" />
+                    <span className="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white/25 transition-transform duration-200 peer-checked:translate-x-4 peer-checked:bg-cyan" />
+                  </div>
+                </label>
+                {isPublic && (
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/trip/${tripId}`)}
+                    className="mt-1 mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-left text-[11px] text-white/45 hover:text-white/70 transition-colors"
+                    title="Copy public link"
+                  >
+                    <Copy className="h-3.5 w-3.5 shrink-0 text-cyan" />
+                    <span className="truncate">{window.location.origin}/trip/{tripId}</span>
+                  </button>
+                )}
               </div>
             )}
 
