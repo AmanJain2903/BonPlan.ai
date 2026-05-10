@@ -199,7 +199,7 @@ export default function PublicTripView() {
           {/* CTA */}
           <section className="rounded-2xl border border-cyan/20 bg-black/10 shadow-2xl overflow-hidden">
             <div className="px-6 py-8 text-center">
-              <p className="text-white/40 text-[10px] uppercase tracking-widest mb-2">Powered by BonPlan AI</p>
+              <p className="text-cyan/70 text-[10px] uppercase tracking-widest mb-2">Powered by BonPlan AI</p>
               <p className="text-white font-semibold text-base sm:text-lg mb-1">Plan your next adventure</p>
               <p className="text-white/50 text-sm mb-5">BonPlan.ai builds personalized itineraries in minutes.</p>
               <Link to="/"

@@ -1,0 +1,16 @@
+name: Sync UI Deployment
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  register-deployment:
+    runs-on: ubuntu-latest
+    environment: 
+      name: Production
+      url: https://bonplanai.com 
+    
+    steps:
+      - name: Log Deployment to GitHub UI
+        run: echo "Render & Cloudflare Pages are handling the real deployment. This just updates the GitHub UI!"
