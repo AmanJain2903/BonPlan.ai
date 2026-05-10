@@ -34,6 +34,7 @@ from app.database.models.emailSubscriptionsTable import EmailSubscription
 from app.database.models.tripEmailNotificationsTable import TripEmailNotification
 from app.database.models.rateLimitAlertSettingsTable import RateLimitAlertSettings
 from app.database.models.rateLimitAlertEventsTable import RateLimitAlertEvent
+from app.database.database import Base
 
 from app.core.config import settings
 
