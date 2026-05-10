@@ -27,6 +27,7 @@ from app.agent.langgraph_runtime.collaboration import (
     submit_answer,
 )
 from app.agent.helpers.qa_persistence import load_collab_qa
+from app.agent.langgraph_runtime.editing.snapshot_service import ensure_initial_snapshot
 from app.core.config import settings
 from app.database.database import Session
 from app.database.models.tripItinerariesTable import TripItinerary, TripItineraryStatus
@@ -409,7 +410,7 @@ async def generate_solo_plan(request: Request, id: str):
             except Exception as e:
                 logger.warning("SSE writer task raised on drain", error=str(e))
 
-            # Update terminal statuses.
+            # Update terminal statuses and create initial snapshot on success.
             try:
                 async with Session() as db:
                     plan_row = (
@@ -424,6 +425,15 @@ async def generate_solo_plan(request: Request, id: str):
                         if success_flag:
                             plan_row.status = PlanStatus.GENERATED
                             itin_row.status = TripItineraryStatus.GENERATED
+                            await db.flush()
+                            # Persist version_index=0 snapshot so the edit/revert
+                            # flow always has the original generation to fall back to.
+                            await ensure_initial_snapshot(
+                                db,
+                                trip_id=str(id),
+                                itinerary=itin_row,
+                                prepared_events=list(itin_row.events or []),
+                            )
                         else:
                             plan_row.status = PlanStatus.DRAFT
                             itin_row.status = TripItineraryStatus.PENDING

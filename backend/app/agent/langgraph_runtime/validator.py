@@ -251,6 +251,41 @@ def _same_location(a: Optional[Tuple[float, float]], b: Optional[Tuple[float, fl
     return _haversine_m(a, b) <= _SAME_LOCATION_METERS
 
 
+def _validate_closer_has_opener(
+    args: Dict[str, Any],
+    prior_events: List[Dict[str, Any]],
+) -> Optional[str]:
+    """Block a closer event when there is no matching unclosed opener in prior_events."""
+    et = args.get("event_type")
+    _CLOSE_TO_OPENER: Dict[str, Tuple[str, str]] = {
+        "HOTEL_CHECKOUT": ("HOTEL_CHECKIN",  "HOTEL"),
+        "CAR_DROPOFF":    ("CAR_PICKUP",     "CAR"),
+        "FLIGHT_LAND":    ("FLIGHT_TAKEOFF", "FLIGHT"),
+    }
+    if et not in _CLOSE_TO_OPENER:
+        return None
+
+    opener_type, _ = _CLOSE_TO_OPENER[et]
+    open_items = _compute_open_bookings(prior_events)
+    matching = [
+        item for item in open_items
+        if item.get("open_event_type") == opener_type
+    ]
+    if matching:
+        return None
+
+    log.warning(
+        "Agent tried to emit a closer with no matching open opener",
+        closer_type=et,
+        opener_type=opener_type,
+    )
+    return (
+        f"Cannot emit [{et}]: there is no unclosed [{opener_type}] to close. "
+        f"Emit [{opener_type}] first, then close it with [{et}]. "
+        "Check prior events — a closer can only follow its matching opener."
+    )
+
+
 def _validate_no_duplicate_open(
     args: Dict[str, Any],
     prior_events: List[Dict[str, Any]],
@@ -595,6 +630,12 @@ async def validate_itinerary_event(
             + f" populated, but also received: {extra_fields}.",
             None,
         )
+
+    # Closer-without-opener guard: block closer (FLIGHT_LAND / HOTEL_CHECKOUT /
+    # CAR_DROPOFF) when no matching opener is currently open.
+    closer_no_opener_error = _validate_closer_has_opener(args, prior_events or [])
+    if closer_no_opener_error:
+        return closer_no_opener_error, None
 
     # Duplicate-open guard: block opener when same category already has unclosed opener.
     dup_open_error = _validate_no_duplicate_open(args, prior_events or [])
