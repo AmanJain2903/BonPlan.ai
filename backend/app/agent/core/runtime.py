@@ -274,6 +274,7 @@ async def _open_remote_mcp_session() -> AsyncIterator[Tuple[ClientSession, Any]]
         settings.MCP_URL + settings.MCP_SSE_PATH,
         timeout=settings.MCP_CONNECT_TIMEOUT_SECONDS,
         sse_read_timeout=max(_MCP_HEALTH_INTERVAL_SECONDS * 3, 90),
+        headers={"User-Agent": settings.HTTP_USER_AGENT},
     ) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()

@@ -12,6 +12,7 @@ from typing import Optional
 
 import httpx
 
+from app.core.config import settings
 
 _client: Optional[httpx.AsyncClient] = None
 
@@ -20,7 +21,10 @@ def get_http_client() -> httpx.AsyncClient:
     """Returns the process-wide shared httpx.AsyncClient (lazy-initialized)."""
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=30.0)
+        _client = httpx.AsyncClient(
+            timeout=30.0,
+            headers={"User-Agent": settings.HTTP_USER_AGENT},
+        )
     return _client
 
 
