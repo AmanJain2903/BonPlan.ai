@@ -24,6 +24,7 @@ from app.agent.core.runtime import runtime
 from app.agent.langgraph_runtime.litellm_adapter import run_chat_loop
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.schemas.structuredInput import TripInput
+from app.core.config import settings
 from app.agent.langgraph_runtime.validator import (
     _compute_open_bookings,
     _event_end_dt,
@@ -622,7 +623,9 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
             if days_remaining_after_today == 0 and open_bookings
             else (
                 "You may close any of these today if it fits the plan, or leave "
-                "them open for a later day.\n\n"
+                "them open for a later day. HOTEL exception: never emit HOTEL_CHECKOUT "
+                "on the same day_number as its HOTEL_CHECKIN — the checkout belongs on "
+                "the actual departure morning.\n\n"
                 if open_bookings
                 else "No open bookings carrying over.\n\n"
             )
@@ -698,20 +701,23 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
 
     validation_error_block = ""
     if day_validation_errors:
+        # next_event_number == first_broken because the validator set it to the
+        # first broken event number and stripped everything from there onward.
+        first_broken = state.get("next_event_number", 1)
         validation_error_block = (
-            "VALIDATION ERRORS FROM PREVIOUS ATTEMPT — you MUST fix all of these:\n"
+            f"RETRY — Events from #{first_broken} onward have been CLEARED due to these errors:\n"
             f"{day_validation_errors}\n\n"
+            f"Events 1–{first_broken - 1} (shown in 'Already-Emitted Events' above) are LOCKED "
+            f"and must NOT be re-emitted. You are continuing from event #{first_broken}.\n\n"
+            f"You MUST emit ALL remaining events to fully complete Day {current_day}, "
+            f"starting from event #{first_broken}. Fix the errors as you plan — then keep going "
+            f"until the ENTIRE rest of Day {current_day} is covered. Do NOT stop after fixing only "
+            "the broken event.\n\n"
             "Fix rules:\n"
-            "  - Wrong day_number → re-emit the particular event with correct day_number.\n"
-            "  - Missing event_number → fill the gap with the missing event.\n"
-            "  - Missing COMMUTE → insert a COMMUTE event at the gap position and "
-            "re-emit all subsequent events with event_number shifted up by 1.\n"
-            "  - Timing violation → adjust start/end times of affected events "
-            "or the commute durationSeconds, then re-emit those events.\n"
-            "Do not re-emit the whole day again, only the events that need to change."
-            "If adding a new event in the middle of the day, shift the event_number of all the subsequent events up by 1."
-            "If changing an event needs changes in the subsequent events, re-emit the subsequent events as well."
-            "Never re-emit the events prior to the event that needs to change. Treat them as fixed and changing them will break the itinerary."
+            "  - Timing violation → push the start time FORWARD so it starts AFTER commute ends.\n"
+            "  - Missing COMMUTE → insert a COMMUTE event between the two non-adjacent locations.\n"
+            "  - Wrong day_number → use the correct day number on every event.\n"
+            "  - Missing locked routine → add it as an OTHER event at the required time.\n"
         )
 
     seed_block = ""
@@ -762,6 +768,9 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         f"{task_instructions}"
     )
 
+    use_fast_model = bool(state.get("use_fast_model", False))
+    _model, _ctx_window = settings.get_planner_agent_model(use_fast_model)
+
     result = await run_chat_loop(
         initial_message=initial_message,
         config=config,
@@ -776,6 +785,8 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         require_end=False,
         trip_id=state.get("trip_id"),
         user_id=state.get("user_id"),
+        model=_model,
+        context_window=_ctx_window,
     )
 
     new_events = list(result.emitted_events or [])

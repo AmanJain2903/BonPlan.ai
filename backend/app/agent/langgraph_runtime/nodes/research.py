@@ -22,6 +22,7 @@ from app.agent.langgraph_runtime.litellm_adapter import run_chat_loop
 from app.agent.langgraph_runtime.state import PlannerState
 from app.agent.langgraph_runtime.streaming import emit
 from app.agent.schemas.structuredInput import TripInput
+from app.core.config import settings
 
 log = get_agent_logger("research")
 
@@ -121,6 +122,9 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
         "Begin now."
     )
 
+    use_fast_model = bool(state.get("use_fast_model", False))
+    _model, _ctx_window = settings.get_planner_agent_model(use_fast_model)
+
     result = await run_chat_loop(
         initial_message=initial_message,
         config=config,
@@ -129,6 +133,8 @@ async def research_node(state: PlannerState) -> Dict[str, Any]:
         mode=state.get("mode", "autonomous"),
         prior_events=state.get("prior_events", []) or [],
         stop_after_start=True,
+        model=_model,
+        context_window=_ctx_window,
     )
     research_emitted = list(result.emitted_events or [])
 

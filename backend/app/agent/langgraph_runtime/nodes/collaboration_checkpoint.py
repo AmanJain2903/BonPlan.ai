@@ -153,8 +153,12 @@ async def _generate_seed_question(state: PlannerState) -> dict:
     research_facts = state.get("research_facts") or {}
     journey = list(state.get("journey") or [])
 
+    use_fast_model = bool(state.get("use_fast_model", False))
+    _collab_model, _ = settings.get_planner_agent_model(use_fast_model)
+    _collab_sku = resolve_llm_model_sku(_collab_model)
+
     try:
-        await get_rate_limiter().consume(PLANNER_MODEL_SKU)
+        await get_rate_limiter().consume(_collab_sku)
     except RateLimitExceeded as exc:
         log.warning(
             "Planner model quota exhausted for seed question; using fallback",
@@ -167,7 +171,7 @@ async def _generate_seed_question(state: PlannerState) -> dict:
 
     try:
         resp = await runtime.model_client.aio.models.generate_content(
-            model=settings.PLANNER_AGENT_MODEL,
+            model=_collab_model,
             contents=[user_msg],
             config=with_user_facing_output_policy(
                 types.GenerateContentConfig(

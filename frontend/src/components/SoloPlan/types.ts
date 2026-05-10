@@ -136,4 +136,5 @@ export interface GenerationStartOptions {
   baseEventsHash?: string;
   forceReloadItinerary?: boolean;
   appendUserTurn?: boolean;
+  useFastModel?: boolean;
 }

@@ -259,9 +259,14 @@ async def _llm_edit_plan(
     events: list[dict[str, Any]],
     attached_events: list[dict[str, Any]],
     trip_input: dict[str, Any],
+    use_fast_model: bool = False,
 ) -> Optional[dict[str, Any]]:
     if runtime.model_client is None:
         return None
+
+    _edit_model, _ = settings.get_editor_agent_model(use_fast_model)
+    _edit_sku = resolve_llm_model_sku(_edit_model)
+
     prompt_body = {
         "user_message": user_message,
         "chat_history": list(chat_history or [])[-8:],
@@ -286,7 +291,7 @@ async def _llm_edit_plan(
         try:
             client = runtime.model_client
             chat = client.aio.chats.create(
-                model=settings.EDITOR_AGENT_MODEL,
+                model=_edit_model,
                 config=with_user_facing_output_policy(
                     types.GenerateContentConfig(
                         tools=[tool_block],
@@ -301,7 +306,7 @@ async def _llm_edit_plan(
             last_text = ""
             tool_calls_used = 0
             for _turn in range(6):
-                await get_rate_limiter().consume(EDITOR_MODEL_SKU)
+                await get_rate_limiter().consume(_edit_sku)
                 response_stream = chat.send_message_stream(current_message)
                 pending_text = ""
                 tool_calls: list[types.FunctionCall] = []
@@ -358,9 +363,9 @@ async def _llm_edit_plan(
             log.warning("Edit planner tool loop failed; retrying planner without tools", error=str(exc))
 
     try:
-        await get_rate_limiter().consume(EDITOR_MODEL_SKU)
+        await get_rate_limiter().consume(_edit_sku)
         resp = await runtime.model_client.aio.models.generate_content(
-            model=settings.EDITOR_AGENT_MODEL,
+            model=_edit_model,
             contents=[json.dumps(prompt_body, default=str)],
             config=with_user_facing_output_policy(
                 types.GenerateContentConfig(
@@ -2437,6 +2442,7 @@ async def run_edit_engine(state: EditorState) -> EditOutcome:
         events=events,
         attached_events=attached_events,
         trip_input=trip_input,
+        use_fast_model=bool(state.get("use_fast_model", False)),
     )
     fallback = _fallback_plan(message=user_message, attached_events=attached_events)
     if not plan:

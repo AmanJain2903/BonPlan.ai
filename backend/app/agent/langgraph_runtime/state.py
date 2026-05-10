@@ -78,5 +78,8 @@ class PlannerState(TypedDict, total=False):
     # Resets to 0 whenever day_validator advances to the next day.
     day_validator_attempts: int
 
+    # ── Model selection ───────────────────────────────────────────────────────
+    use_fast_model: bool                    # True → use FAST_PLANNER_AGENT_MODEL
+
     # ── Reserved: editing mode ────────────────────────────────────────────────
     edit_scope: Optional[list]              # list of (day_number, event_number) pairs

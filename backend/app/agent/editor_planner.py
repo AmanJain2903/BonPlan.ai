@@ -24,6 +24,7 @@ async def run_editor_chat(
     base_events_hash: Optional[str] = None,
     force_reload_itinerary: bool = False,
     cancellation_callback: Optional[Callable[[], Awaitable[bool]]] = None,
+    use_fast_model: bool = False,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     from app.agent.langgraph_runtime.graph import get_editor_graph
 
@@ -40,6 +41,7 @@ async def run_editor_chat(
         "client_base_events_hash": base_events_hash or "",
         "force_reload_itinerary": force_reload_itinerary,
         "cancelled": False,
+        "use_fast_model": use_fast_model,
     }
 
     graph = get_editor_graph()
