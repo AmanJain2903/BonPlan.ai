@@ -68,8 +68,16 @@ if not settings.LOCAL_DEVELOPMENT:
     )
 
 
+def _to_webp(image_bytes: bytes) -> bytes:
+    with Image.open(BytesIO(image_bytes)) as img:
+        img = img.convert("RGB")
+        buf = BytesIO()
+        img.save(buf, format="WEBP", quality=85)
+        return buf.getvalue()
+
+
 async def _upload_to_r2(resource_name: str, image_bytes: bytes, content_type: str) -> str:
-    file_key = f"photo_cache/{resource_name}.jpg"
+    file_key = f"photo_cache/{resource_name}.webp"
     await asyncio.to_thread(
         _r2_client.put_object,
         Bucket=settings.CLOUDFLARE_R2__PHOTO_CACHE_BUCKET_NAME,
@@ -143,7 +151,8 @@ async def _build_proxy_url(resource_name: str, db: Session) -> str:
             logger.warning("Google returned non-200 status code", resource_name=resource_name, status_code=google_resp.status_code)
             return None
         imageBytes = google_resp.content
-        content_type = google_resp.headers.get("content-type", "image/jpeg")
+        imageBytes = await asyncio.to_thread(_to_webp, imageBytes)
+        content_type = "image/webp"
 
         if not await _is_bright_enough(imageBytes):
             return None

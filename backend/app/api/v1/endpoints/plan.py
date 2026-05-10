@@ -950,6 +950,78 @@ async def remove_trip_member(id: str, member_id: str, token: str):
             raise HTTPException(status_code=500, detail=f"Failed to remove access: {e}")
 
 """
+Public view — no auth. Returns trip data only when is_public=True.
+"""
+@router.get("/{id}/public-view", response_model=dict)
+async def get_public_plan(id: str):
+    async with Session() as db:
+        plan = (await db.execute(select(Trip).where(Trip.id == id))).scalar_one_or_none()
+        if not plan:
+            return {"message": "Plan not found.", "status_code": 404}
+        if not plan.is_public:
+            return {"message": "This itinerary is private.", "status_code": 403}
+
+        itinerary = (await db.execute(
+            select(TripItinerary).where(TripItinerary.trip_id == id)
+        )).scalar_one_or_none()
+
+        if itinerary:
+            prepared_events, _ = ensure_event_identities(itinerary.events or [])
+            response_events = canonicalize_events(prepared_events, include_display_numbers=True)
+        else:
+            response_events = []
+
+        return {
+            "status_code": 200,
+            "plan": {
+                "id": str(plan.id),
+                "title": itinerary.title if itinerary else None,
+                "destinations": itinerary.destinations if itinerary else [d.get("label", "") for d in (plan.destinations or [])],
+                "origin": itinerary.origin if itinerary else (plan.origin or {}).get("label", ""),
+                "start_date": itinerary.start_date if itinerary else plan.start_date,
+                "end_date": itinerary.end_date if itinerary else plan.end_date,
+                "days": itinerary.days if itinerary else None,
+                "cost": itinerary.cost if itinerary else None,
+                "tips": itinerary.tips if itinerary else [],
+                "events": response_events,
+                "pace": plan.pace,
+                "budget": plan.budget,
+                "adults": plan.adults,
+                "children": plan.children,
+                "planning_type": plan.planning_type,
+                "owner": _user_response(plan.owner),
+                "updated_at": str(itinerary.updated_at if itinerary else plan.updated_at),
+            },
+        }
+
+
+class SetVisibilityRequest(BaseModel):
+    is_public: bool
+
+
+"""
+Toggle is_public for a trip. Owner only.
+"""
+@router.patch("/{id}/visibility", response_model=dict)
+async def set_trip_visibility(id: str, token: str, req: SetVisibilityRequest):
+    user_id = await _decode_user_id(token)
+
+    async with Session() as db:
+        await _load_user_or_404(db, user_id)
+        caller = await _get_accepted_member(db, id, user_id)
+        if not caller or _role_value(caller.role) != TripRole.OWNER.value:
+            return {"message": "Only the owner can change trip visibility.", "status_code": 403}
+
+        plan = (await db.execute(select(Trip).where(Trip.id == id))).scalar_one_or_none()
+        if not plan:
+            return {"message": "Plan not found.", "status_code": 404}
+
+        plan.is_public = req.is_public
+        await db.commit()
+        return {"message": "Visibility updated.", "status_code": 200, "is_public": plan.is_public}
+
+
+"""
 Download the current generated itinerary as a professionally formatted PDF.
 """
 @router.get("/{id}/download")
@@ -1062,6 +1134,7 @@ async def get_plan(token: str, id: str):
             "adults": plan.adults,
             "children": plan.children,
             "status": plan.status,
+            "is_public": plan.is_public,
             "role": role,
             "owner": _user_response(plan.owner),
             "created_at": plan.created_at,

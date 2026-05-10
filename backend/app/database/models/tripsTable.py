@@ -4,7 +4,7 @@
 This file contains the models for the trips table.
 """
 
-from sqlalchemy import Column, Index, String, DateTime, Boolean, Enum, Integer, ForeignKey
+from sqlalchemy import Column, Index, String, DateTime, Boolean, Enum, Integer, ForeignKey, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from app.database.database import Base
@@ -48,6 +48,7 @@ class Trip(Base):
     children = Column(Integer, nullable=False)
 
     status = Column(Enum(PlanStatus), nullable=False, default=PlanStatus.DRAFT)
+    is_public = Column(Boolean, nullable=False, server_default=text("false"))
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

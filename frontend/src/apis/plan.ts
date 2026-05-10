@@ -26,6 +26,7 @@ export interface Plan {
     adults: number;
     children: number;
     status: string;
+    is_public?: boolean;
     role: string;
     owner?: UserSummary;
     created_at: string;
@@ -33,6 +34,38 @@ export interface Plan {
     cost?: number | null;
     itinerary_title?: string | null;
     has_events?: boolean;
+}
+
+export interface PublicPlanData {
+    id: string;
+    title: string | null;
+    destinations: string[];
+    origin: string;
+    start_date: any;
+    end_date: any;
+    days: number | null;
+    cost: number | null;
+    tips: string[];
+    events: any[];
+    pace: string;
+    budget: string;
+    adults: number;
+    children: number;
+    planning_type: string;
+    owner: UserSummary;
+    updated_at: string;
+}
+
+export interface GetPublicPlanResponse {
+    message?: string;
+    status_code?: number;
+    plan?: PublicPlanData;
+}
+
+export interface SetVisibilityResponse {
+    message?: string;
+    status_code?: number;
+    is_public?: boolean;
 }
 
 export type ShareAccessRole = 'shared_viewer' | 'shared_editor';
@@ -425,6 +458,24 @@ export const api = {
         const { data } = await axios.post<RevertItineraryResponse>(
             `${API_BASE}/api/v1/plan/${id}/revert`,
             { version_index },
+            { params: { token } },
+        );
+        return data;
+    },
+    getPublicPlan: async (id: string): Promise<GetPublicPlanResponse> => {
+        const { data } = await axios.get<GetPublicPlanResponse>(
+            `${API_BASE}/api/v1/plan/${id}/public-view`,
+        );
+        return data;
+    },
+    setVisibility: async (
+        token: string,
+        id: string,
+        is_public: boolean,
+    ): Promise<SetVisibilityResponse> => {
+        const { data } = await axios.patch<SetVisibilityResponse>(
+            `${API_BASE}/api/v1/plan/${id}/visibility`,
+            { is_public },
             { params: { token } },
         );
         return data;
