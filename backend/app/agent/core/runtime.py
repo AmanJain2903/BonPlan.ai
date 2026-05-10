@@ -46,6 +46,8 @@ from app.agent.helpers.utils import (
 log = get_agent_logger("runtime")
 
 _MCP_HEALTH_INTERVAL_SECONDS = 30
+_MCP_RECONNECT_INITIAL_BACKOFF = 1.0
+_MCP_RECONNECT_MAX_BACKOFF = 60.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,21 +163,108 @@ class AgentRuntime:
 runtime = AgentRuntime()
 
 
-async def _mcp_health_ping(session: ClientSession) -> None:
-    """Background task: periodically pings MCP. Flips `runtime.mcp_healthy`."""
+def _rebuild_runtime_from_session(session: ClientSession, mcp_response: Any) -> None:
+    """Swap in a new MCP session and rebuild all tool blocks on the runtime singleton."""
+    mcp_decls = [convert_mcp_to_llm_tool(t) for t in mcp_response.tools]
+    llm_tools = list(mcp_decls) + [ADD_EVENT_TOOL]
+
+    runtime.mcp_session = session
+    runtime.llm_tools = llm_tools
+    runtime.planner_tool_block = types.Tool(function_declarations=llm_tools)
+
+    research_mcp_decls = _filter_mcp_decls(mcp_decls, _RESEARCH_MCP_TOOLS)
+    day_mcp_decls     = _filter_mcp_decls(mcp_decls, _DAY_MCP_TOOLS)
+    finalizer_mcp_decls = _filter_mcp_decls(mcp_decls, _FINALIZER_MCP_TOOLS)
+
+    runtime.research_tool_block = build_phase_tool_block(
+        research_mcp_decls, RESEARCH_EVENT_TOOL_NAMES
+    )
+    runtime.day_tool_block = build_phase_tool_block(
+        day_mcp_decls, DAY_EVENT_TOOL_NAMES
+    )
+    runtime.day_tool_block_collaborative = build_phase_tool_block(
+        day_mcp_decls, DAY_EVENT_TOOL_NAMES, ask_user_question_tool=ASK_USER_QUESTION_TOOL
+    )
+    runtime.finalizer_tool_block = build_phase_tool_block(
+        finalizer_mcp_decls, FINALIZER_EVENT_TOOL_NAMES
+    )
+    runtime.editor_tool_block = types.Tool(
+        function_declarations=list(mcp_decls)
+    )
+
+
+async def _mcp_health_ping() -> None:
+    """
+    Background task: pings MCP every _MCP_HEALTH_INTERVAL_SECONDS.
+    On failure, attempts to open a fresh SSE session with exponential backoff
+    and hot-swaps runtime.mcp_session so in-flight requests resume automatically.
+    """
+    _reconnect_stack: Optional[AsyncExitStack] = None
+    _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
+
+    async def _try_reconnect() -> bool:
+        nonlocal _reconnect_stack, _backoff
+        old_stack = _reconnect_stack
+        _reconnect_stack = None
+        new_stack = AsyncExitStack()
+        try:
+            new_session, mcp_response = await new_stack.enter_async_context(
+                _open_remote_mcp_session()
+            )
+            _rebuild_runtime_from_session(new_session, mcp_response)
+            _reconnect_stack = new_stack
+            # Close the old session only after the new one is wired up.
+            if old_stack is not None:
+                try:
+                    await old_stack.aclose()
+                except Exception:
+                    pass
+            _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
+            runtime.mcp_healthy = True
+            return True
+        except Exception as e:
+            log.error("MCP reconnect attempt failed", error=str(e))
+            try:
+                await new_stack.aclose()
+            except Exception:
+                pass
+            return False
+
     while True:
         try:
             await asyncio.sleep(_MCP_HEALTH_INTERVAL_SECONDS)
+            session = runtime.mcp_session
+            if session is None:
+                continue
             await asyncio.wait_for(session.list_tools(), timeout=10)
             if not runtime.mcp_healthy:
                 log.info("MCP session recovered")
+                _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
             runtime.mcp_healthy = True
         except asyncio.CancelledError:
+            if _reconnect_stack is not None:
+                try:
+                    await _reconnect_stack.aclose()
+                except Exception:
+                    pass
             raise
         except Exception as e:
-            if runtime.mcp_healthy:
-                log.error("MCP session unhealthy", error=str(e))
+            was_healthy = runtime.mcp_healthy
             runtime.mcp_healthy = False
+            if was_healthy:
+                log.error("MCP session unhealthy", error=str(e))
+
+            log.info(
+                "MCP session unhealthy — attempting reconnect",
+                backoff_s=_backoff,
+            )
+            await asyncio.sleep(_backoff)
+            _backoff = min(_backoff * 2, _MCP_RECONNECT_MAX_BACKOFF)
+
+            if await _try_reconnect():
+                log.info("MCP session reconnected successfully")
+            else:
+                log.warning("MCP reconnect failed; will retry on next health cycle")
 
 
 @asynccontextmanager
@@ -283,37 +372,10 @@ async def agent_runtime_context():
 
     async with _open_remote_mcp_session_with_retry() as (session, mcp_response):
 
-        mcp_decls = [convert_mcp_to_llm_tool(t) for t in mcp_response.tools]
-
-        # Legacy full block (keeps monolithic add_itinerary_event for any
-        # caller that hasn't migrated yet — e.g. tests).
-        llm_tools = list(mcp_decls) + [ADD_EVENT_TOOL]
-
-        runtime.mcp_session = session
-        runtime.llm_tools = llm_tools
-        runtime.planner_tool_block = types.Tool(function_declarations=llm_tools)
+        _rebuild_runtime_from_session(session, mcp_response)
         runtime.mcp_healthy = True
 
-        research_mcp_decls = _filter_mcp_decls(mcp_decls, _RESEARCH_MCP_TOOLS)
-        day_mcp_decls = _filter_mcp_decls(mcp_decls, _DAY_MCP_TOOLS)
-        finalizer_mcp_decls = _filter_mcp_decls(mcp_decls, _FINALIZER_MCP_TOOLS)
-        editor_mcp_decls = list(mcp_decls)
-
-        runtime.research_tool_block = build_phase_tool_block(
-            research_mcp_decls, RESEARCH_EVENT_TOOL_NAMES
-        )
-        runtime.day_tool_block = build_phase_tool_block(
-            day_mcp_decls, DAY_EVENT_TOOL_NAMES
-        )
-        runtime.day_tool_block_collaborative = build_phase_tool_block(
-            day_mcp_decls, DAY_EVENT_TOOL_NAMES, ask_user_question_tool=ASK_USER_QUESTION_TOOL
-        )
-        runtime.finalizer_tool_block = build_phase_tool_block(
-            finalizer_mcp_decls, FINALIZER_EVENT_TOOL_NAMES
-        )
-        runtime.editor_tool_block = types.Tool(function_declarations=editor_mcp_decls)
-
-        health_task = asyncio.create_task(_mcp_health_ping(session))
+        health_task = asyncio.create_task(_mcp_health_ping())
 
         # In-memory checkpointer is sufficient today — resume is rebuilt
         # from the DB on every call via current_trip_itinerary, so durable
