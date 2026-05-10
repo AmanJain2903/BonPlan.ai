@@ -81,7 +81,7 @@ def test_agent_api_caching_misses_and_errors(monkeypatch):
 
 def test_process_wide_http_client_lifecycle(monkeypatch):
     fake = FakeHttpClient()
-    monkeypatch.setattr(http.httpx, "AsyncClient", lambda timeout: fake)
+    monkeypatch.setattr(http.httpx, "AsyncClient", lambda **kwargs: fake)
     http._client = None
 
     assert http.get_http_client() is fake
