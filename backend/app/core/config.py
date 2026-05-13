@@ -87,30 +87,30 @@ class Settings(BaseSettings):
     # LiteLLM model settings. Values must include provider prefixes, e.g.
     # "gemini/gemini-2.0-flash", "openai/gpt-5.1", "anthropic/claude-sonnet-4-5",
     # or "openrouter/openai/gpt-4o".
-    SERPER_CONTENT_PARSER_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
-    SERPER_CONTENT_PARSER_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+    SERPER_CONTENT_PARSER_MODEL: str = "gemini/gemini-2.5-flash-lite"
+    SERPER_CONTENT_PARSER_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
     # Gemini Model Settings for Conversation Agent
-    CONVERSATION_AGENT_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
-    CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+    CONVERSATION_AGENT_MODEL: str = "gemini/gemini-2.5-flash-lite"
+    CONVERSATION_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
     # Gemini Model Settings for Context Pruning
-    CONTEXT_PRUNING_MODEL: str = "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
-    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 256000 # 256K
+    CONTEXT_PRUNING_MODEL: str = "gemini/gemini-2.5-flash-lite"
+    CONTEXT_PRUNING_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
     # Gemini Model Settings for Planner Agent
-    PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-m.1:free"
-    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+    PLANNER_AGENT_MODEL: str = "gemini/gemini-2.5-flash"
+    PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
-    FAST_PLANNER_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
-    FAST_PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+    FAST_PLANNER_AGENT_MODEL: str = "gemini/gemini-2.5-flash-lite"
+    FAST_PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
     # Gemini Model Settings for Editor Agent
-    EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-m.1:free"
-    EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+    EDITOR_AGENT_MODEL: str = "gemini/gemini-2.5-flash"
+    EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
-    FAST_EDITOR_AGENT_MODEL: str = "openrouter/poolside/laguna-xs.2:free"
-    FAST_EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 128000 # 128K
+    FAST_EDITOR_AGENT_MODEL: str = "gemini/gemini-2.5-flash-lite"
+    FAST_EDITOR_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
 
     def get_planner_agent_model(self, use_fast_model: bool = False) -> tuple[str, int]:
         if use_fast_model:
