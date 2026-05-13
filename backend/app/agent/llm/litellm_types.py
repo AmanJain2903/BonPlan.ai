@@ -61,6 +61,7 @@ class GenerateContentConfig:
     system_instruction: Optional[str] = None
     temperature: Optional[float] = None
     max_output_tokens: Optional[int] = None
+    extra_openai_params: Optional[dict[str, Any]] = None
     automatic_function_calling: Optional[AutomaticFunctionCallingConfig] = None
     response_mime_type: Optional[str] = None
     response_json_schema: Optional[dict[str, Any]] = None
@@ -124,4 +125,3 @@ class Candidate:
 @dataclass
 class StreamChunk:
     candidates: list[Candidate] = field(default_factory=list)
-

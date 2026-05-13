@@ -108,6 +108,8 @@ def _config_to_completion_kwargs(
         }
     elif config.response_mime_type == "application/json":
         kwargs["response_format"] = {"type": "json_object"}
+    if config.extra_openai_params:
+        kwargs.update(config.extra_openai_params)
     return kwargs
 
 

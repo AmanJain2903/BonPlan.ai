@@ -17,6 +17,7 @@ from app.agent.core.runtime import runtime
 from app.agent.helpers.itinerary_event_cost import sum_chargeable_cost_usd
 from app.agent.langgraph_runtime.editor_state import EditorState
 from app.agent.langgraph_runtime.output_style import with_user_facing_output_policy
+from app.agent.langgraph_runtime.model_hints import with_streaming_model_hints
 from app.agent.langgraph_runtime.streaming import emit
 from app.agent.mcp_server.tools._timeouts import TIMEOUTS
 from app.agent.llm import litellm_types as types
@@ -290,9 +291,9 @@ async def _llm_edit_plan(
     if tool_block is not None:
         try:
             client = runtime.model_client
-            chat = client.aio.chats.create(
-                model=_edit_model,
-                config=with_user_facing_output_policy(
+            stream_config = with_streaming_model_hints(
+                _edit_model,
+                with_user_facing_output_policy(
                     types.GenerateContentConfig(
                         tools=[tool_block],
                         system_instruction=EDIT_PLANNER_PROMPT,
@@ -301,6 +302,10 @@ async def _llm_edit_plan(
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                     )
                 ),
+            )
+            chat = client.aio.chats.create(
+                model=_edit_model,
+                config=stream_config,
             )
             current_message: Any = json.dumps(prompt_body, default=str)
             last_text = ""

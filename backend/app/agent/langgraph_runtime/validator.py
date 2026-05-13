@@ -79,7 +79,7 @@ _NATURAL_PAIRS = {
 }
 # Location-mismatch tolerance: two coordinate points within this distance are
 # treated as the same place (same airport terminal, same hotel complex, etc.).
-_SAME_LOCATION_METERS = 1000.0
+_SAME_LOCATION_METERS = 500.0
 
 # ─── Open-booking pairing ────────────────────────────────────────────────────
 # Opener event_type → (closer event_type, details field, label field)

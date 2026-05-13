@@ -797,7 +797,7 @@ export default function SoloPlanView() {
                         </button>
                         {/* Hover tooltip — positioned below the button inside the chat panel */}
                         <div className="pointer-events-none absolute top-full right-0 mt-2 w-48 rounded-xl bg-[#0d1117] border border-white/10 p-3 text-left opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 shadow-2xl">
-                          <p className="text-[13px] font-bold text-cyan mb-0.5">4x Faster</p>
+                          <p className="text-[13px] font-bold text-cyan mb-0.5">1.5x Faster</p>
                           <p className="text-[11px] text-white/70 mb-1.5">Speed Optimized Model</p>
                           <p className="text-[9px] text-white/35 leading-relaxed">Fast Mode is great for quick ideas. For deep, highly reliable planning, stick with Standard Mode.</p>
                         </div>
@@ -963,7 +963,7 @@ export default function SoloPlanView() {
                         >
                           <div className="flex items-center gap-2 mb-2">
                             <Zap className="w-4 h-4 text-cyan shrink-0" />
-                            <p className="text-[15px] font-bold text-cyan">4x Faster</p>
+                            <p className="text-[15px] font-bold text-cyan">1.5x Faster</p>
                           </div>
                           <p className="text-[12px] text-white/70 mb-2">Speed Optimised Model</p>
                           <p className="text-[10px] text-white/35 leading-relaxed">Fast Mode is great for quick ideas. For deep, highly reliable planning, stick with Standard Mode.</p>

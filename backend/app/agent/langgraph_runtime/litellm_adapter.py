@@ -42,6 +42,7 @@ from app.agent.langgraph_runtime.context_pruning import (
     _prune_history,
 )
 from app.agent.langgraph_runtime.output_style import with_user_facing_output_policy
+from app.agent.langgraph_runtime.model_hints import with_streaming_model_hints
 
 log = get_agent_logger("litellm_adapter")
 
@@ -143,6 +144,7 @@ async def run_chat_loop(
 
     _effective_model = model or _MODEL
     _effective_sku = resolve_llm_model_sku(_effective_model) if model else _MODEL_SKU
+    config = with_streaming_model_hints(_effective_model, config)
 
     async def _is_cancelled() -> bool:
         if cancellation_callback is None:
