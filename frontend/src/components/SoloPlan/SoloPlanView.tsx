@@ -62,7 +62,7 @@ export default function SoloPlanView() {
 
   const [chatMode, setChatMode] = useState<ChatMode>('autonomous');
   const [useFastModel, setUseFastModel] = useState<boolean>(() => {
-    try { return localStorage.getItem('bonplan_fast_mode') === 'true'; } catch { return false; }
+    try { return localStorage.getItem('bonplan_fast_mode') === 'true'; } catch { return true; }
   });
   const [showFastInfo, setShowFastInfo] = useState(false);
   const fastInfoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
