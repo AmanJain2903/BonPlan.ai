@@ -105,6 +105,7 @@ export default function PlanSetup() {
                 navigate('/', { replace: true });
               }
             } else {
+              sessionStorage.setItem('bonplan.pendingDraft', 'true');
               navigate('/register', { state: { submitDraft: true } });
             }
           }}

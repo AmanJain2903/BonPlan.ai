@@ -51,8 +51,9 @@ export default function Login() {
             ? (isAdmin ? `${fromPath}${fromSearch}` : '/')
             : (fromPath && fromPath !== '/login' && fromPath !== '/register' ? `${fromPath}${fromSearch}` : '/');
 
-        const submitDraft = (location.state as any)?.submitDraft;
-        
+        const submitDraft = (location.state as any)?.submitDraft ?? sessionStorage.getItem('bonplan.pendingDraft') === 'true';
+        sessionStorage.removeItem('bonplan.pendingDraft');
+
         if (submitDraft && trip.planningStyle && trip.tripData) {
           try {
             const draftRes = await api.plan.draftPlan(res.token, {
