@@ -670,12 +670,16 @@ async def run_chat_loop(
                     }
                 except Exception as e:
                     _elapsed = time.monotonic() - _started
+                    # str(e) is empty for no-arg exceptions (EOFError, ConnectionResetError, etc.)
+                    # repr(e) always includes the class name, e.g. "EOFError()"
+                    _err_detail = str(e) or repr(e)
                     log.error(
                         "Tool execution failed",
                         node=node_name,
                         tool=fc.name,
                         elapsed_s=round(_elapsed, 2),
-                        error=str(e),
+                        error=_err_detail,
+                        exc_type=type(e).__name__,
                     )
                     return call_id, fc, {"error": str(e)}
 
