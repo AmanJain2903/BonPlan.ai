@@ -65,9 +65,9 @@ export default function SoloPlanView() {
   try {
     const storedValue = localStorage.getItem('bonplan_fast_mode');
     
-    // If it doesn't exist yet, default to true
+    // If it doesn't exist yet, default to false
     if (storedValue === null) {
-      return true;
+      return false;
     }
     
     // Otherwise, return true only if the stored string is 'true'
@@ -75,7 +75,7 @@ export default function SoloPlanView() {
     
   } catch {
     // Fallback if localStorage is unavailable (e.g., SSR or blocked by browser)
-    return true; 
+    return false; 
   }
 });
   const [showFastInfo, setShowFastInfo] = useState(false);
