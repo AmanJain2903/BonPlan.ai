@@ -11,7 +11,7 @@ export default function GoogleAuthCallback() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { trip, resetTrip } = useTrip();
-  const pendingStateRef = useRef<StoredGoogleAuthState | null>(consumeGoogleAuthState());
+  const pendingStateRef = useRef<StoredGoogleAuthState | null>(null);
   const startedRef = useRef(false);
   const [showWelcome, setShowWelcome] = useState(false);
 
@@ -20,6 +20,10 @@ export default function GoogleAuthCallback() {
       return;
     }
     startedRef.current = true;
+
+    // Consume once here (not in useRef init) so React Strict Mode's double-mount
+    // doesn't empty sessionStorage before the real run.
+    pendingStateRef.current = consumeGoogleAuthState();
 
     const redirectBackToAuth = (errorMessage: string) => {
       const pendingState = pendingStateRef.current;
@@ -75,7 +79,13 @@ export default function GoogleAuthCallback() {
             ? (isAdmin ? `${fromPath}${fromSearch}` : '/')
             : (fromPath && fromPath !== '/login' && fromPath !== '/register' ? `${fromPath}${fromSearch}` : '/');
 
-        if (routeState?.submitDraft && trip.planningStyle && trip.tripData) {
+        // Check both route state (set by click_listener) and the sessionStorage flag
+        // (set in PlanSetup before redirect). The flag is the reliable fallback when
+        // click_listener doesn't fire or Strict Mode consumed the route state early.
+        const hasPendingDraft = sessionStorage.getItem('bonplan.pendingDraft') === 'true';
+        sessionStorage.removeItem('bonplan.pendingDraft');
+
+        if ((routeState?.submitDraft || hasPendingDraft) && trip.planningStyle && trip.tripData) {
           try {
             const draftRes = await api.plan.draftPlan(res.token, {
               planningStyle: trip.planningStyle,
