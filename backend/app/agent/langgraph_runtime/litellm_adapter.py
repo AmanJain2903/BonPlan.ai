@@ -117,6 +117,7 @@ async def run_chat_loop(
     user_id: Optional[str] = None,   # required for Q&A persistence
     model: Optional[str] = None,      # override model; defaults to PLANNER_AGENT_MODEL
     context_window: Optional[int] = None,  # override context window for pruning
+    max_turns: Optional[int] = None,  # override turn cap; defaults to 50
 ) -> ChatResult:
     """
     Run one phase of the planner chat.
@@ -189,8 +190,9 @@ async def run_chat_loop(
 
     max_turn_retries = 3
     turn_retries = 0
-    max_turns = 50
+    max_turns = max_turns if max_turns is not None else 50
     turn_count = 0
+    _budget_warned = False  # True after the low-budget warning has been injected once
 
     # Collaborative-mode budget. Counts ALL ask_user_question attempts in this
     # loop (valid + invalid) so a malformed call still spends budget — keeps
@@ -737,6 +739,31 @@ async def run_chat_loop(
                         response=result,
                         tool_call_id=call_id,
                     )
+                )
+
+            # ── Turn-budget warning ───────────────────────────────────────────
+            # Inject a single warning when turns are running low so the model
+            # can wind down gracefully instead of getting hard-cut at the cap.
+            remaining = max_turns - turn_count
+            if remaining <= 10 and not _budget_warned:
+                _budget_warned = True
+                _budget_warn_text = (
+                    f"[SYSTEM — TURN BUDGET LOW: only {remaining} turns remain for this day. "
+                    "Stop all research and place searches immediately. "
+                    "Emit the remaining events using your best available judgment — "
+                    "you may estimate durations and omit optional lookups. "
+                    "Finish the day cleanly; do not let timing cascade past reasonable hours. "
+                    "If the schedule is already over-committed, drop lower-priority events "
+                    "rather than pushing times into late night / early morning.]"
+                )
+                tool_responses.append(
+                    types.Part.from_text(text=_budget_warn_text)
+                )
+                log.warning(
+                    "Turn budget warning injected",
+                    node=node_name,
+                    remaining=remaining,
+                    max_turns=max_turns,
                 )
 
             current_message = tool_responses
