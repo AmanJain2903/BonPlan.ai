@@ -19,7 +19,7 @@ from typing import Any, Callable, Coroutine, Optional
 
 from app.agent.llm import litellm_types as types
 
-from app.agent.core.runtime import runtime
+from app.agent.core.runtime import runtime, attempt_mcp_reconnect
 from app.core.config import settings
 
 from app.logging import get_agent_logger
@@ -139,7 +139,6 @@ async def run_chat_loop(
         If True, return after a START event is successfully emitted (research phase).
     """
     client = runtime.model_client
-    session = runtime.mcp_session
     config = with_user_facing_output_policy(config)
 
     _effective_model = model or _MODEL
@@ -627,61 +626,87 @@ async def run_chat_loop(
 
                 _timeout = TIMEOUTS.get(fc.name, 60)
                 _started = time.monotonic()
-                try:
-                    mcp_result = await asyncio.wait_for(
-                        session.call_tool(fc.name, dict(fc.args or {})),
-                        timeout=_timeout,
-                    )
-                    output = (
-                        "".join(c.text for c in mcp_result.content if hasattr(c, "text"))
-                        or "Task completed."
-                    )
-                    _elapsed = time.monotonic() - _started
-                    _raw_len = len(output)
-                    _cap = _TOOL_RESPONSE_CAPS.get(fc.name, _DEFAULT_RESPONSE_CAP)
-                    if _raw_len > _cap:
-                        output = output[:_cap] + f"\n…[truncated, {_raw_len - _cap} chars dropped]"
-                    log.info(
-                        "Tool done",
-                        node=node_name,
-                        tool=fc.name,
-                        elapsed_s=round(_elapsed, 2),
-                        raw_chars=_raw_len,
-                        sent_chars=len(output),
-                    )
-                    return call_id, fc, {"output": output}
-                except asyncio.CancelledError:
-                    log.info("Tool cancelled", node=node_name, tool=fc.name)
-                    raise
-                except asyncio.TimeoutError:
-                    _elapsed = time.monotonic() - _started
-                    log.error(
-                        "Tool timed out",
-                        node=node_name,
-                        tool=fc.name,
-                        timeout_s=_timeout,
-                        elapsed_s=round(_elapsed, 2),
-                    )
-                    return call_id, fc, {
-                        "error": (
-                            f"Tool '{fc.name}' timed out after {_timeout}s. "
-                            "Do not retry this tool call. Skip it and proceed."
+                _conn_exc_names = frozenset({
+                    "ClosedResourceError", "EOFError",
+                    "ConnectionResetError", "BrokenPipeError",
+                })
+                for _mcp_attempt in range(2):
+                    _cur_session = runtime.mcp_session
+                    if _cur_session is None:
+                        return call_id, fc, {
+                            "error": (
+                                f"Tool '{fc.name}' skipped — MCP session unavailable. "
+                                "Do not retry this tool call. Skip it and proceed."
+                            )
+                        }
+                    try:
+                        mcp_result = await asyncio.wait_for(
+                            _cur_session.call_tool(fc.name, dict(fc.args or {})),
+                            timeout=_timeout,
                         )
-                    }
-                except Exception as e:
-                    _elapsed = time.monotonic() - _started
-                    # str(e) is empty for no-arg exceptions (EOFError, ConnectionResetError, etc.)
-                    # repr(e) always includes the class name, e.g. "EOFError()"
-                    _err_detail = str(e) or repr(e)
-                    log.error(
-                        "Tool execution failed",
-                        node=node_name,
-                        tool=fc.name,
-                        elapsed_s=round(_elapsed, 2),
-                        error=_err_detail,
-                        exc_type=type(e).__name__,
-                    )
-                    return call_id, fc, {"error": str(e)}
+                        output = (
+                            "".join(c.text for c in mcp_result.content if hasattr(c, "text"))
+                            or "Task completed."
+                        )
+                        _elapsed = time.monotonic() - _started
+                        _raw_len = len(output)
+                        _cap = _TOOL_RESPONSE_CAPS.get(fc.name, _DEFAULT_RESPONSE_CAP)
+                        if _raw_len > _cap:
+                            output = output[:_cap] + f"\n…[truncated, {_raw_len - _cap} chars dropped]"
+                        log.info(
+                            "Tool done",
+                            node=node_name,
+                            tool=fc.name,
+                            elapsed_s=round(_elapsed, 2),
+                            raw_chars=_raw_len,
+                            sent_chars=len(output),
+                        )
+                        return call_id, fc, {"output": output}
+                    except asyncio.CancelledError:
+                        log.info("Tool cancelled", node=node_name, tool=fc.name)
+                        raise
+                    except asyncio.TimeoutError:
+                        _elapsed = time.monotonic() - _started
+                        log.error(
+                            "Tool timed out",
+                            node=node_name,
+                            tool=fc.name,
+                            timeout_s=_timeout,
+                            elapsed_s=round(_elapsed, 2),
+                        )
+                        return call_id, fc, {
+                            "error": (
+                                f"Tool '{fc.name}' timed out after {_timeout}s. "
+                                "Do not retry this tool call. Skip it and proceed."
+                            )
+                        }
+                    except Exception as e:
+                        _elapsed = time.monotonic() - _started
+                        _err_detail = str(e) or repr(e)
+                        _exc_type = type(e).__name__
+                        if _exc_type in _conn_exc_names and _mcp_attempt == 0:
+                            log.warning(
+                                "MCP connection dropped on tool call; reconnecting and retrying",
+                                node=node_name,
+                                tool=fc.name,
+                                exc_type=_exc_type,
+                            )
+                            await attempt_mcp_reconnect()
+                            continue
+                        log.error(
+                            "Tool execution failed",
+                            node=node_name,
+                            tool=fc.name,
+                            elapsed_s=round(_elapsed, 2),
+                            error=_err_detail,
+                            exc_type=_exc_type,
+                        )
+                        return call_id, fc, {
+                            "error": (
+                                f"Tool '{fc.name}' failed: {_err_detail}. "
+                                "Do not retry this tool call. Skip it and proceed."
+                            )
+                        }
 
             _batch_started = time.monotonic()
             _mcp_calls = [

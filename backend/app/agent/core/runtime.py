@@ -45,7 +45,7 @@ from app.agent.helpers.utils import (
 
 log = get_agent_logger("runtime")
 
-_MCP_HEALTH_INTERVAL_SECONDS = 30
+_MCP_HEALTH_INTERVAL_SECONDS = 10
 _MCP_RECONNECT_INITIAL_BACKOFF = 1.0
 _MCP_RECONNECT_MAX_BACKOFF = 60.0
 
@@ -150,6 +150,16 @@ class AgentRuntime:
     editor_graph: Optional[Any] = None
     checkpointer: Optional[Any] = None
     mcp_healthy: bool = True
+    # Holds the AsyncExitStack for any reconnected session (None for the
+    # initial session, which is owned by agent_runtime_context).
+    _reconnect_stack: Optional[AsyncExitStack] = None
+    _reconnect_lock: Optional[asyncio.Lock] = None
+
+    @property
+    def reconnect_lock(self) -> asyncio.Lock:
+        if self._reconnect_lock is None:
+            self._reconnect_lock = asyncio.Lock()
+        return self._reconnect_lock
 
     @property
     def is_ready(self) -> bool:
@@ -193,42 +203,45 @@ def _rebuild_runtime_from_session(session: ClientSession, mcp_response: Any) -> 
     )
 
 
-async def _mcp_health_ping() -> None:
+async def attempt_mcp_reconnect() -> bool:
     """
-    Background task: pings MCP every _MCP_HEALTH_INTERVAL_SECONDS.
-    On failure, attempts to open a fresh SSE session with exponential backoff
-    and hot-swaps runtime.mcp_session so in-flight requests resume automatically.
+    Open a fresh MCP SSE session and hot-swap it into the runtime singleton.
+    Safe to call concurrently — a lock prevents duplicate reconnects.
+    Returns True if a live session is now in runtime.mcp_session.
     """
-    _reconnect_stack: Optional[AsyncExitStack] = None
-    _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
-
-    async def _try_reconnect() -> bool:
-        nonlocal _reconnect_stack, _backoff
-        old_stack = _reconnect_stack
-        _reconnect_stack = None
+    async with runtime.reconnect_lock:
+        old_stack = runtime._reconnect_stack
+        runtime._reconnect_stack = None
         new_stack = AsyncExitStack()
         try:
             new_session, mcp_response = await new_stack.enter_async_context(
                 _open_remote_mcp_session()
             )
             _rebuild_runtime_from_session(new_session, mcp_response)
-            _reconnect_stack = new_stack
-            # Close the old session only after the new one is wired up.
+            runtime._reconnect_stack = new_stack
             if old_stack is not None:
                 try:
                     await old_stack.aclose()
                 except Exception:
                     pass
-            _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
             runtime.mcp_healthy = True
+            log.info("MCP session reconnected")
             return True
         except Exception as e:
-            log.error("MCP reconnect attempt failed", error=str(e))
+            log.error("MCP reconnect failed", error=str(e) or repr(e))
             try:
                 await new_stack.aclose()
             except Exception:
                 pass
             return False
+
+
+async def _mcp_health_ping() -> None:
+    """
+    Background task: pings MCP every _MCP_HEALTH_INTERVAL_SECONDS.
+    On failure, calls attempt_mcp_reconnect() with exponential backoff.
+    """
+    _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
 
     while True:
         try:
@@ -242,11 +255,6 @@ async def _mcp_health_ping() -> None:
                 _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
             runtime.mcp_healthy = True
         except asyncio.CancelledError:
-            if _reconnect_stack is not None:
-                try:
-                    await _reconnect_stack.aclose()
-                except Exception:
-                    pass
             raise
         except Exception as e:
             was_healthy = runtime.mcp_healthy
@@ -261,7 +269,8 @@ async def _mcp_health_ping() -> None:
             await asyncio.sleep(_backoff)
             _backoff = min(_backoff * 2, _MCP_RECONNECT_MAX_BACKOFF)
 
-            if await _try_reconnect():
+            if await attempt_mcp_reconnect():
+                _backoff = _MCP_RECONNECT_INITIAL_BACKOFF
                 log.info("MCP session reconnected successfully")
             else:
                 log.warning("MCP reconnect failed; will retry on next health cycle")
@@ -409,6 +418,12 @@ async def agent_runtime_context():
                 await health_task
             except BaseException:
                 pass
+            if runtime._reconnect_stack is not None:
+                try:
+                    await runtime._reconnect_stack.aclose()
+                except Exception:
+                    pass
+                runtime._reconnect_stack = None
             runtime.mcp_session = None
             runtime.llm_tools = None
             runtime.planner_tool_block = None
