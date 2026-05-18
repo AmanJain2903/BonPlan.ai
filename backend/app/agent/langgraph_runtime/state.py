@@ -78,6 +78,13 @@ class PlannerState(TypedDict, total=False):
     # Resets to 0 whenever day_validator advances to the next day.
     day_validator_attempts: int
 
+    # ── Turn cap retry ────────────────────────────────────────────────────────
+    # Set by day_planner when the chat loop hits max_turns mid-day without
+    # completing. Signals the router to re-run the same day instead of routing
+    # to day_validator with a corrupt partial result.
+    turn_cap_retry: bool    # True → _route_after_day_planner goes back to day_planner
+    turn_cap_retries: int   # retry count for the current day; resets on day advance
+
     # ── Model selection ───────────────────────────────────────────────────────
     use_fast_model: bool                    # True → use FAST_PLANNER_AGENT_MODEL
 

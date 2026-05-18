@@ -84,10 +84,13 @@ def _route_initial(state: PlannerState):
 
 
 def _route_after_day_planner(state: PlannerState):
-    """After day_planner: always go to day_validator (or END if cancelled)."""
+    """After day_planner: go to day_validator, or loop back on turn-cap retry."""
     if state.get("cancelled"):
         log.info("Cancelled state detected. Routing to END")
         return END
+    if state.get("turn_cap_retry"):
+        log.info("Turn cap retry — routing back to day_planner", day=state.get("current_day"))
+        return "day_planner"
     return "day_validator"
 
 
@@ -159,11 +162,11 @@ def build_planner_graph(checkpointer=None):
             END: END,
         },
     )
-    # day_planner always hands off to day_validator (cancel → END)
+    # day_planner → day_validator, or loops back to itself on turn-cap retry
     builder.add_conditional_edges(
         "day_planner",
         _route_after_day_planner,
-        {"day_validator": "day_validator", END: END},
+        {"day_validator": "day_validator", "day_planner": "day_planner", END: END},
     )
     # day_validator decides: retry same day, advance to next day, or guard
     builder.add_conditional_edges(

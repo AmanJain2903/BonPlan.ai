@@ -840,5 +840,7 @@ async def day_validator_node(state: PlannerState) -> Dict[str, Any]:
         "next_event_number": 1,
         "day_validation_errors": None,
         "day_validator_attempts": 0,
+        "turn_cap_retry": False,
+        "turn_cap_retries": 0,
         "prior_events": pruned_events,
     }

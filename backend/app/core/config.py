@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     # Gemini Model Settings for Planner Agent
     PLANNER_AGENT_MODEL: str = "gemini/gemini-2.5-flash"
     PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M
+    # Base turn budget per day-planner invocation. Each smart anchor on the day
+    # adds PLANNER_MAX_TURNS_PER_ANCHOR extra turns. Close-pass runs are capped
+    # at PLANNER_MAX_TURNS_CLOSE_PASS regardless.
+    PLANNER_MAX_TURNS_BASE: int = int(os.getenv("PLANNER_MAX_TURNS_BASE", "65"))
+    PLANNER_MAX_TURNS_PER_ANCHOR: int = int(os.getenv("PLANNER_MAX_TURNS_PER_ANCHOR", "8"))
+    PLANNER_MAX_TURNS_CLOSE_PASS: int = int(os.getenv("PLANNER_MAX_TURNS_CLOSE_PASS", "25"))
+    PLANNER_MAX_TURN_CAP_RETRIES: int = int(os.getenv("PLANNER_MAX_TURN_CAP_RETRIES", "1"))
 
     FAST_PLANNER_AGENT_MODEL: str = "gemini/gemini-2.5-flash-lite"
     FAST_PLANNER_AGENT_MODEL_CONTEXT_WINDOW: int = 1048576 # 1M

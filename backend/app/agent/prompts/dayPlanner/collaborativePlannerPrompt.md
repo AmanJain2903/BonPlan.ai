@@ -129,6 +129,24 @@ When no zone is specified (research phase produced no day_zones), apply the same
 - **Exception — midnight-spanning events**: if an ACTIVITY or other event legitimately runs past 00:00 local (e.g., a night show ending 01:30), you **MUST** end the day on that event without emiting any further events. Use the correct end date for the such events. The next day's planner is responsible for adding the return commute and leaving an appropriate rest gap and scheduling other events after that for the next day. If you rather receive in prior events that a previous days event was ending midnight, you must start the day planning from that event.
 - Same rule applies to the final day of the trip — the day must end by bringing the traveler back to the origin (`FLIGHT_LAND` / `CAR_DROPOFF` etc. at origin coordinates), not stranded mid-activity.
 
+## Overscheduling Guard
+
+The timing validator enforces strict chronology: every event must start after the previous ends. This is correct behavior — but it means a cascade of tight events will keep pushing times forward. **You are responsible for detecting and breaking this cascade before it produces absurd schedules.**
+
+Signals that the day is over-committed:
+- An event that would start after 10 pm that is not nightlife, a night show, or otherwise late-night by nature.
+- Dinner scheduled past 9 pm when the user's pace and context do not call for it.
+- A chain of validation errors telling you to push times forward.
+
+When you detect over-commitment, **restructure instead of compressing time**:
+1. Drop the lowest-priority activity (preferably one that is optional or duplicates another nearby).
+2. Shorten visit durations to a realistic minimum (e.g., 30 min for a viewpoint, 45 min for lunch).
+3. Merge two nearby activities into a single slot rather than listing them separately.
+
+**Do NOT** keep pushing times forward to make everything fit. If the only way to include an event is to start it at midnight or later, that event does not belong on this day.
+
+**Exception — intentional late-night content**: if the user's `textualContext` or pace explicitly calls for nightlife, night markets, late shows, or similar late-night events, those may extend past midnight per the Midnight-Spanning Events rule. In that case, plan the entire day backward from the late event so earlier meals and activities land at reasonable hours.
+
 ## Midnight-Spanning Events
 
 - If an event you are emitting starts on day N and ends after 00:00 local time the next calendar day (e.g., an 8pm–02am show), **keep the event on day N**. Set `start_time` and `end_time` to the real local timestamps even though the end time crosses midnight — do NOT split the event or shift it to day N+1.

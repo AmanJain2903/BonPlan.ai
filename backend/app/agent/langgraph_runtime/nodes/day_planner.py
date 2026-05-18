@@ -107,6 +107,43 @@ def _day_calendar_date(trip_start: dict, current_day: int) -> date:
     return date(trip_start["year"], trip_start["month"], trip_start["day"]) + timedelta(days=current_day - 1)
 
 
+MAX_TURN_CAP_RETRIES = settings.PLANNER_MAX_TURN_CAP_RETRIES
+
+
+def _count_anchors_for_day(trip_payload: dict, current_day: int) -> int:
+    """Return the number of smart anchors that apply to current_day."""
+    smart_anchors: list = trip_payload.get("smart_anchors") or []
+    if not smart_anchors:
+        return 0
+    start_date = trip_payload.get("start_date") or {}
+    try:
+        current_date = _day_calendar_date(start_date, current_day)
+    except (KeyError, TypeError, ValueError):
+        return 0
+    current_date_str = current_date.isoformat()
+    count = 0
+    for anchor in smart_anchors:
+        atype = anchor.get("type", "")
+        inputs = anchor.get("user_inputs") or {}
+        if atype == "FLIGHT":
+            if inputs.get("departure_date") == current_date_str:
+                count += 1
+        elif atype == "HOTEL":
+            if inputs.get("checkin_date") == current_date_str:
+                count += 1
+            if inputs.get("checkout_date") == current_date_str:
+                count += 1
+        elif atype == "CAR_RENTAL":
+            if inputs.get("pickup_date") == current_date_str:
+                count += 1
+            if inputs.get("dropoff_date") == current_date_str:
+                count += 1
+        elif atype in ("ACTIVITY", "DINING", "OTHER"):
+            if inputs.get("date") == current_date_str:
+                count += 1
+    return count
+
+
 _ANCHOR_TYPE_TO_BLOCKED_TOOLS: Dict[str, set] = {
     "FLIGHT": {
         "search_flights",
@@ -452,10 +489,15 @@ def _build_routine_block(trip_payload: dict, current_day: int) -> str:
 async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     current_day = state.get("current_day", 1)
     total_days = state.get("total_days", 1)
+    turn_cap_retries = state.get("turn_cap_retries", 0)
+    starting_event_number = state.get("next_event_number", 1)
     run_id = (state.get("trip_id") + "-" + state.get("user_id")) if state.get("user_id") and state.get("trip_id") else str(uuid.uuid4())
 
     set_agent_log_context(run_id=run_id, node="day_planner", day=current_day)
-    log.info(f"Starting day {current_day} of {total_days}")
+    if turn_cap_retries > 0:
+        log.info(f"Retrying day {current_day} of {total_days} after turn cap (attempt {turn_cap_retries + 1}/{MAX_TURN_CAP_RETRIES + 1})")
+    else:
+        log.info(f"Starting day {current_day} of {total_days}")
 
     trip_payload = state.get("trip_input", {})
     trip_data = TripInput(**trip_payload)
@@ -771,11 +813,24 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     use_fast_model = bool(state.get("use_fast_model", False))
     _model, _ctx_window = settings.get_planner_agent_model(use_fast_model)
 
+    # Dynamic turn budget: base + per-anchor bonus, hard-capped for close-pass.
+    _anchors_today = _count_anchors_for_day(trip_payload, current_day)
+    if close_pass:
+        _max_turns = settings.PLANNER_MAX_TURNS_CLOSE_PASS
+    else:
+        _max_turns = settings.PLANNER_MAX_TURNS_BASE + (settings.PLANNER_MAX_TURNS_PER_ANCHOR * _anchors_today)
+    log.info(
+        "Day planner turn budget",
+        max_turns=_max_turns,
+        anchors_today=_anchors_today,
+        close_pass=close_pass,
+    )
+
     result = await run_chat_loop(
         initial_message=initial_message,
         config=config,
         node_name=f"day_{current_day}",
-        next_event_number=state.get("next_event_number", 1),
+        next_event_number=starting_event_number,
         current_day=current_day,
         total_days=total_days,
         mode=mode,
@@ -787,6 +842,7 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
         user_id=state.get("user_id"),
         model=_model,
         context_window=_ctx_window,
+        max_turns=_max_turns,
     )
 
     new_events = list(result.emitted_events or [])
@@ -794,8 +850,59 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
 
     if not result.success and not result.is_complete:
         log.error(f"Day planner failed for day {current_day}", error=result.error)
+
+        # Turn cap: strip this run's partial events and retry the same day,
+        # mirroring what a user-triggered resume would do. Cap retries to avoid
+        # an infinite loop if the day is genuinely too complex to plan.
+        if result.error == "Turn cap reached":
+            if turn_cap_retries < MAX_TURN_CAP_RETRIES:
+                partial_count = len(new_events)
+                if partial_count > 0:
+                    emit({
+                        "type": "events_removed",
+                        "day_number": current_day,
+                        "from_event_number": starting_event_number,
+                        "reason": "turn_cap_retry",
+                    })
+                log.warning(
+                    "Turn cap retry — stripping partial day events and restarting day",
+                    day=current_day,
+                    partial_events_stripped=partial_count,
+                    retry_attempt=turn_cap_retries + 1,
+                    max_retries=MAX_TURN_CAP_RETRIES,
+                )
+                return {
+                    "turn_cap_retry": True,
+                    "turn_cap_retries": turn_cap_retries + 1,
+                    "prior_events": prior_events,       # strip new_events (partial day)
+                    "next_event_number": starting_event_number,  # resume from where this run started, not from 1
+                    "day_validation_errors": None,      # stale validator errors would corrupt the retry prompt
+                    "day_validator_attempts": 0,
+                }
+            else:
+                # Retries exhausted — cancel rather than serve a corrupt partial day.
+                log.error(
+                    "Turn cap retries exhausted — cancelling day",
+                    day=current_day,
+                    retries=turn_cap_retries,
+                )
+                partial_count = len(new_events)
+                if partial_count > 0:
+                    emit({
+                        "type": "events_removed",
+                        "day_number": current_day,
+                        "from_event_number": starting_event_number,
+                        "reason": "turn_cap_exhausted",
+                    })
+                return {
+                    "cancelled": True,
+                    "turn_cap_retry": False,
+                    "prior_events": prior_events,  # don't persist the partial day
+                }
+
         return {
             "cancelled": True,
+            "turn_cap_retry": False,
             "prior_events": accumulated_prior,
         }
 
@@ -805,4 +912,5 @@ async def day_planner_node(state: PlannerState) -> Dict[str, Any]:
     # We only carry the accumulated events forward for validation + pruning.
     return {
         "prior_events": accumulated_prior,
+        "turn_cap_retry": False,
     }
