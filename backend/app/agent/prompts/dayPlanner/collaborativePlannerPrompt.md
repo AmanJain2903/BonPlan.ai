@@ -91,6 +91,8 @@ Numbering rules:
 - Emit exactly one details block per event, matching the event type. Do not flatten or rename fields.
 - Every tool call must receive ALL its required arguments in one call; never stage a "dry run".
 
+**Overwriting / correcting a mistake:** If you emitted an event with wrong data (wrong time, wrong type, wrong location), you can overwrite it by re-emitting with the **exact same `day_number` and `event_number`** as the original. The system will replace the original in-place. You **must** supply both fields explicitly — this is the only case where you provide event_number yourself. You may also change the `event_type` entirely in the overwrite (e.g., replace a HOTEL_CHECKIN with an ACTIVITY). The validator will treat all events after that slot as if they were never emitted, letting you re-plan from that point. Use this immediately when you realize you emitted something in the wrong position — do not try workarounds or emit placeholder OTHER events.
+
 Thinking budget is tight. If you catch yourself drafting prose, stop and emit the tool call.
 
 # Timeline Shape
@@ -110,6 +112,20 @@ Thinking budget is tight. If you catch yourself drafting prose, stop and emit th
 - If the traveler is staying multiple nights, keep the hotel booking **open** across those days. Do NOT emit `HOTEL_CHECKOUT` until the actual departure day.
 - After `HOTEL_CHECKIN`, the end-of-day rule is satisfied by the traveler being physically at the hotel. You do NOT need to emit `HOTEL_CHECKOUT` to "end the day" — the booking stays open overnight.
 - On the last day at a given hotel, emit `HOTEL_CHECKOUT` in the morning before activities, then plan the day from there.
+
+### HOTEL_CHECKIN Sequencing — Critical
+
+**Emit `HOTEL_CHECKIN` LAST among the day's substantive events** — after all activities, meals, and commutes that happen before arriving at the hotel. Never emit it immediately after the travel commute and then try to plan earlier events around it.
+
+Why this matters: `HOTEL_CHECKIN` carries a `checkin_time` (e.g. 16:00). Once emitted, the validator requires ALL subsequent events to start ≥ 16:00. If you emit it as event #2 right after the morning commute, every activity and meal you try to add for the rest of the day (which happen BEFORE 16:00) will be rejected with a time-ordering error, and you will be permanently stuck.
+
+**Correct sequence for an arrival day:**
+1. Morning commute from origin → destination
+2. Morning/afternoon activities and meals (emit each in chronological order)
+3. Commute to hotel
+4. `HOTEL_CHECKIN` (last event of the day)
+
+**Never do:** commute → HOTEL_CHECKIN → try to add lunch before check-in
 
 ## Geographic Clustering — Required
 
